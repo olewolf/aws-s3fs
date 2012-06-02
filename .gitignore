@@ -1,0 +1,9 @@
+# Ignore objects and archives.
+*.[oa]
+*.ko
+*~
+autom4te.cache/*
+*/.deps/*
+*/.tmp_versions/*
+*.mod.c
+.pc/*
