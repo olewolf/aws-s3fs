@@ -1,0 +1,15 @@
+Source: aws-s3fs
+Section: utils
+Priority: optional
+Maintainer: Ole Wolf <wolf@blazingangles.com>
+Build-Depends: debhelper (>= 8.0.0), autotools, libfuse-dev (>= 2.8.5)
+Standards-Version: 3.9.3
+Homepage: http://debian.blazingangles.net/velleman.html
+
+Package: aws-s3fs
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends},
+ aws (>= 1.75), curl (>= 7.20), libfuse2 (>= 2.8.4)
+Description: FUSE module to mount an Amazon S3 bucket using the aws utility
+ aws-s3fs is a transparent FUSE filesystem for reading and writing files
+ stored in an Amazon S3 cloud bucket.

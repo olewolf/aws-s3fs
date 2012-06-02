@@ -1,0 +1,5 @@
+aws-s3fs (0.1-1) quantal; urgency=low
+
+  * Initial version.
+
+ -- Ole Wolf <wolf@blazingangles.com>  Sat, 02 Jun 2012 19:07:25 +0100
