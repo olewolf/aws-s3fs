@@ -1,0 +1,266 @@
+.TH AWS-S3FS 1 "June 3rd, 2012" "Ole Wolf"
+
+.SH NAME
+aws-s3fs \- FUSE filesystem for Amazon S3 buckets
+
+.SH SYNOPSIS
+
+.B aws-s3fs
+.RI [ options ]
+.RI [ bucket [\fB:\fR\fIpath\fR]]
+.IR dir
+
+.SH DESCRIPTION
+.B aws-s3fs
+mounts an Amazon S3 cloud drive to a local directory via the FUSE filesystem and the aws utility.
+
+The standard form of the
+.B aws-s3fs
+command is
+
+.RS
+\fC\fBaws-s3fs\fR
+.I bucket\fR\fB:\fR\fIpath\fR
+.I dir
+
+.RE
+This tells the FUSE filesystem to attach the Amazon S3 filesystem's specified
+.I bucket\fR and
+.I path
+relative to the root of the bucket at the directory
+.I dir\fR.
+
+If only the directory is given, for example:
+
+.RS
+\fC\fBaws-s3fs\fR
+.I dir
+
+.RE
+
+then aws-s3fs assumes that the bucket and path are specified in either the options or one of the configuration files
+.I ~/.aws-s3fs
+or
+.I /etc/aws-s3fs.conf
+(all in that order).
+
+To unmount the S3 drive, use the
+.B fusermount
+\-u command.
+
+
+.SH OPTIONS
+
+.TP
+.PD 0
+.B \-b \fRbucket
+.TP
+.PD
+.B \-\-bucket\fR=bucket
+Set the bucket name to
+.I bucket\fR. For example:
+
+.RS
+.IP
+\fCaws-s3fs --bucket=mybucket /mnt/s3\fP
+
+.RE
+.IP
+mounts the bucket named
+.I mybucket
+on an Amazon S3 drive at the local directory
+.I /mnt/s3\fR.
+
+
+.TP
+.PD 0
+.B \-c \fRconfigfile
+.TP
+.PD
+.B \-\-config\fR=configfile
+Override the standard config files and read the configuration from
+.I configfile
+instead. For example:
+
+.RS
+.IP
+\fCaws-s3fs --config=~/amazon.conf /mnt/s3\fP
+
+.RE
+.IP
+reads the configuration (presumably including at least the bucket name and the access/secret key) from the file
+.I amazon.conf
+in the user's home directory and mounts the Amazon S3 bucket at
+.I /mnt/s3\fR.
+
+If the configuration file is not specified,
+.B aws-s3fs
+will first attempt to read from
+.I ~/.aws-s3fs\fR,
+and if unsuccessful then from
+.I /etc/aws-s3fs.conf\fRq.
+
+Any options specified on the command line override the corresponding setting in the configuration file.
+
+
+.TP
+.PD 0
+.B \-k \fRaccesskey:secretkey
+.TP
+.PD
+.B \-\-key\fR=accesskey:secretkey
+Specify the Amazon Access Key ID and the Secret Access Key for the S3 connection. For example:
+
+.RS
+.IP
+\fCaws-s3fs -k 7RMK5OR256H3AA6A6AK4:b6l/rRm8Jl6fkU4j4KqnGlppOmAkg7SkfeaNYKqy /mnt/s3\fP
+
+.RE
+.IP
+mounts a bucket at
+.I /mnt/s3
+using the Access Key ID "7RMK5OR256H3AA6A6AK4" and Secret Access Key "b6l/rRm8Jl6fkU4j4KqnGlppOmAkg7SkfeaNYKqy" as authentication credentials.
+
+NOTE: passing credentials on the command line is insecure. For better security, enter your credentials in a configuration file and make it world unreadable, or assign the values to the AWS_S3FS_KEY environment variable.
+
+
+.TP
+.PD 0
+.B \-l \fRlogfile
+.TP
+.PD
+.B \-\-logfile\fR=logfile
+Tell
+.B aws-s3fs
+to write its output log to
+.I logfile\fR.
+To write to the system log, enter "syslog" as the logfile name. For example:
+
+.RS
+.IP
+\fCaws-s3fs -l ~/s3fs.log /mnt/s3\fP
+
+.RE
+.IP
+mounts an S3 bucket in this bucket at
+.I /mnt/s3
+and logs all output to
+.I s3fs.log\fR in the user's home directory.
+
+
+.TP
+.PD 0
+.B \-p \fRpath
+.TP
+.PD
+.B \-\-path\fR=path
+Set the path relative to the root of the bucket to
+.I path\fR. For example:
+
+.RS
+.IP
+\fCaws-s3fs -b mybucket -p backups /mnt/s3\fP
+
+.RE
+.IP
+mounts the bucket named
+.I mybucket
+and the top directory named
+.I backups
+in this bucket at
+.I /mnt/s3\fR.
+
+
+.TP
+.PD 0
+.B \-r \fRregion
+.TP
+.PD
+.B \-\-region\fR=\fRregion
+Set the region where the bucket is created. Region is one of:
+
+\fC"US Standard"
+.br
+"Oregon"
+.br
+"Northern California"
+.br
+"Ireland"
+.br
+"Singapore"
+.br
+"Tokyo"
+.br
+"Sao Paulo"\fP
+
+For example:
+
+.RS
+.IP
+\fCaws-s3fs -r "Northern California" -b mybucket /mnt/s3\fP
+
+.RE
+.IP
+mounts the bucket named
+.I mybucket
+stored in the Northern California region at
+.I /mnt/s3\fR.
+
+
+.TP
+.PD 0
+.B \-h
+.TP
+.PD
+.B \-\-help
+Print help for
+.B aws-s3fs
+and exit.
+
+
+.TP
+.PD 0
+.B \-L
+.TP
+.PD
+.B \-\-license
+Print licensing information for
+.B aws-s3fs
+and exit.
+
+
+.TP
+.PD 0
+.B \-v
+.TP
+.PD
+.B \-\-verbose
+Print verbose output.
+
+
+.TP
+.PD 0
+.B \-V
+.TP
+.PD
+.B \-\-version
+Print the version of
+.B aws-s3fs
+and exit.
+
+
+.SH SEE ALSO
+.I aws\fR,
+.I fusermount
+
+.SH FILES
+.I /etc/aws-s3fs.conf\fR,
+.I ~/.aws-s3fs
+
+.SH COPYRIGHT
+.B aws-s3fs
+is Copyright (C) 2012 Ole Wolf
+
+This program comes with ABSOLUTELY NO WARRANTY. This is free software, and you
+are welcome to redistribute it under the conditions of the GNU General Public
+License. See <http://www.gnu.org/licenses/> for details.
