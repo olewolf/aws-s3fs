@@ -1,0 +1,41 @@
+Notes for packagers:
+
+The package is intended to be installed via the Debian packaging system,
+which takes care of installing configuration files, log rotation scripts,
+etc. To create a Debian package, install the debhelper tools and execute:
+
+  debuild
+
+in this folder.
+
+The autoconf files themselves may be able to install some of the files, too,
+using the standard ./configure; make; make install procedure. However, this is
+untested as the debhelper scripts are more than adequate for the task.
+
+The code is lint clean, with intentional overrides included in the source code
+where appropriate.
+
+Report bugs to: Ole Wolf <wolf@blazingangles.com>.
+
+---
+
+Copyright: 2012 Ole Wolf <wolf@blazingangles.com>
+License: GPL-3+
+
+This file is part of aws-s3fs.
+
+aws-s3fs is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+On Debian systems, the complete text of the GNU General Public
+License version 3 can be found in "/usr/share/common-licenses/GPL-3".
