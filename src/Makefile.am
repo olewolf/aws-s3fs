@@ -15,5 +15,19 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-ACLOCAL_AMFLAGS = -I m4
-SUBDIRS = src test data doc/man
+AM_CFLAGS = -O2 -Wall -Werror $(libfuse_CFLAGS) $(libconfigxx_CFLAGS)
+AM_CXXFLAGS = -O2 -Wall -Werror $(libfuse_CFLAGS) $(libconfigxx_CFLAGS)
+
+bin_PROGRAMS = aws-s3fs
+aws_s3fs_SOURCES = aws-s3fs.c decodecmdline.c configfile.c common.c fix-i386-cc.c config.c aws-s3fs.h splint.h
+aws_s3fs_LDADD = $(libfuse_LIBS) $(libconfigxx_LIBS)
+
+#splint.h: splint.generate-h
+#	sed < $<  >splint.h 's/^BEGIN-.\+-END$$/#define SPLINT_INSTALLED/'
+#
+#CLEANFILES = splint.h
+#
+#decodecmdline.o: splint.h
+#
+#splint.h: splint.generate-h
+#	sed < $<  >splint.h 's/^BEGIN-.\+-END$$/#define SPLINT_INSTALLED/'

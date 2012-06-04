@@ -1,6 +1,26 @@
+# Copyright (C) 2012 Ole Wolf <wolf@blazingangles.com>
+#
+# This file is part of aws-s3fs.
+# 
+# aws-s3fs is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
 AC_INIT([aws-s3fs], [0.1], [wolf@blazingangles.com])
 AC_CONFIG_SRCDIR([src/aws-s3fs.c])
-AM_INIT_AUTOMAKE([foreign -Wall -Werror])
+AC_CONFIG_AUX_DIR([config])
+AC_CONFIG_MACRO_DIR([m4])
+AM_INIT_AUTOMAKE
 
 # Check for programs.
 AC_PROG_CC
@@ -8,12 +28,12 @@ AC_PROG_CC_STDC
 AM_PROG_CC_C_O
 AC_PROG_INSTALL
 AC_PROG_MAKE_SET
-
-# Check for modules.
-PKG_CHECK_MODULES([libfuse], [fuse >= 2.8])
-
-AC_PROG_TRY_DOXYGEN
+AC_PATH_PROGS(SPLINT, splint)
+AC_PATH_PROGS(FLAWFINDER, flawfinder)
+AC_PATH_PROGS(RATS, rats)
+AC_PATH_PROGS(PSCAN, pscan)
 # Check for doxygen program.
+AC_PROG_TRY_DOXYGEN
 if test -z "$DOXYGEN"; then
   echo "-----------------------------------------"
   echo " No Doxygen program found - continuing"
@@ -21,12 +41,18 @@ if test -z "$DOXYGEN"; then
   echo "-----------------------------------------"
 fi
 AM_CONDITIONAL([HAVE_DOXYGEN],[test -n "$DOXYGEN"])
+AM_CONDITIONAL([HAVE_SPLINT],[test -n "$SPLINT"])
+
+AC_C_CONST
+#AC_C_INLINE
+
+# Check for modules.
+PKG_CHECK_MODULES([libfuse], [fuse >= 2.8])
+PKG_CHECK_MODULES([libconfigxx], libconfig++ >= 1.3,,
+    AC_MSG_ERROR([*** libconfig++ source not found - this program requires libconfig++ >= 1.3 **]))
 
 # Check for libraries.
-
-PKG_CHECK_MODULES(LIBCONFIGXX, libconfig++ >= 1.3,,
-    AC_MSG_ERROR([*** libconfig++ source not found - this program requires libconfig++ >= 1.3 **]))
-AC_CHECK_LIB([config],[config_init],,
+AC_CHECK_LIB([config], [config_init],,
     AC_MSG_ERROR([*** config_init function not found **]))
 
 # Check for header files.
@@ -46,19 +72,26 @@ AC_CHECK_HEADERS([getopt.h],,
 AC_FUNC_MALLOC
 AC_CHECK_FUNCS([getopt_long],,
     AC_MSG_ERROR([*** Getopt functions not found. **]))
-AC_CHECK_FUNCS([strcasecmp fopen sprintf sscanf fprintf],,
+AC_CHECK_FUNCS([strcasecmp fopen fprintf],,
     AC_MSG_ERROR([*** File or string handling functions not found. **]))
+
+CFLAGS="$CFLAGS -Wall -Werror"
+
+# Large file support.
+AC_SYS_LARGEFILE
 
 # Output files.
 AC_CONFIG_HEADERS([config.h])
-AC_CONFIG_FILES([Makefile src/Makefile])
-#AC_OUTPUT([debian/vellemaninstrumentation-modules-_KVERS_.postinst.modules debian/control.modules debian/dkms.conf])
+AC_CONFIG_FILES([Makefile src/Makefile test/Makefile data/Makefile doc/man/Makefile])
+#AC_OUTPUT([src/splint.generate-h])
 AC_OUTPUT()
 
 echo "
   ($PACKAGE_NAME) version $PACKAGE_VERSION
   Prefix.........: $prefix
+  C Compiler.....: $CC $CFLAGS $libconfigxx_CFLAGS $libfuse_CFLAGS
   C++ Compiler...: $CXX $CXXFLAGS $CPPFLAGS
-  Linker.........: $LD $LDFLAGS $LIBS
+  Linker.........: $LD $LDFLAGS $LIBS $libconfigxx_LIBS $libfuse_LIBS
   Doxygen........: ${DOXYGEN:-NONE}
+  Splint.........: ${SPLINT:-NO}
 "
