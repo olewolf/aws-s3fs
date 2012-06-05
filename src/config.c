@@ -53,11 +53,12 @@ ConfigSetRegion(
 	     nameIdx++ )
 	{
 	    /*@-unrecog@*/
-	    if( strcasecmp( regionNames[ nameIdx ], configValue ) != 0 )
+	    if( strcasecmp( regionNames[ nameIdx ], configValue ) == 0 )
 	    /*@+unrecog@*/
 	    {
 		found = true;
 		*region = nameIdx;
+		break;
 	    }
 	}
 	if( found == false )
@@ -85,60 +86,78 @@ ConfigSetPath(
 
 
 
-static int
+/*@-exportlocal@*//*for testing purposes*/
+int
 ExtractKey(
     /*@out@*/ char **key,
     int            index,
     const char     *configValue
 	   )
+/*@+exportlocal@*/
 {
     char *tempBuffer;
     char *bufferPtr;
     char character;
     char *newKey;
 
-    tempBuffer = malloc( strlen( &configValue[ index ] ) + sizeof( char ) );
-    if( tempBuffer != NULL )
+    if( configValue == NULL )
     {
-        bufferPtr  = tempBuffer;
-	while( ( character = configValue[ index ] ) != (char) 0 )
-	{
-	    /* Skip all whitespace. */
-	    if( ! isspace( character ) )
-	    {
-		/* Copy the character unless the character is a ':' or 0. */
-	      if( ( character == ':' ) || ( character == (char) 0 ) )
-	      {
-		  break;
-	      }
-	      else
-	      {
-		  *bufferPtr++ = character;
-	      }
-	    }
-	    index++;
-	}
-	/* Terminate the buffer. */
-	*bufferPtr = (char) 0;
-	bufferPtr  = NULL;
-	/* Copy the extracted key to its target storage. */
-	newKey = malloc( strlen( tempBuffer ) + sizeof( char ) );
-	if( newKey != NULL )
-	{
-	    strcpy( newKey, tempBuffer );
-	    *key = newKey;
-	}
-	free( tempBuffer );
-
-	/* Return the end position, where another key may be stored. */
-	if( character != (char) 0 )
-	{
-	    return( index );
-	}
+        *key = NULL;
+	return 0;
     }
 
-    *key = NULL;
-    return( 0 );
+    tempBuffer = malloc( strlen( &configValue[ index ] ) + sizeof( char ) );
+    assert( tempBuffer != NULL );
+    bufferPtr  = tempBuffer;
+    while( ( character = configValue[ index ] ) != (char) 0 )
+    {
+	/* Skip all whitespace. */
+	if( ! isspace( character ) )
+        {
+	    /* Copy the character unless the character is a ':' or 0. */
+	    if( ( character == ':' ) || ( character == (char) 0 ) )
+	    {
+		break;
+	    }
+	    else
+	    {
+	        *bufferPtr++ = character;
+	    }
+	}
+	index++;
+    }
+    /* Terminate the buffer. */
+    *bufferPtr = (char) 0;
+    /* Copy the extracted key to its target storage. */
+    newKey = malloc( strlen( tempBuffer ) + sizeof( char ) );
+    assert( newKey != NULL );
+    strcpy( newKey, tempBuffer );
+    *key = newKey;
+    bufferPtr = NULL;
+    free( tempBuffer );
+
+    /* Skip past whitespace and ':'. */
+    while( ( character = configValue[ index ] ) != (char) 0 )
+    {
+        if( isspace( character ) || ( character == ':' ) )
+        {
+	    index++;
+	}
+	else
+	{
+	    break;
+	}
+    }
+    /* Return the end position, where another key may be stored. */
+    if( character != (char) 0 )
+    {
+        return( index );
+    }
+    /* Or return 0 to indicate that there are no more keys. */
+    else
+    {
+        return( 0 );
+    }
 }
 
 
@@ -163,10 +182,7 @@ ConfigSetKey(
        and it is only really necessary to work around a lint warning that
        the new secret key may become null.) */
     invalidSecretKey = malloc( strlen( "*" ) + sizeof( char ) );
-    if( invalidSecretKey == NULL )
-    {
-        return;
-    }
+    assert( invalidSecretKey != NULL );
     strcpy( invalidSecretKey, "*" );
 
     /* Release the current keys. */
@@ -186,18 +202,27 @@ ConfigSetKey(
     /* Extract the Access Key. */
     nextKeyIdx = ExtractKey( &newKeyId, 0, configValue );
     *keyId = newKeyId;
-    /* Extract the Secret Key. */
-    if( nextKeyIdx != 0 )
+    if( newKeyId == NULL )
     {
-	(void)ExtractKey( &newSecretKey, nextKeyIdx, configValue );
-	*secretKey = newSecretKey;
-	free( invalidSecretKey );
+	fprintf( stderr, "Access key ID not found.\n" );
+        *secretKey = invalidSecretKey;
+	*configError = true;
     }
     else
     {
-        *secretKey = invalidSecretKey;
-	*configError = true;
-	fprintf( stderr, "Secret key not found.\n" );
+        /* Extract the Secret Key. */
+        if( nextKeyIdx != 0 )
+	{
+	    (void)ExtractKey( &newSecretKey, nextKeyIdx, configValue );
+	    *secretKey = newSecretKey;
+	    free( invalidSecretKey );
+	}
+	else
+	{
+	    *secretKey = invalidSecretKey;
+	    *configError = true;
+	    fprintf( stderr, "Secret key not found.\n" );
+	}
     }
 }
 
@@ -218,8 +243,8 @@ void CopyDefaultString(
     {
 	currentKey = *key;
 	free( currentKey );
+	*key = NULL;
     }
-    *key = NULL;
 
     /* Copy the new string to the key. */
     newKey = malloc( strlen( value ) + sizeof( char ) );
@@ -230,13 +255,16 @@ void CopyDefaultString(
 
 
 
-static void
+/*@-exportlocal@*//*for testing purposes*/
+void
 InitializeConfiguration(
     struct configuration *configuration
 			)
+/*@+exportlocal@*/
 {
     assert( configuration != NULL );
 
+    configuration->region = US_STANDARD;
     /* All pointers in the configuration are expected to be NULL before
        allocating new contents. */
     /*@-null@*/
@@ -246,6 +274,8 @@ InitializeConfiguration(
     CopyDefaultString( &configuration->secretKey, DEFAULT_SECRET_KEY );
     CopyDefaultString( &configuration->logfile, DEFAULT_LOG_FILE );
     /*@+null@*/
+    configuration->verbose.value = DEFAULT_VERBOSE;
+    configuration->verbose.isset = false;
 }
 
 

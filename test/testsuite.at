@@ -15,16 +15,13 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-bin_PROGRAMS = aws-s3fs
-aws_s3fs_SOURCES = aws-s3fs.c decodecmdline.c configfile.c common.c fix-i386-cc.c config.c aws-s3fs.h
 
+m4_define([AT_PACKAGE_STRING],    [aws-s3fs S3 FUSE Filesystem])
+m4_define([AT_PACKAGE_BUGREPORT], [wolf@blazingangles.com])
 
-#splint.h: splint.generate-h
-#	sed < $<  >splint.h 's/^BEGIN-.\+-END$$/#define SPLINT_INSTALLED/'
-#
-#CLEANFILES = splint.h
-#
-#decodecmdline.o: splint.h
-#
-#splint.h: splint.generate-h
-#	sed < $<  >splint.h 's/^BEGIN-.\+-END$$/#define SPLINT_INSTALLED/'
+AT_INIT([Executable Output Tests])
+
+m4_include([commandline.at])
+m4_include([config.at])
+
+#AT_TESTED([aws-s3fs])

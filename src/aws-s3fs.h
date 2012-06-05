@@ -34,10 +34,10 @@
 
 /** Default configuration values. */
 #define DEFAULT_REGION     "US Standard"
-#define DEFAULT_BUCKETNAME ""
+#define DEFAULT_BUCKETNAME "bucket"
 #define DEFAULT_PATH       "/"
-#define DEFAULT_KEY_ID     ""
-#define DEFAULT_SECRET_KEY ""
+#define DEFAULT_KEY_ID     "accesskeyid"
+#define DEFAULT_SECRET_KEY "secretkey"
 #define DEFAULT_LOG_FILE   "/var/log/aws-s3fs.log"
 #define DEFAULT_VERBOSE    false
 

@@ -22,6 +22,13 @@ AC_CONFIG_AUX_DIR([config])
 AC_CONFIG_MACRO_DIR([m4])
 AM_INIT_AUTOMAKE
 
+# Prepare autotest suite.
+#AT_PACKAGE_STRING
+#AT_PACKAGE_BUGREPORT
+AC_CONFIG_TESTDIR([test])
+AC_CONFIG_FILES([test/atlocal])
+#AC_CONFIG_FILES([test/m4], [chmod +x test/m4])
+
 # Check for programs.
 AC_PROG_CC
 AC_PROG_CC_STDC
@@ -41,7 +48,7 @@ if test -z "$DOXYGEN"; then
   echo "-----------------------------------------"
 fi
 AM_CONDITIONAL([HAVE_DOXYGEN],[test -n "$DOXYGEN"])
-AM_CONDITIONAL([HAVE_SPLINT],[test -n "$SPLINT"])
+#AM_CONDITIONAL([HAVE_SPLINT],[test -n "$SPLINT"])
 
 AC_C_CONST
 #AC_C_INLINE
@@ -75,23 +82,23 @@ AC_CHECK_FUNCS([getopt_long],,
 AC_CHECK_FUNCS([strcasecmp fopen fprintf],,
     AC_MSG_ERROR([*** File or string handling functions not found. **]))
 
-CFLAGS="$CFLAGS -Wall -Werror"
-
 # Large file support.
 AC_SYS_LARGEFILE
 
+CFLAGS="$CFLAGS -Wall -Werror $libconfigxx_CFLAGS $libfuse_CFLAGS"
+LIBS="$libfuse_LIBS $libconfigxx_LIBS $LIBS"
+
 # Output files.
 AC_CONFIG_HEADERS([config.h])
-AC_CONFIG_FILES([Makefile src/Makefile test/Makefile data/Makefile doc/man/Makefile])
-#AC_OUTPUT([src/splint.generate-h])
-AC_OUTPUT()
+AC_CONFIG_FILES([Makefile src/Makefile data/Makefile doc/man/Makefile test/Makefile])
+AC_OUTPUT
 
 echo "
   ($PACKAGE_NAME) version $PACKAGE_VERSION
   Prefix.........: $prefix
-  C Compiler.....: $CC $CFLAGS $libconfigxx_CFLAGS $libfuse_CFLAGS
+  C Compiler.....: $CC $CFLAGS
   C++ Compiler...: $CXX $CXXFLAGS $CPPFLAGS
-  Linker.........: $LD $LDFLAGS $LIBS $libconfigxx_LIBS $libfuse_LIBS
+  Linker.........: $LD $LDFLAGS $LIBS
   Doxygen........: ${DOXYGEN:-NONE}
-  Splint.........: ${SPLINT:-NO}
 "
+#  Splint.........: ${SPLINT:-NO}

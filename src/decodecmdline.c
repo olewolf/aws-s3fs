@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <getopt.h>
+#include <ctype.h>
 #include "aws-s3fs.h"
 
 
@@ -47,21 +48,24 @@ PrintSoftwareVersion( const char *commandName )
  * @return Nothing.
  */
 static void
-PrintSoftwareHelp( const char *commandName )
+PrintSoftwareHelp( const char *commandName, bool showOptions )
 {
     printf( "Usage:\n    %s [options] [bucket:[path]] dir\n\n", commandName );
-    printf( "Options:\n" );
-    printf( "      -h, --help            Print help and exit\n" );
-    printf( "      -V, --version         Print version and exit\n" );
-    printf( "      -r, --region=region   Set the region for the S3 bucket\n" );
-    printf( "      -b, --bucket=bucket   Set the name of the S3 bucket\n" );
-    printf( "      -p, --path=path       Set the path relative to the root of the S3 bucket\n" );
-    printf( "      -k, --key=xxxx:yyyy   Set the access key and secret key\n" );
-    printf( "      -c, --config=file     Specify an alternative configuration file\n" );
-    printf( "      -l, --log=file|syslog Specify a log file, or syslog\n" );
-    printf( "      -v, --verbose         Generate verbose output\n" );
-    printf( "      -L, --license         Print licensing information and exit\n" );
-    printf( "\nFor further help, see the man page for aws-s3fs(1).\n" );
+    if( showOptions )
+    {
+        printf( "Options:\n" );
+	printf( "      -h, --help            Print help and exit\n" );
+	printf( "      -V, --version         Print version and exit\n" );
+	printf( "      -r, --region=region   Set the region for the S3 bucket\n" );
+	printf( "      -b, --bucket=bucket   Set the name of the S3 bucket\n" );
+	printf( "      -p, --path=path       Set the path relative to the root of the S3 bucket\n" );
+	printf( "      -k, --key=xxxx:yyyy   Set the access key and secret key\n" );
+	printf( "      -c, --config=file     Specify an alternative configuration file\n" );
+	printf( "      -l, --log=file|syslog Specify a log file, or syslog\n" );
+	printf( "      -v, --verbose         Generate verbose output\n" );
+	printf( "      -L, --license         Print licensing information and exit\n" );
+	printf( "\nFor further help, see the man page for aws-s3fs(1).\n" );
+    }
 }
 
 
@@ -84,121 +88,95 @@ PrintSoftwareLicense( const char *commandName )
 
 
 /**
- * Split an S3 path 
+ * Split an S3 bucket:path.
  */
-static void
+/*@-exportlocal@*//* for testing purposes*/ void
 SplitS3MountPath(
     const char     *s3Path,
     /*@out@*/ char **bucket,
     /*@out@*/ char **path
-		      )
+		 )
+/*@+exportlocal@*/
 {
-    bool quoted  = false;
-    bool escaped = false;
-    int  s3PathIdx = 0;
+    char *bucketName;
+    char *pathName;
+    int  idx;
+    int  stringBeginIdx;
     char character;
-    int    bucketStart;
-    int    bucketEnd;
-    size_t bucketStrLength;
-    int    pathStart;
-    int    pathEnd;
-    size_t pathStrLength;
+    bool escaped;
 
-    /* Determine if the path is quoted. */
-    if( s3Path[ s3PathIdx ] == '"' )
+    if( s3Path == NULL )
     {
-        quoted = true;
-	s3PathIdx++;
+        *bucket = NULL;
+	*path   = NULL;
+	return;
     }
-    bucketStart = s3PathIdx;
-    /* Determine the beginning and the end of the bucket name part of the
-       S3 path. */
-    do {
-        character = s3Path[ s3PathIdx ];
 
-	/* The ':' marks the delimiter between the bucket and the path
-	   unless it has been escaped by a backslash. */
-	if( ( character == ':' ) && ( ! escaped ) )
+    /* Skip leading whitespace. */
+    idx = 0;
+    while( isspace( s3Path[ idx ] ) )
+    {
+        idx++;
+    }
+    stringBeginIdx = idx;
+
+    /* Search until either a ':' or whitespace is encountered or the
+     * end of the string is found. */
+    escaped = false;
+    do {
+        character = s3Path[ idx++ ];
+	/* If the character is ':' or whitespace and it isn't escaped, end. */
+	if( ( ( character == ':' ) || isspace( character ) )
+	    && ( ! escaped ) )
 	{
-	    bucketEnd = s3PathIdx - 1 ;
 	    break;
 	}
-	/* The end of the string also marks a delimiter between the bucket
-	   and the path. */
-	else if( character == (char) 0 )
+	/* If the character is 0, end. */
+	if( character == (char) 0 )
 	{
-	    bucketEnd = s3PathIdx - 1 ;
 	    break;
 	}
-	/* If the character is a backslash, it begins an escape character
-	   unless it is already escaped. */
-	else if( ( character == '\\' ) && ( ! escaped ) )
+	/* If the character is a '\', then an escape sequence begins
+	   unless the current character is escaped, in which case the
+	   escape sequence ends. */
+	if( character == '\\' )
 	{
-	    escaped = true;
+	    escaped = ! escaped;
 	}
-	/* Anything else ends an escape sequence. */
 	else
 	{
 	    escaped = false;
 	}
-	s3PathIdx++;
-    } while( character != (char) 0 );
+    } while( true );
 
-    /* Skip the ':'. */
-    if( s3Path[ s3PathIdx ] == ':' )
+    /* Copy the string to the bucket name. */
+    bucketName = malloc( ( idx - stringBeginIdx ) * sizeof( char ) );
+    assert( bucketName != NULL );
+    strncpy( bucketName, &s3Path[ stringBeginIdx ],
+	     (size_t)( idx - stringBeginIdx - 1 ) );
+    bucketName[ idx - stringBeginIdx - 1 ] = (char) 0;
+    *bucket = bucketName;
+
+    if( character == (char) 0 )
     {
-        s3PathIdx++;
+        pathName = malloc( ( strlen( "" ) + 1 ) * sizeof( char ) );
+	assert( pathName != NULL );
+	strcpy( pathName, "" );
     }
-
-    /* Determine the beginning and the end of the path part of the S3 path. */
-    pathStart = s3PathIdx;
-    do {
-        character = s3Path[ s3PathIdx ];
-
-        /* If the path is quoted, a non-escaped quote sign marks the end of
-	   the path. */
-	if( ( quoted ) && ( ( character == '"' ) && ( ! escaped ) ) )
+    else
+    {
+        /* Skip past the ':' and any whitespace. */
+        while( ( ( character = s3Path[ idx ] ) == ':' ) || isspace( character ) )
 	{
-	    pathEnd = s3PathIdx - 1 ;
-	    break;
+	    idx++;
 	}
-	/* The end of the string also marks the end. */
-	else if( character == (char) 0 )
-	{
-	    pathEnd = s3PathIdx - 1 ;
-	    break;
-	}
-	/* If the character is a backslash, it begins an escape character
-	   unless it is already escaped. */
-	else if( ( character == '\\' ) && ( ! escaped ) )
-	{
-	    escaped = true;
-	}
-	/* Anything else ends an escape sequence. */
-	else
-	{
-	    escaped = false;
-	}
-	s3PathIdx++;
-    } while( character != (char) 0 );
 
-    /* We now have the beginning and the end of the bucket name and the path,
-       so copy them to the output. */
-    /*@-usedef@ bucketEnd is guaranteed to be valid. */
-    bucketStrLength = (size_t)( bucketEnd - bucketStart );
-    /*@+usedef@*/
-    *bucket = malloc( sizeof( char ) * ( bucketStrLength + 1 ) );
-    assert( *bucket != NULL );
-    strncpy( *bucket, &s3Path[ bucketStart ], bucketStrLength );
-    *bucket[ bucketStrLength ] = (char) 0;
-
-    /*@-usedef@ pathEnd is guaranteed to be valid. */
-    pathStrLength = (size_t)( pathEnd - pathStart );
-    /*@+usedef@*/
-    *path = malloc( sizeof( char ) * ( pathStrLength + 1 ) );
-    assert( *path != NULL );
-    strncpy( *path, &s3Path[ pathStart ], pathStrLength );
-    *path[ pathStrLength ] = (char) 0;
+	/* Copy the remainder of the string to the path name. */
+	pathName = malloc( ( strlen( &s3Path[ idx ] ) + 1 ) * sizeof( char ) );
+	assert( pathName != NULL );
+	strcpy( pathName, &s3Path[ idx ] );
+    }
+    *path = pathName;
 }
 
 
@@ -235,13 +213,15 @@ DecodeCommandLine(
     int  remainingArguments;
     char *localMountPoint;
     int  mountArgc;
+    char *bucket    = NULL;
+    char *path      = NULL;
 
     assert( cmdlineConfiguration != NULL );
 
     /* If called without arguments, print the help screen and exit. */
     if( argc == 1 )
     {
-        PrintSoftwareHelp( argv[ 0 ] );
+        PrintSoftwareHelp( argv[ 0 ], true );
 	exit( EXIT_SUCCESS );
     }
 
@@ -257,7 +237,7 @@ DecodeCommandLine(
 	    break;
 	/* Print help information. */
 	case 'h':
-	    PrintSoftwareHelp( argv[ 0 ] );
+	    PrintSoftwareHelp( argv[ 0 ], true );
 	    exit( EXIT_SUCCESS );
 	/* Print version information. */
 	case 'V':
@@ -273,9 +253,22 @@ DecodeCommandLine(
    	    break;
 	/* Set bucket name. */
 	case 'b':
+	    SplitS3MountPath( optarg, &bucket, &path );
 	    /*@-null@*/
-	    ConfigSetPath( &cmdlineConfiguration->configuration.bucketName, optarg );
+	    ConfigSetPath( &cmdlineConfiguration->configuration.bucketName, bucket );
 	    /*@+null@*/
+	    free( bucket );
+	    bucket = NULL;
+	    /* If -b bucket:path includes the path, then any -p overrides that
+	       path. */
+	    if( cmdlineConfiguration->configuration.path == NULL )
+	    {
+	        /*@-null@*/
+	        ConfigSetPath( &cmdlineConfiguration->configuration.path, path );
+		/*@+null@*/
+	    }
+	    free( path );
+	    path = NULL;
    	    break;
 	/* Set path. */
 	case 'p':
@@ -285,9 +278,8 @@ DecodeCommandLine(
    	    break;
 	/* Set log file. */
 	case 'l':
-	  /*	    ConfigSetPath( &cmdlineConfiguration->configuration.logfile, optarg );*/
 	    /*@-null@*/
-	    ConfigSetPath( &cmdlineConfiguration->configuration.logfile, "hello" );
+	   ConfigSetPath( &cmdlineConfiguration->configuration.logfile, optarg );
 	    /*@+null@*/
 	    break;
 	/* Set access key and secret key. */
@@ -321,8 +313,8 @@ DecodeCommandLine(
     /* Show the help screen if an error is encountered. */
     if( bool_equal( optionError, true ) ) /* i.e., if( optionError == true ) */
     {
-        PrintSoftwareHelp( argv[ 0 ] );
-	exit(EXIT_SUCCESS );
+        PrintSoftwareHelp( argv[ 0 ], false );
+	exit(EXIT_FAILURE );
     }
 
     /* Parse command line arguments (not options). */
@@ -338,17 +330,33 @@ DecodeCommandLine(
     }
     /* Two arguments: bucket[:path] and mount point. The bucket overrides any
        configuration or command-line options, as does the path if specified. */
-    else if ( remainingArguments == 2 )
+    else if( remainingArguments == 2 )
     {
-        SplitS3MountPath( argv[ optind ],
-			  &cmdlineConfiguration->configuration.bucketName,
-			  &cmdlineConfiguration->configuration.path );
+        SplitS3MountPath( argv[ optind ], &bucket, &path );
+	if( ( bucket != NULL ) && ( strcmp( "", bucket ) != 0 ) )
+        {
+	    /*@-null@*/
+	    ConfigSetPath( &cmdlineConfiguration->configuration.bucketName, bucket );
+	    /*@+null@*/
+	    free( bucket );
+	}
+
+	if( ( path != NULL ) && ( strcmp( "", path ) != 0 ) )
+	{
+	    /*@-null@*/
+	    ConfigSetPath( &cmdlineConfiguration->configuration.path, path );
+	    /*@+null@*/
+	}
+	free( path );
+
         mountArgc = optind + 1;
     }
     else
     {
-        PrintSoftwareHelp( argv[ 0 ] );
+        PrintSoftwareHelp( argv[ 0 ], false );
+	exit(EXIT_FAILURE );
     }
+
     /* Copy the mount path. */
     localMountPoint = malloc( strlen( argv[ mountArgc ] ) + sizeof( char ) );
     assert( localMountPoint != NULL );

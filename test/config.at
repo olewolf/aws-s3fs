@@ -1,0 +1,82 @@
+# Copyright (C) 2012 Ole Wolf <wolf@blazingangles.com>
+#
+# This file is part of aws-s3fs.
+# 
+# aws-s3fs is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+AT_BANNER([Config Tests])
+
+# Test the "InitializeConfiguration" function.
+AT_SETUP([InitializeConfiguration])
+AT_CHECK([test-config InitializeConfiguration], [], [stdout])
+AT_CHECK([grep '^Region: 0 vs 0$' stdout], [], [ignore])
+AT_CHECK([grep '^bucketName: bucket vs bucket$' stdout], [], [ignore])
+AT_CHECK([grep '^path: \/ vs \/$' stdout], [], [ignore])
+AT_CHECK([grep '^keyId: accesskeyid vs accesskeyid$' stdout], [], [ignore])
+AT_CHECK([grep '^secretKey: secretkey vs secretkey$' stdout], [], [ignore])
+AT_CHECK([grep '^logfile: /var/log/aws-s3fs.log vs /var/log/aws-s3fs.log$' stdout], [], [ignore])
+AT_CHECK([grep '^verbose.value: 0 vs 0$' stdout], [], [ignore])
+AT_CHECK([grep '^verbose.isset: 0 vs 0$' stdout], [], [ignore])
+AT_CLEANUP
+
+AT_SETUP([CopyDefaultString])
+AT_CHECK([test-config CopyDefaultString], [], [stdout])
+AT_CHECK([grep '^1:  string 1 $' stdout], [], [ignore])
+AT_CHECK([grep '^2: string 2$' stdout], [], [ignore])
+AT_CLEANUP
+
+AT_SETUP([ConfigSetRegion])
+AT_CHECK([test-config 2>&1 ConfigSetRegion], [], [stdout])
+AT_CHECK([grep '^0: 0 0$' stdout], [], [ignore])
+AT_CHECK([grep '^1: 2 0$' stdout], [], [ignore])
+AT_CHECK([grep '^Invalid region name: Unknown' stdout], [], [ignore])
+AT_CHECK([grep '^2: 2 1$' stdout], [], [ignore])
+AT_CHECK([grep '^3: 1 0$' stdout], [], [ignore])
+AT_CHECK([grep '^4: 3 0$' stdout], [], [ignore])
+AT_CHECK([grep '^5: 5 0$' stdout], [], [ignore])
+AT_CHECK([grep '^6: 6 0$' stdout], [], [ignore])
+AT_CHECK([grep '^7: 4 0$' stdout], [], [ignore])
+AT_CLEANUP
+
+AT_SETUP([ConfigSetPath])
+AT_CHECK([test-config ConfigSetPath], [], [stdout])
+AT_CHECK([grep '^1: /usr/local$' stdout], [], [ignore])
+AT_CHECK([grep '^2: /var/log/syslog$' stdout], [], [ignore])
+AT_CHECK([grep '^3: /var/log/syslog$' stdout], [], [ignore])
+AT_CLEANUP
+
+AT_SETUP([ExtractKey])
+AT_CHECK([test-config ExtractKey], [], [stdout])
+AT_CHECK([grep '^1: accesskeyid1 next=16' stdout], [], [ignore])
+AT_CHECK([grep '^2: secretkey1 next=0' stdout], [], [ignore])
+AT_CHECK([grep '^3: accesskeyid2 next=13' stdout], [], [ignore])
+AT_CHECK([grep '^4: secretkey2 next=0' stdout], [], [ignore])
+AT_CHECK([grep '^5: (null) next=0' stdout], [], [ignore])
+AT_CHECK([grep '^6: accesskey4 next=0' stdout], [], [ignore])
+AT_CLEANUP
+
+AT_SETUP([ConfigSetKey])
+AT_CHECK([test-config 2>&1 ConfigSetKey], [], [stdout])
+AT_CHECK([grep '^1: key1 secret1 0$' stdout], [], [ignore])
+AT_CHECK([grep '^2: key2 secret2 0$' stdout], [], [ignore])
+AT_CHECK([grep '^Secret key not found.$' stdout], [], [ignore])
+AT_CHECK([grep '^3: key3 \* 1$' stdout], [], [ignore])
+AT_CHECK([grep '^Access key ID not found.$' stdout], [], [ignore])
+AT_CHECK([grep '^4: (null) \* 1$' stdout], [], [ignore])
+AT_CLEANUP
+
+AT_SETUP([Configure])
+AT_CHECK([ls && exit 77])
+AT_CLEANUP
