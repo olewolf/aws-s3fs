@@ -44,14 +44,14 @@ check-local: atconfig $(TESTSUITE)
 $(TESTSUITE): $(TESTSCRIPTS) atlocal.in
 	autom4te -l autotest $(TESTSUITE).at -o $(TESTSUITE)
 
-CLEANFILES = $(TESTSUITE) $(TESTSUITE).log \
-	$(noinst_PROGRAMS)
+CLEANFILES = $(noinst_PROGRAMS)
+
 clean-local:
 	./$(TESTSUITE) --clean
-	rm *.o
 
 distclean-local:
-	rm -f atconfig
+	rm -f atconfig atlocal
+	rm $(TESTSUITE)
 
 EXTRA_DIST = $(TESTSCRIPTS) atlocal.in
 
