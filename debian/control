@@ -2,10 +2,10 @@ Source: aws-s3fs
 Section: utils
 Priority: optional
 Maintainer: Ole Wolf <wolf@blazingangles.com>
-Build-Depends: debhelper (>= 8.0.0), autotools, libfuse-dev (>= 2.8.5),
- splint (>= 3.1.0)
+Build-Depends: debhelper (>= 8.0.0), libfuse-dev (>= 2.8.5),
+ autoconf (>= 2.68), dh-autoreconf, autotools-dev
 Standards-Version: 3.9.3
-Homepage: http://debian.blazingangles.net/velleman.html
+Homepage: http://debian.blazingangles.net/aws-s3fs.html
 
 Package: aws-s3fs
 Architecture: any

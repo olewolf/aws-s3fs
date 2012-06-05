@@ -6,7 +6,9 @@ etc. To create a Debian package, install the debhelper tools and execute:
 
   debuild
 
-in this folder.
+in this folder. The script: "script/build-source-tarball.sh" creates the
+aws-s3fs_(version).orig.tar.xz tarball with the current source which is
+required by the debhelper tools.
 
 The autoconf files themselves may be able to install some of the files, too,
 using the standard ./configure; make; make install procedure. However, this is

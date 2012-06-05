@@ -7,13 +7,15 @@
 %:
 	dh $@ --with autotools_dev
 
+override_dh_auto_configure:
+	autoreconf --install --force
+	dh_auto_configure --
+
 override_dh_auto_build:
 	dh_auto_build --
-	mv src/aws_s3fs src/aws-s3fs
 
 override_dh_auto_clean:
 	dh_auto_clean --
-	rm src/aws-s3fs
 
 override_dh_builddeb:
-	dh_builddeb -- -Zxz
+	dh_builddeb -- -Zlzma
