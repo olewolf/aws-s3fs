@@ -16,4 +16,17 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 ACLOCAL_AMFLAGS = -I m4
-SUBDIRS = src test data doc/man
+SUBDIRS = src data doc test
+
+nobase_dist_doc_DATA = README NEWS AUTHORS ChangeLog
+
+install-data-hook:
+	if [ -f $(docdir)/ChangeLog ]; then \
+	    mv $(docdir)/ChangeLog $(docdir)/changelog; \
+	    gzip -f -9 $(docdir)/changelog; \
+	fi
+
+uninstall-hook:
+	rm -rf $(docdir)/changelog.gz; \
+	rmdir --ignore-fail-on-non-empty $(docdir)
+

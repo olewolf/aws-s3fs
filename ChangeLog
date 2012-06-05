@@ -1,1 +1,5 @@
-debian/changelog
+aws-s3fs (0.1-1) quantal; urgency=low
+
+  * Initial release.
+
+ -- Ole Wolf <wolf@blazingangles.com>  Fri, 05 Jun 2012 15:20:23 +0100

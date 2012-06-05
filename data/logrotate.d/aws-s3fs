@@ -1,0 +1,8 @@
+/var/log/aws-s3sf.log {
+       weekly
+       rotate 5
+       copytruncate
+#       delaycompress
+       compress
+       missingok
+}

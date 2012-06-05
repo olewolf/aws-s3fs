@@ -1,8 +1,11 @@
 #!/usr/bin/make -f
-# -*- makefile -*-
 
 # Uncomment this to turn on verbose mode.
 #export DH_VERBOSE=1
+
+# The GNU ChangeLog file is hard linked to debian/changelog, and should only
+# be included in the vanilla ./configure ; make ; make install procedure.
+export DH_ALWAYS_EXCLUDE=ChangeLog
 
 %:
 	dh $@ --with autotools_dev

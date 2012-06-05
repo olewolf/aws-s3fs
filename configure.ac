@@ -90,7 +90,7 @@ LIBS="$libfuse_LIBS $libconfigxx_LIBS $LIBS"
 
 # Output files.
 AC_CONFIG_HEADERS([config.h])
-AC_CONFIG_FILES([Makefile src/Makefile data/Makefile doc/man/Makefile test/Makefile])
+AC_CONFIG_FILES([Makefile src/Makefile data/Makefile doc/Makefile doc/man/Makefile test/Makefile])
 AC_OUTPUT
 
 echo "
