@@ -12,6 +12,7 @@ if [ -f Makefile ]; then
 elif [ -f src/aws-s3fs ]; then
     make clean
 fi
+find -name \*~ -delete
 
 # Create a tarball name based on the package directory.
 DIR=`basename $PWD`

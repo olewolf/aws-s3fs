@@ -7,6 +7,17 @@
 # be included in the vanilla ./configure ; make ; make install procedure.
 export DH_ALWAYS_EXCLUDE=ChangeLog
 
+# Build rule for man1 pages.
+%.1 : %.1.src
+	REPLACE="$$""{sysconfdir}"; \
+	cat $< | sed "s^$$REPLACE^${sysconfdir}^" > $@
+
+# Build rule for man5 pages.
+%.5 : %.5.src
+	REPLACE="$$""{sysconfdir}"; \
+	cat $< | sed "s^$$REPLACE^${sysconfdir}^" > $@
+
+
 %:
 	dh $@ --with autotools_dev
 
