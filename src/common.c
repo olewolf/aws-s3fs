@@ -27,6 +27,12 @@
 
 
 
+/**
+ * Open a file for reading, and keep the \a FILE* pointer. If the file cannot
+ * be opened for reading, the \a FILE* pointer is NULL.
+ * @param filename [in] Name of the file that is opened for reading.
+ * @return FILE* pointer, or NULL if the file cannot be read.
+ */
 /*@null@*/ /*@dependent@*/ const FILE*
 TestFileReadable(
     const char *filename
