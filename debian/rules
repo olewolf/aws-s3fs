@@ -25,11 +25,11 @@ override_dh_auto_configure:
 	dh_auto_configure --
 
 override_dh_auto_build:
-	sed < src/sysconffile.generate-h "s^%sysconfdir%^${sysconfdir}^" > src/sysconffile.h
+	cd src; sh ../script/generate-sysconffile.sh
 	dh_auto_build --
 
 override_dh_auto_clean:
-	rm -f src/sysconffile.h
+	rm -f src/sysconffile.h src/sysconffile.generate-h
 	dh_auto_clean --
 
 override_dh_builddeb:
