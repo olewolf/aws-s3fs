@@ -30,7 +30,7 @@
 
 
 
-/*@null@*/ static const char *
+/*@null@*/ /*static removed for testing purposes*/ const char *
 LookupConfigString(
     const struct config_t *config,
     const char            *key
@@ -46,7 +46,7 @@ LookupConfigString(
 
 
 
-static void
+/*static removed for testing purposes*/ void
 ConfigSetBoolean(
     struct configurationBoolean *configBoolean,
     const struct config_t       *config,
