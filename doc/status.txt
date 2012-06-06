@@ -1,0 +1,6 @@
+2012-06-06:
+	decodecmdline.c: all functions tested.
+	config.c: all functions documented. (Still missing test of Configure.)
+	configfile.c: all functions tested.
+	Makefiles updated for Doxygen.
+	common.c: all functions documented and tested.
