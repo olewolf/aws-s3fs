@@ -91,7 +91,7 @@ LIBS="$libfuse_LIBS $libconfigxx_LIBS $LIBS"
 # Output files.
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_FILES([Makefile src/Makefile data/Makefile doc/Makefile doc/man/Makefile test/Makefile])
-AC_OUTPUT
+AC_OUTPUT([src/sysconffile.generate-h])
 
 echo "
   ($PACKAGE_NAME) version $PACKAGE_VERSION

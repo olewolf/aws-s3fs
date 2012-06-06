@@ -28,9 +28,8 @@
 
 #define bool_equal( a, b ) ( (a) ? (b) : !(b) )
 
-
 /** Path of the configuration file. */
-#define DEFAULT_CONFIG_FILENAME "/etc/aws-s3fs.conf"
+#include "sysconffile.h"
 
 /** Default configuration values. */
 #define DEFAULT_REGION     "US Standard"

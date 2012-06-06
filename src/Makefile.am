@@ -16,15 +16,11 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 bin_PROGRAMS = aws-s3fs
-aws_s3fs_SOURCES = aws-s3fs.c decodecmdline.c configfile.c common.c fix-i386-cc.c config.c aws-s3fs.h
+aws_s3fs_SOURCES = aws-s3fs.h aws-s3fs.c decodecmdline.c configfile.c common.c fix-i386-cc.c config.c sysconffile.h
 
+sysconffile.h: sysconffile.generate-h
+	sed < $<  "s^%sysconfdir%^${sysconfdir}^" > $@
 
-#splint.h: splint.generate-h
-#	sed < $<  >splint.h 's/^BEGIN-.\+-END$$/#define SPLINT_INSTALLED/'
-#
-#CLEANFILES = splint.h
-#
-#decodecmdline.o: splint.h
-#
-#splint.h: splint.generate-h
-#	sed < $<  >splint.h 's/^BEGIN-.\+-END$$/#define SPLINT_INSTALLED/'
+nodist_include_HEADERS = sysconffile.h
+
+CLEANFILES = sysconffile.h

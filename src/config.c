@@ -375,7 +375,7 @@ Configure(
     DecodeCommandLine( &cmdlineConfiguration, &mountPoint, argc, argv );
 
     /* Read the configuration files in the following priority:
-       (1) command-line specified override
+       (1) command-line specified config file
        (2) /etc/aws-s3fs.conf
        (3) ~/.aws-s3fs.conf
     */
