@@ -1,0 +1,52 @@
+.TH AWS-S3FS.CONF 5 "June 2nd, 2012" "Ole Wolf"
+
+.SH NAME
+${prefix}/etc/aws-s3fs.conf \- Configuration file for
+.B aws-s3fs(1)\fP.
+
+.SH DESCRIPTION
+The file
+.I ${sysconfdir}/aws-s3fs.conf
+contains defaults for the program 
+.B aws-s3fs\fP.
+
+Each line holds a single value pair in the form:
+
+.IR option " = " value ;
+
+Each value pair must end with a semicolon (;). Whitespace is allowed around the equals sign. Comment lines must have a hash sign (#) in the first column.
+
+The valid configuration options are:
+
+.TP
+\fBregion\fP
+The region where your S3 bucket is located. Valid values are: US Standard, Oregon, Northern California, Ireland, Singapore, Tokyo, and Sao Paolo. Default is US Standard.
+
+.TP
+\fBbucket\fP
+The name of your S3 bucket.
+
+.TP
+\fBpath\fP
+The path relative to the root of the S3 bucket where the S3 storage is mounted. Default is "/", that is, the root of the S3 bucket.
+
+.TP
+\fBkey\fP
+Your Amazon Access Key ID and your Secret Access Key separated with a ':'
+(colon), e.g.:
+.br
+"1B5JYHPQCXW13GWKHAG2 : 2GAHKWG3+1wxcqyhpj5b1Ggqc0TIxj21DKkidjfz".
+
+.TP
+\fBlogfile\fP
+aws-s3fs logs output to either "syslog", or the filename specified here. Default is "/var/log/aws-s3fs.log".
+
+.TP
+\fBverbose\fP
+Write verbose output about the S3 connection to stdout. Default is false.
+
+.SH FILES
+.I ${sysconfdir}/aws-s3sf.conf
+
+.SH SEE ALSO
+aws-s3sf(1), aws(1)
