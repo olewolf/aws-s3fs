@@ -1,6 +1,8 @@
 man1_MANS = aws-s3fs.1
 man5_MANS = aws-s3fs.conf.5
 
+CLEANFILES = $(man1_MANS) $(man5_MANS)
+
 %.1 : %.1.src
 	REPLACE="$$""{sysconfdir}"; \
 	cat $< | sed "s^$$REPLACE^${sysconfdir}^" > $@
@@ -8,7 +10,6 @@ man5_MANS = aws-s3fs.conf.5
 %.5 : %.5.src
 	REPLACE="$$""{sysconfdir}"; \
 	cat $< | sed "s^$$REPLACE^${sysconfdir}^" > $@
-
 
 install-data-hook:
 	manpages=( ${man1_MANS} ); \
