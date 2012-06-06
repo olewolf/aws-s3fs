@@ -18,9 +18,9 @@
 
 AM_CFLAGS = -I../src
 
-TESTSCRIPTS = testsuite.at commandline.at config.at
+TESTSCRIPTS = testsuite.at commandline.at config.at common.at
 
-noinst_PROGRAMS = test-decodecmdline test-config test-configfile
+noinst_PROGRAMS = test-decodecmdline test-config test-configfile test-common
 
 SHAREDTESTSOURCE = dispatch.c src/aws-s3fs.h testfunctions.h
 
@@ -33,6 +33,7 @@ test_config_SOURCES = $(SHAREDTESTSOURCE) test-config.c \
 test_configfile_SOURCES = $(SHAREDTESTSOURCE) test-configfile.c \
 	../src/configfile.c ../src/config.c ../src/decodecmdline.c \
 	../src/common.c
+test_common_SOURCES = $(SHAREDTESTSOURCE) test-common.c ../src/common.c
 
 
 

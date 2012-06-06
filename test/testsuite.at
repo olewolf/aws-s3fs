@@ -23,5 +23,6 @@ AT_INIT([Executable Output Tests])
 
 m4_include([commandline.at])
 m4_include([config.at])
+m4_include([common.at])
 
 #AT_TESTED([aws-s3fs])
