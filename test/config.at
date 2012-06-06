@@ -77,6 +77,14 @@ AT_CHECK([grep '^Access key ID not found.$' stdout], [], [ignore])
 AT_CHECK([grep '^4: (null) \* 1$' stdout], [], [ignore])
 AT_CLEANUP
 
+AT_SETUP([ConfigLookupString])
+AT_CHECK([test-configfile LookupConfigString], [], [stdout])
+AT_CHECK([grep '^1: US Nonstandard$' stdout], [], [ignore])
+AT_CHECK([grep '^2: (null)$' stdout], [], [ignore])
+AT_CHECK([grep '^3: Does not exist$' stdout], [], [ignore])
+AT_CHECK([grep '^4: Bad file format$' stdout], [], [ignore])
+AT_CLEANUP
+
 AT_SETUP([Configure])
 AT_CHECK([ls && exit 77])
 AT_CLEANUP

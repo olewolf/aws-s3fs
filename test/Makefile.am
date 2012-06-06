@@ -18,14 +18,21 @@
 
 AM_CFLAGS = -I../src
 
-noinst_PROGRAMS = test-decodecmdline test-config
-test_decodecmdline_SOURCES = dispatch.c test-decodecmdline.c \
-	../src/decodecmdline.c ../src/config.c ../src/configfile.c \
-	../src/common.c
-test_config_SOURCES = dispatch.c test-config.c \
-	../src/decodecmdline.c ../src/config.c ../src/configfile.c \
-	../src/common.c
+TESTSCRIPTS = testsuite.at commandline.at config.at
 
+noinst_PROGRAMS = test-decodecmdline test-config test-configfile
+
+SHAREDTESTSOURCE = dispatch.c src/aws-s3fs.h testfunctions.h
+
+test_decodecmdline_SOURCES = $(SHAREDTESTSOURCE) test-decodecmdline.c \
+	../src/decodecmdline.c ../src/config.c ../src/configfile.c \
+	../src/common.c
+test_config_SOURCES = $(SHAREDTESTSOURCE) test-config.c \
+	../src/decodecmdline.c ../src/config.c ../src/configfile.c \
+	../src/common.c
+test_configfile_SOURCES = $(SHAREDTESTSOURCE) test-configfile.c \
+	../src/configfile.c ../src/config.c ../src/decodecmdline.c \
+	../src/common.c
 
 
 
@@ -33,7 +40,6 @@ test_config_SOURCES = dispatch.c test-config.c \
 # http://www.lrde.epita.fr/~akim/ccmp/doc/gnuprog2/The-GNU-M4-Test-Suite.html#The%20GNU%20M4%20Test%20Suite
 
 TESTSUITE = testsuite
-TESTSCRIPTS = testsuite.at commandline.at config.at
 
 check-local: atconfig $(TESTSUITE)
 	$(SHELL) $(srcdir)/$(TESTSUITE) AUTOTEST_PATH=src:test
