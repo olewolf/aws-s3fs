@@ -23,6 +23,8 @@
 #ifndef __sysconffile_h
 #define __sysconffile_h
 
-#define DEFAULT_CONFIG_FILENAME "%sysconfdir%/aws-s3fs.conf"
+/* sysconfdir: @sysconfdir@ */
+/* prefix: @prefix@ */
+#define DEFAULT_CONFIG_FILENAME "${sysconfdir}/aws-s3fs.conf"
 
 #endif /* __sysconffile_h */
