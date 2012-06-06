@@ -26,6 +26,9 @@ provide patches that will enable other build systems.
 The code is lint clean, with intentional overrides included in the source code
 where appropriate. Most of these overrides are related to intentional NULL
 pointers. This is old school C the way I learned it in the late 1980'es. :)
+The code is documented with Doxygen comments. Type "make doxygen" to generate
+the Doxygen documentation, which is created in doc/doxygen. Doxygen uses
+GraphViz to produce call graphs, so you may want to install that, too.
 
 A special thanks goes to Timothy Kay <http://timkay.com/> for providing the
 aws script, which serves as the backbone for aws-s3fs.

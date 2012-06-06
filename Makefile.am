@@ -30,3 +30,5 @@ uninstall-hook:
 	rm -rf $(docdir)/changelog.gz; \
 	rmdir --ignore-fail-on-non-empty $(docdir)
 
+doxygen:
+	cd doc; make doxygen

@@ -29,8 +29,16 @@
 
 
 
-
-
+/**
+ * Write the bucket region value corresponding to the supplied region name
+ * string. If the region name is invalid, the region value is left as is;
+ * the \a configError flag is set; and an an error is printed to stdout.
+ * @param region [out] Pointer to the region value container.
+ * @param configValue [in] Region name.
+ * @param configError [out] Flag that indicates whether a configuration
+ *        error has occurred.
+ * @return Nothing.
+ */
 void
 ConfigSetRegion(
     enum bucketRegions *region,
@@ -72,6 +80,13 @@ ConfigSetRegion(
 
 
 
+/**
+ * Copy a path string (or any other) to a destination unless the path string
+ * is NULL. The destination string is automatically allocated in memory.
+ * @param path [out] Destination for the path name.
+ * @param configPath [in] String with path name.
+ * @return Nothing.
+ */
 void
 ConfigSetPath(
     char       **path,
@@ -87,6 +102,16 @@ ConfigSetPath(
 
 
 /*@-exportlocal@*//*for testing purposes*/
+/**
+ * Extract a key string from a string where keys are separated by ':'. The
+ * memory for the extracted key string is automatically allocated and written
+ * to the \a key parameter.
+ * @param key [out] Pointer to the extracted key string.
+ * @param index [in] Scan the key string from this position in the string.
+ * @param configValue [in] String with ':'-separated keys.
+ * @return The position of the next key in the string, or 0 if there are no
+ *         more keys in the string.
+ */
 int
 ExtractKey(
     /*@out@*/ char **key,
@@ -162,6 +187,15 @@ ExtractKey(
 
 
 
+/**
+ * Extract the Access Key ID and the Secret Key from a ':'-separated key
+ * string. Set the \a configError flag if the keys cannot be extracted.
+ * @param keyId [out] Pointer to the extracted Access Key ID string.
+ * @param secretKey [out] Pointer to the extracted Secret Key string.
+ * @param configValue [in] String with ':'-separated keys.
+ * @param configError [out] Configuration error flag.
+ * @return Nothing.
+ */
 void
 ConfigSetKey(
     char       **keyId,
@@ -228,6 +262,13 @@ ConfigSetKey(
 
 
 
+/**
+ * Copy a string, allocating memory for the destination. If the destination
+ * string already exists, its memory is first freed.
+ * @param key [out] Pointer to the destination string.
+ * @param value [in] Input string to be copied.
+ * @return Nothing.
+ */
 void CopyDefaultString(
     char       **key,
     const char *value
@@ -256,6 +297,14 @@ void CopyDefaultString(
 
 
 /*@-exportlocal@*//*for testing purposes*/
+/**
+ * Set all values in a \a configuration structure to default values. If
+ * memory has been allocated for any of its current contents, this memory
+ * must be freed prior to calling this function.
+ * @param configuration [out] Pointer to configuration structure that is to
+ *        be initialized.
+ * @return Nothing.
+ */
 void
 InitializeConfiguration(
     struct configuration *configuration
@@ -280,6 +329,15 @@ InitializeConfiguration(
 
 
 
+/**
+ * Fill a \a configuration structure according to aws-s3fs.conf file contents
+ * and command-line options and parameters, and the AWS_S3FS_KEY.
+ * @param configuration [out] Pointer to configuration structure that is to
+ *        be filled with values.
+ * @param argc [in] The \a argc from the \a main function.
+ * @param argv [in] The \a argv from the \a main function.
+ * @return Nothing.
+ */
 void
 Configure(
     struct configuration *configuration,

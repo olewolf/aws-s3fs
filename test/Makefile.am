@@ -53,11 +53,11 @@ $(TESTSUITE): $(TESTSCRIPTS) atlocal.in
 CLEANFILES = $(noinst_PROGRAMS)
 
 clean-local:
-	./$(TESTSUITE) --clean
+	if [ -f $(TESTSUITE) ]; then ./$(TESTSUITE) --clean; fi
 
 distclean-local:
 	rm -f atconfig atlocal
-	rm $(TESTSUITE)
+	rm -f $(TESTSUITE)
 
 EXTRA_DIST = $(TESTSCRIPTS) atlocal.in
 

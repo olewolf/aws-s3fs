@@ -196,13 +196,6 @@ void test_DecodeCommandLine( const char *parms )
     {
         argvbegins = argvbegins + argcounts[ i ];
     }
-    /*
-    printf( "argc: %d, argvbegins: %d\n", argc, argvbegins );
-    for( i = 0; i < argc; i++ )
-    {
-      printf( "argv[%d] = \"%s\"\n", i, cmdline[argvbegins+i] );
-    }
-    */
     DecodeCommandLine( &cmdlineConfig, &mountPoint, argc, &cmdline[ argvbegins ] );
     PrintConfig( testNumber, &cmdlineConfig, mountPoint, verboseOutput );
     ReleaseConfig( &cmdlineConfig );
