@@ -87,4 +87,5 @@ AT_CLEANUP
 
 AT_SETUP([Configure])
 AT_CHECK([ls && exit 77])
+
 AT_CLEANUP
