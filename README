@@ -4,7 +4,7 @@ The package is intended to be installed via the Debian packaging system,
 which takes care of installing configuration files, log rotation scripts,
 etc. To create a Debian package, install the debhelper tools and execute:
 
-  debuild
+    debuild
 
 in this folder. The script: "script/build-source-tarball.sh" creates the
 aws-s3fs_(version).orig.tar.xz tarball with the current source which is
@@ -15,7 +15,7 @@ The autoconf tool should install the files properly, too, using the standard
 as the debhelper scripts are more than adequate for the task. If you elect to
 attempt the vanilla autoconf installation procedure, you'll need to run:
 
-   autoreconf --install
+     autoreconf --install
 
 in the root directory of the package in order to create the necessary files
 for building and installing with autoconf.
@@ -25,7 +25,8 @@ provide patches that will enable other build systems.
 
 The code is lint clean, with intentional overrides included in the source code
 where appropriate. Most of these overrides are related to intentional NULL
-pointers. This is old school C the way I learned it in the late 1980'es. :)
+pointers.
+
 The code is documented with Doxygen comments. Type "make doxygen" to generate
 the Doxygen documentation, which is created in doc/doxygen. Doxygen uses
 GraphViz to produce call graphs, so you may want to install that, too.
