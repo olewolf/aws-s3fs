@@ -327,7 +327,8 @@ DecodeCommandLine(
 	    break;
 	/* Set verbosity. */
 	case 'v':
-	    verboseOutput = true;
+	    cmdlineConfiguration->configuration.verbose.isset = true;
+	    cmdlineConfiguration->configuration.verbose.value = true;
 	    break;
 	/* Set config file. */
 	case 'c':

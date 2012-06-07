@@ -46,6 +46,9 @@ void test_CopyDefaultString( const char * );
 void test_Configure( const char * );
 
 
+struct configuration configuration;
+
+
 const struct dispatchTable dispatchTable[ ] =
 {
     { "InitializeConfiguration", &test_InitializeConfiguration },
@@ -75,6 +78,8 @@ void test_InitializeConfiguration( const char *parms )
 	    true      /* isset */
 	}
     };
+    configuration.verbose.value = false;
+    configuration.verbose.isset = false;
 
     InitializeConfiguration( &config );
     printf( "Region: %d vs %d\n", config.region, US_STANDARD );
@@ -205,7 +210,7 @@ void test_Configure( const char *parms )
 	NULL,
 	true
     };
-    struct configuration *configuration = &cmdlineConfig.configuration;
+    struct configuration *config = &cmdlineConfig.configuration;
     const char *const cmdline[ ] =
     {
         /* argc = 12 */
@@ -247,7 +252,7 @@ void test_Configure( const char *parms )
     {
         argvbegins = argvbegins + argcounts[ i ];
     }
-    Configure( configuration, &mountPoint, argc, &cmdline[ argvbegins ] );
-    PrintConfig( testNumber, &cmdlineConfig, mountPoint, verboseOutput );
+    Configure( config, &mountPoint, argc, &cmdline[ argvbegins ] );
+    PrintConfig( testNumber, &cmdlineConfig, mountPoint, configuration.verbose.value );
     ReleaseConfig( &cmdlineConfig );
 }

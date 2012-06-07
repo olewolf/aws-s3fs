@@ -23,7 +23,110 @@
 
 #include <config.h>
 #include <stdio.h>
+#include <stdarg.h>
+#include <string.h>
 #include "aws-s3fs.h"
+
+
+
+
+struct configuration configuration =
+{
+    US_STANDARD,  /* region */
+    NULL,         /* bucketName */
+    NULL,         /* path */
+    NULL,         /* keyId */
+    NULL,         /* secretKey */
+    NULL,         /* logfile */
+    {
+        false,    /* value */
+	false     /* isset */
+    }             /* verbose */
+};
+
+
+
+/**
+ * Write verbose output if the verbose output option has been specified.
+ * @param format [in] Formatting string for the output.
+ * @param ... [in] Parameters for the format string.
+ * @return FILE* pointer, or NULL if the file cannot be read.
+ */
+void
+VerboseOutput(
+    const char *format,
+    ...
+	      )
+{
+    int ch;
+    int idx;
+    union {
+        int   d;
+        float f;
+        char  c;
+        char  *s;
+    } printable;
+    char compile[ 1024 ];
+    char *outString = compile;
+    char argument[ 256 ];
+    va_list v1;
+
+    va_start( v1, format );
+
+    /* Copy from the format string until a parameter is encountered. */
+    idx = 0;
+    while( ( ch = format[ idx++ ] ) != '\0' )
+    {
+        if( ch != '%' )
+	{
+	    *outString++ = ch;
+        }
+        else
+	{
+	    if( format[ idx ] == '%' )
+	    {
+	        *outString++ = ch;
+	    }
+	    else
+	    {
+	        switch( format[ idx ] )
+		{
+		    case 'd':
+		        printable.d = va_arg( v1, int );
+			sprintf( argument, "%d", printable.d );
+		        break;
+		    case 's':
+		        printable.s = va_arg( v1, char* );
+			sprintf( argument, "%s", printable.s );
+		        break;
+		    case 'f':
+		        printable.f = va_arg( v1, double );
+			sprintf( argument, "%f", printable.f );
+		        break;
+		    case 'c':
+		      printable.c = (char) va_arg( v1, int );
+			sprintf( argument, "%c", printable.c );
+		        break;
+		    default:
+		        argument[ 0 ] = '\0';
+		        break;
+		}
+		strcpy( outString, argument );
+		outString += strlen( argument );
+	    }
+	    idx++;
+	}
+    }
+    *outString = '\0';
+
+    va_end( v1 );
+
+    if( configuration.verbose.value && configuration.verbose.isset )
+    {
+	printf( "%s", compile );
+    }
+}
+
 
 
 

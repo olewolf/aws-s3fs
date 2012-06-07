@@ -27,23 +27,52 @@
 #include "aws-s3fs.h"
 
 
-/** Flag that indicates whether verbose output is on. The flag is set via
-    the command-line switches. */
-bool verboseOutput = false;
-
-struct configuration configuration =
+/**
+ * Determine whether required, external programs are available, and prints
+ * an error to stderr for each missing program.
+ * @return \a true if the required applications support is available, or
+ *         \a false otherwise.
+ */
+static bool CheckAppsSupport( void )
 {
-    US_STANDARD,  /* region */
-    NULL,         /* bucketName */
-    NULL,         /* path */
-    NULL,         /* keyId */
-    NULL,         /* secretKey */
-    NULL,         /* logfile */
+    const char *appslist[ ] =
     {
-        false,    /* value */
-	false     /* isset */
-    }             /* verbose */
-};
+        "curl",
+	"aws"
+    };
+    int i;
+    char syscommand[ 50 ];
+    char missingApps[ 1000 ];
+    const char *command;
+
+    /* Search for applications from the appslist, and append any missing
+     * ones to the missingApps string. */
+    missingApps[ 0 ] = (char) 0;
+    for( i = 0; i < sizeof( appslist ) / sizeof( char* ); i++ )
+    {
+        command = appslist[ i ];
+        sprintf( syscommand, "which %s >/dev/null 2>&1", command );
+	if( system( syscommand ) != EXIT_SUCCESS )
+	{
+	    if( missingApps[ 0 ] != (char) 0 )
+	    {
+	        strcat( missingApps, ", " );
+	    }
+	    strcat (missingApps, command );
+	}
+    }
+    /* Return with status and/or error message. */
+    if( missingApps[ 0 ] == (char) 0 )
+    {
+        return( true );
+    }
+    else
+    {
+        fprintf( stderr, "Please install the following missing programs before using aws-s3fs:\n" );
+        fprintf( stderr, "  [ %s ]\n", missingApps );
+	return( false );
+    }
+}
 
 
 
@@ -52,14 +81,19 @@ struct configuration configuration =
  * associated functions.
  * @param argc [in] The number of input arguments, used by the getopt library.
  * @param argv [in] The input argument strings, used by the getopt library.
- * @return 0 if no errors were encountered, 1 otherwise.
+ * @return EXIT_SUCCESS if no errors were encountered, EXIT_FAILURE otherwise.
  */
 int
 main( int argc, char **argv )
 {
     char *mountPoint;
 
+    if( CheckAppsSupport( ) != true )
+    {
+	exit( EXIT_FAILURE );
+    }
+
     Configure( &configuration, &mountPoint, argc, (const char * const *) argv );
 
-    return( 0 );
+    return( EXIT_SUCCESS );
 }

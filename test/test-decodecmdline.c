@@ -163,7 +163,7 @@ void test_DecodeCommandLine( const char *parms )
         argvbegins = argvbegins + argcounts[ i ];
     }
     DecodeCommandLine( &cmdlineConfig, &mountPoint, argc, &cmdline[ argvbegins ] );
-    PrintConfig( testNumber, &cmdlineConfig, mountPoint, verboseOutput );
+    PrintConfig( testNumber, &cmdlineConfig, mountPoint, cmdlineConfig.configuration.verbose.value );
     ReleaseConfig( &cmdlineConfig );
 }
 

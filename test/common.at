@@ -28,3 +28,8 @@ AT_CHECK([test-common TestFileReadable 3], [], [stdout])
 AT_CHECK([grep '^3: NULL$' stdout], [], [ignore])
 AT_CLEANUP
 
+AT_SETUP([VerboseOutput])
+AT_CHECK([test-common VerboseOutput], [], [stdout])
+AT_CHECK([grep '^1: d: 42, f: 2.400000, c: a, s: test, %.$' stdout], [], [ignore])
+AT_CHECK([grep '^2: $' stdout], [], [ignore])
+AT_CLEANUP

@@ -454,10 +454,7 @@ Configure(
     }
     if( configFp != NULL )
     {
-        if( verboseOutput )
-	{
-	    printf( "Reading configuration from %s.\n", configFile );
-	}
+        VerboseOutput( "Reading configuration from %s.\n", configFile );
 	configSuccess = ReadConfigFile( configFp, configFile, configuration );
     }
     if( ( configFp == NULL ) && ( forcedConfigFile != false ) )
@@ -479,10 +476,7 @@ Configure(
     printf( "Environment variable AWS_S3FS_KEY: %s\n", accessKeys );
     if( accessKeys != NULL )
     {
-        if( verboseOutput )
-	{
-	    printf( "AWS_S3FS_KEY variable found.\n" );
-	}
+        VerboseOutput( "AWS_S3FS_KEY variable found.\n" );
         keyError = false;
 	/*@-null@*/
 	ConfigSetKey( &configuration->keyId, &configuration->secretKey,
@@ -550,15 +544,10 @@ Configure(
     free( cmdlineConfiguration.configuration.secretKey );
     free( cmdlineConfiguration.configuration.logfile );
 
-    if( verboseOutput )
-    {
-	printf( "Configuration:\n" );
-	printf( "  Region: %s\n", regionNames[ configuration->region ] );
-	printf( "  Bucket: %s\n", ShowStringValue( configuration->bucketName ) );
-	printf( "  Path: %s\n", ShowStringValue( configuration->path ) );
-	printf( "  Syslog: %s\n", ShowStringValue( configuration->logfile ) );
-	printf( "  Mount point: %s\n", ShowStringValue( *mountPoint ) );
-    }
+    VerboseOutput( "Configuration:\n" );
+    VerboseOutput( "  Region: %s\n", regionNames[ configuration->region ] );
+    VerboseOutput( "  Bucket: %s\n", ShowStringValue( configuration->bucketName ) );
+    VerboseOutput( "  Path: %s\n", ShowStringValue( configuration->path ) );
+    VerboseOutput( "  Syslog: %s\n", ShowStringValue( configuration->logfile ) );
+    VerboseOutput( "  Mount point: %s\n", ShowStringValue( *mountPoint ) );
 }
-
-

@@ -32,11 +32,13 @@
 extern const FILE *TestFileReadable( const char * );
 
 void test_TestFileReadable( const char * );
+void test_VerboseOutput( const char * );
 
 
 const struct dispatchTable dispatchTable[ ] =
 {
     { "TestFileReadable", &test_TestFileReadable },
+    { "VerboseOutput", &test_VerboseOutput },
     { NULL, NULL }
 };
 
@@ -62,4 +64,21 @@ void test_TestFileReadable( const char *parms )
         printf( "%d: File is readable\n", testNumber );
 	fclose( (FILE*) fp );
     }
+}
+
+
+
+void test_VerboseOutput( const char *parms )
+{
+    configuration.verbose.isset = true;
+    configuration.verbose.value = true;
+    printf( "1: " );
+    VerboseOutput( "d: %d, f: %f, c: %c, s: %s, %%.",
+		   42, (float)2.4, 'a', "test" );
+    printf( "\n" );
+    configuration.verbose.isset = false;
+    printf( "2: " );
+    VerboseOutput( "d: %d, f: %f, c: %c, s: %s, %%.",
+		   42, (float)2.4, 'a', "test" );
+    printf( "\n" );
 }

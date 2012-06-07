@@ -29,9 +29,6 @@
 
 
 
-bool verboseOutput = false;
-
-
 void PrintConfig( int testNo, const struct cmdlineConfiguration *config, const char *mountPoint, bool verbose )
 {
     printf( "%d: R %d ", testNo, config->configuration.region );
@@ -65,6 +62,6 @@ void ReleaseConfig( struct cmdlineConfiguration *config )
     free( config->configFile );
     config->configFile = NULL;
     config->regionSpecified = false;
-    verboseOutput = false;
+    configuration.verbose.value = false;
 }
 

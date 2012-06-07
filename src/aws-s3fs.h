@@ -74,6 +74,14 @@ struct cmdlineConfiguration {
 };
 
 
+/* In common.c */
+void
+VerboseOutput(
+    const char *format,
+    ...
+	      );
+
+
 /* In aws-s3fs.c. */
 void
 Configure(
