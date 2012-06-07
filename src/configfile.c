@@ -29,7 +29,12 @@
 
 
 
-
+/**
+ * Return the value of a string that is specified in a configuration file.
+ * @param config [in] libopt configuration structure.
+ * @param key [in] Key of the configuration file value.
+ * @return The value for the specified key.
+ */
 /*@null@*/ /*static removed for testing purposes*/ const char *
 LookupConfigString(
     const struct config_t *config,
@@ -46,6 +51,16 @@ LookupConfigString(
 
 
 
+/**
+ * Read a boolean value from a libopt configuration file, and set a
+ * \a configBoolean value to that value. (A \a configBoolean in this software
+ * is a value that is true, false, or not set.)
+ * @param [out] configBoolean Output for the .value and .isset values of the
+ *              boolean configuration value.
+ * @param [in] config libopt config structure.
+ * @param [in] key Key of the configuration file value.
+ * @return Nothing.
+ */
 /*static removed for testing purposes*/ void
 ConfigSetBoolean(
     struct configurationBoolean *configBoolean,

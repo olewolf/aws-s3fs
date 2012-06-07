@@ -88,8 +88,16 @@ PrintSoftwareLicense( const char *commandName )
 
 
 /**
- * Split an S3 bucket:path.
- */
+ * Split an string containing a "bucket:path" combination into the components,
+ * "bucket" and "path". Whitespace surrounding the ':' is ignored, and escaped
+ * "\:" are allowed in the strings. The combinations ":path" and ":path" are
+ * allowed. The stored components are allocated on the heap and returned to the
+ * caller.
+ * @param s3Path [in] String with the "bucket:path" components.
+ * @param bucket [out] Pointer to where the "bucket" component is stored.
+ * @param path [out] Pointer to where the "path" component is stored.
+ * @return Nothing.
+*/
 /*@-exportlocal@*//* for testing purposes*/ void
 SplitS3MountPath(
     const char     *s3Path,
@@ -181,6 +189,19 @@ SplitS3MountPath(
 
 
 
+/**
+ * Decode a command line options and parameters using the getopt library. Fill
+ * a \a cmdlineConfiguration structure with options and identify the mount
+ * point.
+ * @param cmdlineConfiguration [out] Gets filled with the command line options
+ *                                   and the external mount bucket:path
+ * @param mountPoint [out] Pointer to where the mount point is written as a
+ *                         string.
+ * @param argc [in] \a argc from the \a main function.
+ * @param argv [in] \a argv from the \a main function.
+ * @return \a true if the command line was decoded without errors, or \a false
+ *         otherwise.
+ */
 bool
 DecodeCommandLine(
     struct cmdlineConfiguration *cmdlineConfiguration,
