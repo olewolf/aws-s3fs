@@ -27,9 +27,6 @@
 #include "aws-s3fs.h"
 
 
-/** Version of the aws-s3fs software. */
-#define VERSION "0.1"
-
 /** Flag that indicates whether verbose output is on. The flag is set via
     the command-line switches. */
 bool verboseOutput = false;

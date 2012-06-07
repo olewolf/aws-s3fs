@@ -54,9 +54,10 @@ AC_C_CONST
 #AC_C_INLINE
 
 # Check for modules.
-PKG_CHECK_MODULES([libfuse], [fuse >= 2.8])
-PKG_CHECK_MODULES([libconfigxx], libconfig++ >= 1.3,,
-    AC_MSG_ERROR([*** libconfig++ source not found - this program requires libconfig++ >= 1.3 **]))
+PKG_CHECK_MODULES([libfuse], [fuse >= 2.8],,
+    AC_MSG_ERROR([*** libfuse source not found - this program requires libfuse >= 2.8 **]))
+PKG_CHECK_MODULES([libconfig], libconfig >= 1.3,,
+    AC_MSG_ERROR([*** libconfig source not found - this program requires libconfig >= 1.3 **]))
 
 # Check for libraries.
 AC_CHECK_LIB([config], [config_init],,
@@ -69,24 +70,32 @@ AC_CHECK_HEADERS([string.h],,
     AC_MSG_ERROR([*** string.h missing **]))
 AC_CHECK_HEADERS([stdlib.h],,
     AC_MSG_ERROR([*** stdlib.h not found **]))
+AC_CHECK_HEADERS([stdbool.h],,
+    AC_MSG_ERROR([*** stdbool.h not found **]))
 AC_CHECK_HEADERS([libconfig.h],,
     AC_MSG_ERROR([*** libconfig.h not found **]))
 AC_CHECK_HEADERS([getopt.h],,
     AC_MSG_ERROR([*** getopt.h not found **]))
+AC_CHECK_HEADERS([assert.h],,
+    AC_MSG_ERROR([*** assert.h not found **]))
+AC_CHECK_HEADERS([ctype.h],,
+    AC_MSG_ERROR([*** ctype.h not found **]))
 
 # Check for typedefs, structures, and compiler characteristics.
 # Check for library functions.
 AC_FUNC_MALLOC
 AC_CHECK_FUNCS([getopt_long],,
     AC_MSG_ERROR([*** Getopt functions not found. **]))
-AC_CHECK_FUNCS([strcasecmp fopen fprintf],,
+AC_CHECK_FUNCS([strcasecmp fopen fprintf fclose strlen strcat strcpy strncpy isspace getenv],,
     AC_MSG_ERROR([*** File or string handling functions not found. **]))
+AC_CHECK_FUNCS([malloc free memset],,
+    AC_MSG_ERROR([*** Memory allocation functions not found. **]))
 
 # Large file support.
 AC_SYS_LARGEFILE
 
-CFLAGS="$CFLAGS -Wall -Werror $libconfigxx_CFLAGS $libfuse_CFLAGS"
-LIBS="$libfuse_LIBS $libconfigxx_LIBS $LIBS"
+CFLAGS="$CFLAGS -Wall -Werror $libconfig_CFLAGS $libfuse_CFLAGS"
+LIBS="$libfuse_LIBS $libconfig_LIBS $LIBS"
 
 # Output files.
 AC_CONFIG_HEADERS([config.h])
