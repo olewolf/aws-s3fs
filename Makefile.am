@@ -18,7 +18,8 @@
 ACLOCAL_AMFLAGS = -I m4
 SUBDIRS = src data doc test
 
-nobase_dist_doc_DATA = README NEWS AUTHORS ChangeLog
+metadocsdir = $(docdir)
+nobase_dist_metadocs_DATA = README NEWS AUTHORS ChangeLog
 
 install-data-hook:
 	if [ -f $(docdir)/ChangeLog ]; then \
@@ -30,5 +31,3 @@ uninstall-hook:
 	rm -rf $(docdir)/changelog.gz; \
 	rmdir --ignore-fail-on-non-empty $(docdir)
 
-doxygen:
-	cd doc; make doxygen

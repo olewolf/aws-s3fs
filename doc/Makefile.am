@@ -6,7 +6,13 @@ nobase_dist_metadocs_DATA = copyright
 clean:
 	rm -rf doxygen
 
-doxygen:
+doxygen: Doxyfile main.doc
 	if [ "z$(DOXYGEN)" != "z" ]; then \
-	    doxygen; \
+	    @DOXYGEN@; \
 	fi
+
+.PHONY: doxygen
+
+targets = doxygen
+
+all-local: $(targets)

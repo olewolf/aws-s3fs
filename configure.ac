@@ -23,11 +23,8 @@ AC_CONFIG_MACRO_DIR([m4])
 AM_INIT_AUTOMAKE
 
 # Prepare autotest suite.
-#AT_PACKAGE_STRING
-#AT_PACKAGE_BUGREPORT
 AC_CONFIG_TESTDIR([test])
 AC_CONFIG_FILES([test/atlocal])
-#AC_CONFIG_FILES([test/m4], [chmod +x test/m4])
 
 # Check for programs.
 AC_PROG_CC
@@ -80,16 +77,20 @@ AC_CHECK_HEADERS([assert.h],,
     AC_MSG_ERROR([*** assert.h not found **]))
 AC_CHECK_HEADERS([ctype.h],,
     AC_MSG_ERROR([*** ctype.h not found **]))
+AC_CHECK_HEADERS([syslog.h],,
+    AC_MSG_ERROR([*** syslog.h not found **]))
 
 # Check for typedefs, structures, and compiler characteristics.
 # Check for library functions.
 AC_FUNC_MALLOC
 AC_CHECK_FUNCS([getopt_long],,
     AC_MSG_ERROR([*** Getopt functions not found. **]))
-AC_CHECK_FUNCS([strcasecmp fopen fprintf fclose strlen strcat strcpy strncpy isspace getenv],,
+AC_CHECK_FUNCS([strcasecmp fopen fprintf fclose strlen strcat strcpy strncpy isspace getenv system],,
     AC_MSG_ERROR([*** File or string handling functions not found. **]))
 AC_CHECK_FUNCS([malloc free memset],,
     AC_MSG_ERROR([*** Memory allocation functions not found. **]))
+AC_CHECK_FUNCS([openlog syslog closelog],,
+    AC_MSG_ERROR([*** Syslog functions not found. **]))
 
 # Large file support.
 AC_SYS_LARGEFILE
@@ -100,7 +101,7 @@ LIBS="$libfuse_LIBS $libconfig_LIBS $LIBS"
 # Output files.
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_FILES([Makefile src/Makefile data/Makefile doc/Makefile doc/man/Makefile test/Makefile])
-AC_OUTPUT([src/sysconffile.generate-h])
+AC_OUTPUT([src/sysconffile.generate-h doc/main.doc])
 
 echo "
   ($PACKAGE_NAME) version $PACKAGE_VERSION
