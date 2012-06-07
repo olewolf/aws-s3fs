@@ -15,6 +15,7 @@ Makefile
 Makefile.in
 doc/man/aws-s3fs.1
 doc/man/aws-s3fs.conf.5
+doc/doxygen
 src/sysconffile.h
 src/sysconffile.generate-h
 config.*
