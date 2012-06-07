@@ -121,7 +121,7 @@ mounts a bucket at
 .I /mnt/s3
 using the Access Key ID "7RMK5OR256H3AA6A6AK4" and Secret Access Key "b6l/rRm8Jl6fkU4j4KqnGlppOmAkg7SkfeaNYKqy" as authentication credentials.
 
-NOTE: passing credentials on the command line is insecure. For better security, enter your credentials in a configuration file and make it world unreadable, or assign the values to the AWS_S3FS_KEY environment variable.
+NOTE: passing credentials on the command line is insecure. For better security, enter your credentials in a configuration file and make it world unreadable, or assign the values to the AWS_S3FS_KEY environment variable. This environment variable is also used by the aws utility; you may also store the keys in the aws password file (~/.awssecret) exists.
 
 
 .TP
@@ -255,7 +255,8 @@ and exit.
 
 .SH FILES
 .I ${sysconfdir}/aws-s3fs.conf\fR,
-.I ~/.aws-s3fs
+.I ~/.aws-s3fs\fR,
+.I ~/.awssecret
 
 .SH COPYRIGHT
 .B aws-s3fs
