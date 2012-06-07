@@ -181,7 +181,7 @@ SplitS3MountPath(
 
 
 
-void
+bool
 DecodeCommandLine(
     struct cmdlineConfiguration *cmdlineConfiguration,
     /*@out@*/ char              **mountPoint,
@@ -208,7 +208,7 @@ DecodeCommandLine(
     /*@+null@*/
     int  optionCharacter;
     int  optionIndex = 0;
-    bool optionError = 0;
+    bool optionError = false;
 
     int  remainingArguments;
     char *localMountPoint;
@@ -224,6 +224,13 @@ DecodeCommandLine(
         PrintSoftwareHelp( argv[ 0 ], true );
 	exit( EXIT_SUCCESS );
     }
+
+    cmdlineConfiguration->regionSpecified     = false;
+    cmdlineConfiguration->bucketNameSpecified = false;
+    cmdlineConfiguration->pathSpecified       = false;
+    cmdlineConfiguration->keyIdSpecified      = false;
+    cmdlineConfiguration->secretKeySpecified  = false;
+    cmdlineConfiguration->logfileSpecified    = false;
 
     /* Decode the command-line switches. */
     while( ( optionCharacter = getopt_long( argc, (char * const *) argv,
@@ -250,6 +257,7 @@ DecodeCommandLine(
 	/* Set bucket region. */
 	case 'r':
 	    ConfigSetRegion( &cmdlineConfiguration->configuration.region, optarg, &optionError );
+	    cmdlineConfiguration->regionSpecified = true;
    	    break;
 	/* Set bucket name. */
 	case 'b':
@@ -257,6 +265,7 @@ DecodeCommandLine(
 	    /*@-null@*/
 	    ConfigSetPath( &cmdlineConfiguration->configuration.bucketName, bucket );
 	    /*@+null@*/
+	    cmdlineConfiguration->bucketNameSpecified = true;
 	    free( bucket );
 	    bucket = NULL;
 	    /* If -b bucket:path includes the path, then any -p overrides that
@@ -266,6 +275,7 @@ DecodeCommandLine(
 	        /*@-null@*/
 	        ConfigSetPath( &cmdlineConfiguration->configuration.path, path );
 		/*@+null@*/
+		cmdlineConfiguration->pathSpecified = true;
 	    }
 	    free( path );
 	    path = NULL;
@@ -275,12 +285,14 @@ DecodeCommandLine(
 	    /*@-null@*/
 	    ConfigSetPath( &cmdlineConfiguration->configuration.path, optarg );
 	    /*@+null@*/
+	    cmdlineConfiguration->pathSpecified = true;
    	    break;
 	/* Set log file. */
 	case 'l':
 	    /*@-null@*/
 	   ConfigSetPath( &cmdlineConfiguration->configuration.logfile, optarg );
 	    /*@+null@*/
+	    cmdlineConfiguration->logfileSpecified = true;
 	    break;
 	/* Set access key and secret key. */
 	case 'k':
@@ -289,6 +301,8 @@ DecodeCommandLine(
 			  &cmdlineConfiguration->configuration.secretKey,
 			  optarg, &optionError );
 	    /*@+null@*/
+	    cmdlineConfiguration->keyIdSpecified = true;
+	    cmdlineConfiguration->secretKeySpecified = true;
 	    break;
 	/* Set verbosity. */
 	case 'v':
@@ -362,5 +376,7 @@ DecodeCommandLine(
     assert( localMountPoint != NULL );
     strcpy( localMountPoint, argv[ mountArgc ] );
     *mountPoint = localMountPoint;
+
+    return( ! optionError );
 }
 

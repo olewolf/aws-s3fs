@@ -24,8 +24,12 @@
 #include <stdlib.h>
 
 
-/* Fix for a cross-compilation issue where compilation of i386 code on an
-   amd64 machine complains that rpl_malloc is undefined. */
+/**
+ * Fix for a cross-compilation issue where compilation of i386 code on an
+ * amd64 machine complains that rpl_malloc is undefined.
+ * @param n [in] Number of bytes to allocate.
+ * @return Nothing.
+*/
 /*@out@*/ void *rpl_malloc( size_t n )
 {
     /* Allocate an N-byte block of memory from the heap.

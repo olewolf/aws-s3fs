@@ -28,6 +28,11 @@
 #include "aws-s3fs.h"
 
 
+static const char *regionNames[ ] = {
+    "US Standard", "Oregon", "Northern California", "Ireland",
+    "Singapore", "Tokyo", "Sao Paulo"
+};
+
 
 /**
  * Write the bucket region value corresponding to the supplied region name
@@ -48,10 +53,6 @@ ConfigSetRegion(
 {
     bool               found = false;
     int                nameIdx;
-    static const char  *regionNames[ ] = {
-        "US Standard", "Oregon", "Northern California", "Ireland",
-	"Singapore", "Tokyo", "Sao Paulo"
-    };
 
     if( configValue != NULL )
     {
@@ -330,10 +331,32 @@ InitializeConfiguration(
 
 
 /**
+ * Helper function for the \a Configure function. It returns the string that
+ * was passed, except if the string is NULL. In that case, it returns the
+ * string "(None)".
+ * @param string [in] The string which is also returned.
+ * @return The input string or "(None)" if the input string is NULL.
+ */
+static const char *ShowStringValue( const char *string )
+{
+    if( string != NULL )
+    {
+        return( string );
+    }
+    else
+    {
+	return( "(None)" );
+    }
+}
+
+
+
+/**
  * Fill a \a configuration structure according to aws-s3fs.conf file contents
  * and command-line options and parameters, and the AWS_S3FS_KEY.
  * @param configuration [out] Pointer to configuration structure that is to
  *        be filled with values.
+ * @param mountPoint [out] Pointer to a string where the mount path is stored.
  * @param argc [in] The \a argc from the \a main function.
  * @param argv [in] The \a argv from the \a main function.
  * @return Nothing.
@@ -341,38 +364,54 @@ InitializeConfiguration(
 void
 Configure(
     struct configuration *configuration,
+    char                 **mountPoint,
     int                  argc,
     const char * const   *argv
 	  )
 {
     struct cmdlineConfiguration cmdlineConfiguration =
     {
-	{                 /* configuration */
-	    US_STANDARD,  /* region */
-	    NULL,         /* bucketName */
-	    NULL,         /* path */
-	    NULL,         /* keyId */
-	    NULL,         /* secretKey */
-	    NULL,         /* logfile */
-	    {             /* verbose */
-  	        false,    /* value */
-		false     /* isset */
+	.configuration =
+	{
+	    .region      = US_STANDARD,
+	    .bucketName  = NULL,
+	    .path        = NULL,
+	    .keyId       = NULL,
+	    .secretKey   = NULL,
+	    .logfile     = NULL,
+	    .verbose     =
+	    {
+  	        .value = false,
+		.isset = false
 	    }
 	},
-        NULL              /* configFile */
+        .configFile          = NULL,
+	.regionSpecified     = false,
+	.bucketNameSpecified = false,
+	.pathSpecified       = false,
+	.keyIdSpecified      = false,
+	.secretKeySpecified  = false,
+	.logfileSpecified    = false
     };
 
-    char                        *configFile;
+    char                        *configFile = NULL;
     const FILE                  *configFp;
     const char                  *homedir;
     const char                  *accessKeys;
-    char                        *mountPoint;
     bool                        keyError;
+    bool                        forcedConfigFile = false;
+    bool                        optionSuccess;
+    bool                        configSuccess = true;
 
     /* Decode the command line options, which may include an override of
        the configuration file. */
     InitializeConfiguration( &cmdlineConfiguration.configuration );
-    DecodeCommandLine( &cmdlineConfiguration, &mountPoint, argc, argv );
+    optionSuccess = DecodeCommandLine( &cmdlineConfiguration, mountPoint, argc, argv );
+    if( ! optionSuccess )
+    {
+	fprintf( stderr, "Invalid command line options.\n" );
+	exit( EXIT_FAILURE );
+    }
 
     /* Read the configuration files in the following priority:
        (1) command-line specified config file
@@ -386,20 +425,8 @@ Configure(
     configFile = cmdlineConfiguration.configFile;
     if( configFile != NULL )
     {
+        forcedConfigFile = true;
 	configFp = TestFileReadable( configFile );
-	if( configFp != NULL )
-	{
-	    if( verboseOutput )
-	    {
-    	        printf( "Reading configuration from %s.", configFile );
-	    }
-	    ReadConfigFile( configFp, configFile, configuration );
-	}
-	else
-	{
-	    fprintf( stderr, "Cannot open %s for reading.\n", configFile );
-	    exit( EXIT_FAILURE );
-	}
     }
     else
     {
@@ -413,43 +440,43 @@ Configure(
 				 + sizeof( char ) );
 	    assert( configFile != NULL );
 	    strcpy( configFile, homedir );
-	    strcpy( &configFile[ strlen( configFile ) ], "/.aws-s3fs" );
+	    strcat( configFile, "/.aws-s3fs" );
 	    configFp = TestFileReadable( configFile );
-	    if( configFp != NULL )
-	    {
-	        if( verboseOutput )
-		{
-    	            printf( "Reading configuration from %s.", configFile );
-		}
-	        ReadConfigFile( configFp, configFile, configuration );
-	    }
-	    free( configFile );
 	}
 
 	/* Still unsuccessful, attempt DEFAULT_CONFIG_FILENAME. */
 	if( configFp == NULL )
 	{
-	    if( configFp == NULL )
-	    {
-		configFp = TestFileReadable( DEFAULT_CONFIG_FILENAME );
-		if( configFp != NULL )
-		{
-		    if( verboseOutput )
-		    {
-			printf( "Reading configuration from %s.",
-				DEFAULT_CONFIG_FILENAME );
-		    }
-		    ReadConfigFile( configFp, DEFAULT_CONFIG_FILENAME,
-				    configuration );
-		}
-	    }
+	    configFile = malloc( strlen( DEFAULT_CONFIG_FILENAME ) + sizeof( char ) );
+	    strcpy( configFile, DEFAULT_CONFIG_FILENAME );
+	    configFp = TestFileReadable( configFile );
 	}
+    }
+    if( configFp != NULL )
+    {
+        if( verboseOutput )
+	{
+	    printf( "Reading configuration from %s.\n", configFile );
+	}
+	configSuccess = ReadConfigFile( configFp, configFile, configuration );
+    }
+    if( ( configFp == NULL ) && ( forcedConfigFile != false ) )
+    {
+	fprintf( stderr, "Cannot open %s for reading.\n", configFile );
+	exit( EXIT_FAILURE );
+    }
+    free( configFile );
+    if( ! configSuccess )
+    {
+	fprintf( stderr, "Invalid config file settings.\n" );
+	exit( EXIT_FAILURE );
     }
 
     /* Having read the config file (if any of them existed), overwrite any
        configuration setting that is specified by the secret key environment
        variable. */
     accessKeys = getenv( "AWS_S3FS_KEY" );
+    printf( "Environment variable AWS_S3FS_KEY: %s\n", accessKeys );
     if( accessKeys != NULL )
     {
         if( verboseOutput )
@@ -470,18 +497,45 @@ Configure(
 
     /* Finally, override any configuration setting that was specified on the
        command-line. */
-    /*@-null@*/
-    ConfigSetPath( &configuration->bucketName,
-		   cmdlineConfiguration.configuration.bucketName );
-    ConfigSetPath( &configuration->path, 
-		   cmdlineConfiguration.configuration.path );
-    ConfigSetPath( &configuration->keyId, 
-		   cmdlineConfiguration.configuration.keyId );
-    ConfigSetPath( &configuration->secretKey, 
-		   cmdlineConfiguration.configuration.secretKey );
-    ConfigSetPath( &configuration->logfile, 
-		   cmdlineConfiguration.configuration.logfile );
-    /*@+null@*/
+    if( cmdlineConfiguration.regionSpecified )
+    {
+        configuration->region = cmdlineConfiguration.configuration.region;
+    }
+    if( cmdlineConfiguration.bucketNameSpecified )
+    {
+	/*@-null@*/
+        ConfigSetPath( &configuration->bucketName,
+		       cmdlineConfiguration.configuration.bucketName );
+	/*@+null@*/
+    }
+    if( cmdlineConfiguration.pathSpecified )
+    {
+	/*@-null@*/
+        ConfigSetPath( &configuration->path, 
+		       cmdlineConfiguration.configuration.path );
+	/*@+null@*/
+    }
+    if( cmdlineConfiguration.keyIdSpecified )
+    {
+	/*@-null@*/
+        ConfigSetPath( &configuration->keyId, 
+		       cmdlineConfiguration.configuration.keyId );
+	/*@+null@*/
+    }
+    if( cmdlineConfiguration.secretKeySpecified )
+    {
+	/*@-null@*/
+	ConfigSetPath( &configuration->secretKey, 
+		       cmdlineConfiguration.configuration.secretKey );
+	/*@+null@*/
+    }
+    if( cmdlineConfiguration.logfileSpecified )
+    {
+	/*@-null@*/
+        ConfigSetPath( &configuration->logfile, 
+		       cmdlineConfiguration.configuration.logfile );
+	/*@+null@*/
+    }
     if( cmdlineConfiguration.configuration.verbose.isset )
     {
 	configuration->verbose.isset = true;
@@ -495,7 +549,16 @@ Configure(
     free( cmdlineConfiguration.configuration.keyId );
     free( cmdlineConfiguration.configuration.secretKey );
     free( cmdlineConfiguration.configuration.logfile );
-    /*@-usedef@*/
-    free( cmdlineConfiguration.configFile );
-    /*@+usedef@*/
+
+    if( verboseOutput )
+    {
+	printf( "Configuration:\n" );
+	printf( "  Region: %s\n", regionNames[ configuration->region ] );
+	printf( "  Bucket: %s\n", ShowStringValue( configuration->bucketName ) );
+	printf( "  Path: %s\n", ShowStringValue( configuration->path ) );
+	printf( "  Syslog: %s\n", ShowStringValue( configuration->logfile ) );
+	printf( "  Mount point: %s\n", ShowStringValue( *mountPoint ) );
+    }
 }
+
+

@@ -29,14 +29,12 @@
 
 
 
-bool verboseOutput = false;
-
 extern void InitializeConfiguration( struct configuration * );
 extern void ConfigSetRegion( enum bucketRegions *, const char *, bool * );
 extern void ConfigSetPath( char **, const char * );
 extern void ConfigSetKey( char **, char **, const char *, bool * );
 extern int ExtractKey( char **, int, const char * );
-extern void Configure( struct configuration *, int, const char * const * );
+extern void Configure( struct configuration *, char **, int, const char * const * );
 extern void CopyDefaultString( char **, const char * );
 
 void test_InitializeConfiguration( const char * );
@@ -190,5 +188,66 @@ void test_CopyDefaultString( const char *parms )
 
 void test_Configure( const char *parms )
 {
-    
+    struct cmdlineConfiguration cmdlineConfig =
+    {
+        {
+	    US_STANDARD,
+	    NULL,
+	    NULL,
+	    NULL,
+	    NULL,
+	    NULL,
+	    {
+	        false,
+		false
+	    }
+	},
+	NULL,
+	true
+    };
+    struct configuration *configuration = &cmdlineConfig.configuration;
+    const char *const cmdline[ ] =
+    {
+        /* argc = 12 */
+        "aws-s3fs",
+	"-b", "bucketname:pathname",
+	"-r", "Northern California",
+	"-l", "syslog",
+	"-k", "key:secret",
+	"-c", "../../testdata/config-1.conf",
+	"mountdir/dir",
+
+        /* argc = 3 */
+	"aws-s3fs",
+	"--config=../../testdata/config-nonexistent.conf",
+	"mountdir/dir",
+
+        /* argc = 3 */
+	"aws-s3fs",
+	"--config=../../testdata/config-3.conf",
+	"mountdir/dir",
+
+        /* argc = 3 */
+	"aws-s3fs",
+	"--config=../../testdata/config-4.conf",
+	"mountdir/dir",
+    };
+
+    int testNumber;
+    char *mountPoint = NULL;
+    int argcounts[ ] = { 0, 12, 3, 3, 3 };
+    int argc;
+    int argvbegins;
+    int i;
+
+    sscanf( parms, "%d", &testNumber );
+    argc       = argcounts[ testNumber ];
+    argvbegins = 0;
+    for( i = 0; i < testNumber; i++ )
+    {
+        argvbegins = argvbegins + argcounts[ i ];
+    }
+    Configure( configuration, &mountPoint, argc, &cmdline[ argvbegins ] );
+    PrintConfig( testNumber, &cmdlineConfig, mountPoint, verboseOutput );
+    ReleaseConfig( &cmdlineConfig );
 }

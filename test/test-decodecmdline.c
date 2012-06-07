@@ -29,11 +29,7 @@
 
 
 
-bool verboseOutput = false;
-
 extern void SplitS3MountPath( const char *, char **, char ** );
-extern void DecodeCommandLine( struct cmdlineConfiguration *, char **,
-			       int, const char * const * );
 
 void test_SplitS3MountPath( const char * );
 void test_DecodeCommandLine( const char * );
@@ -46,42 +42,6 @@ const struct dispatchTable dispatchTable[ ] =
     { NULL, NULL }
 };
 
-
-
-static void PrintConfig( int testNo, struct cmdlineConfiguration *config, char *mountPoint, bool verbose )
-{
-    printf( "%d: R %d ", testNo, config->configuration.region );
-    printf( "B %s ", config->configuration.bucketName );
-    printf( "P %s ", config->configuration.path );
-    printf( "k %s:%s ", config->configuration.keyId, config->configuration.secretKey );
-    printf( "l %s ", config->configuration.logfile );
-    printf( "v %d ", verbose );
-    printf( "m %s ", mountPoint );
-    printf( "c %s\n", config->configFile );
-}
-
-
-static void ReleaseConfig( struct cmdlineConfiguration *config )
-{
-    struct configuration *conf = &config->configuration;
-
-    conf->region = US_STANDARD;
-    free( conf->bucketName );
-    conf->bucketName = NULL;
-    free( conf->path );
-    conf->path = NULL;
-    free( conf->keyId );
-    conf->keyId = NULL;
-    free( conf->secretKey );
-    conf->secretKey = NULL;
-    free( conf->logfile );
-    conf->logfile = NULL;
-    conf->verbose.value = false;
-    conf->verbose.isset = false;
-    free( config->configFile );
-    config->configFile = NULL;
-    verboseOutput = false;
-}
 
 
 void test_DecodeCommandLine( const char *parms )
@@ -100,7 +60,13 @@ void test_DecodeCommandLine( const char *parms )
 		false
 	    }
 	},
-	NULL
+	NULL,
+	false,
+	false,
+	false,
+	false,
+	false,
+	false
     };
 
     const char *const cmdline[ ] =

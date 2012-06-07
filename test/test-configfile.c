@@ -30,12 +30,10 @@
 
 
 
-bool verboseOutput = false;
-
 extern const char *LookupConfigString( const struct config_t *, const char * );
 extern void ConfigSetBoolean( struct configurationBoolean *,
 			      const struct config_t *, const char * );
-extern void ReadConfigFile( const FILE *, const char *,
+extern bool ReadConfigFile( const FILE *, const char *,
 			    struct configuration * );
 
 

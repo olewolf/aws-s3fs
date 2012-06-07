@@ -65,6 +65,12 @@ struct configuration {
 struct cmdlineConfiguration {
     struct configuration configuration;
     /*@null@*/ char      *configFile;
+    bool                 regionSpecified;
+    bool                 bucketNameSpecified;
+    bool                 pathSpecified;
+    bool                 keyIdSpecified;
+    bool                 secretKeySpecified;
+    bool                 logfileSpecified;
 };
 
 
@@ -72,6 +78,7 @@ struct cmdlineConfiguration {
 void
 Configure(
     struct configuration *configuration,
+    char                 **mountPoint,
     int                  argc,
     const char * const   *argv
 );
@@ -89,7 +96,7 @@ void CopyDefaultString(
     const char *value
 );
 
-void
+bool
 ReadConfigFile(
     const FILE           *fp,
     const char           *configFilename,
@@ -127,7 +134,7 @@ TestFileReadable(
 
 
 /* In decodecmdline.c. */
-void
+bool
 DecodeCommandLine(
     struct cmdlineConfiguration *cmdlineConfiguration,
     /*@out@*/ char              **mountPoint,

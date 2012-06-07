@@ -72,13 +72,15 @@ ConfigSetBoolean(
 
 /**
  * Read settings from the specified config file.
- * @param configFilename [in]              Path to the configuration file.
- * @param waveformTypeSettingPresent [in]  Waveform type was set as a
- *                                         command-line option.
- * @param waveType [out]       Set the wavetype if the command-line option
- *                             was not specified.
+ * @param lockFp [in] File handle for an opened file. This handle is released
+ *                    when the function returns.
+ * @param configFilename [in] Path to the configuration file.
+ * @param configuration [out] Configuration structure, which is filled with
+ *                            the configuration file contents.
+ * @return \a true if the configuration file was read correctly, or \a false
+ *         otherwise.
  */
-void
+bool
 ReadConfigFile(
     const FILE           *lockFp,
     const char           *configFilename,
@@ -175,6 +177,7 @@ ReadConfigFile(
     (void)fclose( (FILE *)lockFp );
     /*@+abstract@*/
 
+    return( ! configError );
 /* Lint override: configRegion, configPath, configKey, and configLogfile
    are deallocated by config_destroy. */
 /*@-mustfreefresh@*/

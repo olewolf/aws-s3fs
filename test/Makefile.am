@@ -22,7 +22,7 @@ TESTSCRIPTS = testsuite.at commandline.at config.at common.at
 
 noinst_PROGRAMS = test-decodecmdline test-config test-configfile test-common
 
-SHAREDTESTSOURCE = dispatch.c src/aws-s3fs.h testfunctions.h
+SHAREDTESTSOURCE = dispatch.c src/aws-s3fs.h shared.c testfunctions.h
 
 test_decodecmdline_SOURCES = $(SHAREDTESTSOURCE) test-decodecmdline.c \
 	../src/decodecmdline.c ../src/config.c ../src/configfile.c \

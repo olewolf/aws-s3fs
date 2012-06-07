@@ -25,6 +25,7 @@
 
 #include <config.h>
 #include <stdlib.h>
+#include <stdbool.h>
 
 
 struct dispatchTable
@@ -32,6 +33,12 @@ struct dispatchTable
     const char *script;
     void (*function)( const char *parameters );
 };
+
+struct cmdlineConfiguration;
+
+void PrintConfig( int testNo, const struct cmdlineConfiguration *config, const char *mountPoint, bool verbose );
+
+void ReleaseConfig( struct cmdlineConfiguration *config );
 
 
 #endif /* __TESTFUNCTIONS_H */

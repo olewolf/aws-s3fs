@@ -86,6 +86,12 @@ AT_CHECK([grep '^4: Bad file format$' stdout], [], [ignore])
 AT_CLEANUP
 
 AT_SETUP([Configure])
-AT_CHECK([ls && exit 77])
-
+AT_CHECK([test-config Configure 1], [], [stdout])
+AT_CHECK([grep '^1: R 2 B bucketname P / k key:secret l syslog v 0 m mountdir/dir c (null)$' stdout], [], [ignore])
+AT_CHECK([echo `test-config Configure 2>&1 2`], [], [stdout])
+AT_CHECK([grep 'Cannot open .\+.testdata.config-nonexistent\.conf for reading.' stdout], [], [ignore])
+AT_CHECK([test-config Configure 3], [], [stdout])
+AT_CHECK([grep '^3: R 0 B bucket P / k accesskeyid:secretkey l /var/log/aws-s3fs.log v 0 m mountdir/dir c (null)$' stdout], [], [ignore])
+AT_CHECK([AWS_S3FS_KEY="overridekey : overridesecret" test-config Configure 4], [], [stdout])
+AT_CHECK([grep '^4: R 0 B bucket P / k overridekey:overridesecret l syslog v 0 m mountdir/dir c (null)$' stdout], [], [ignore])
 AT_CLEANUP
