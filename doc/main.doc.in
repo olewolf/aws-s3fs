@@ -1,0 +1,111 @@
+/**
+@mainpage aws-s3fs: FUSE filesystem for the Amazon S3 cloud storage
+
+@htmlonly
+<center>
+<a href="#summary">Summary</a>
+<a href="#requirements">Requirements</a>
+<a href="#installation">Installation</a>
+<a href="#config">Configuration</a>
+<a href="#thanks">Thanks</a>
+<a href="#copyright">Copyright</a>
+</center>
+@endhtmlonly
+
+@section summary Summary
+
+aws-s3fs mounts an Amazon S3 cloud drive to a local directory via the
+FUSE filesystem and the aws utility.
+
+aws-s3fs is available from github <https://github.com/olewolf/aws-s3fs/wiki>.
+
+@section requirements Requirements
+
+The following software is needed to generate aws-s3fs:
+
+@li libfuse
+@li libconfig
+@li automake
+@li <a href="http://www.stack.nl/~dimitri/doxygen/index.html">doxygen</a>
+1.2.13+ for generating the documentation.
+@li <a href="http://www.graphviz.org/">GraphViz</a> for generating call graphs
+as part of the documentation.
+
+The following software is needed to run aws-s3fs:
+
+@li Timoty Kay's aws script <http://www.timkay.com/aws/>
+@li curl
+@li libfuse
+@li libconfig
+
+@section installation Installation
+ 
+@subsection installation_tarballs Building from Source Tarball
+
+Get the code:
+@li <a href="http://https://github.com/olewolf/aws-s3fs/tags/aws-s3fs-@VERSION@.tar.gz">aws-s3fs-@VERSION@.tar.gz</a>
+
+The aws-s3fs package uses the GNU autotools compilation and installation
+framework. The following commands should build aws-s3fs:
+
+@code
+
+$ tar -xvf aws-s3fs-@VERSION@.tar.gz
+$ cd aws-s3fs-@VERSION@
+$ ./configure
+$ make
+$ sudo make install
+
+@endcode
+
+Checkout the @c INSTALL file for installation and the generated doxygen
+documentation for more information.
+
+@subsection installation_deb Debian (Ubuntu) Repository
+
+Ubuntu .deb on Launchpad:
+@li <a href="http://">some</a>
+
+@section config Configuration
+
+@subsection conf_files Configuration Files
+
+aws-s3fs searches the following files to load its configuration:
+
+@li @c /usr/local/etc/aws-s3fs or @c /etc/aws-s3fs (depending on your Linux distribution)
+@li @c ${HOME}/.aws-s3fs
+
+@subsection env Environment variables
+
+@li The environment variable @c AWS_S3FS_KEY can be used to store the Amazon
+Access Key ID and the Secret Key.
+
+@section thanks Thanks
+
+@li Timothy Kay for his work on aws, which serves as the backend for aws-s3fs.
+
+@section copyright Copyright
+
+Copyright: 2012 Ole Wolf <wolf@blazingangles.com>
+
+License: GPL-3+
+
+This file is part of aws-s3fs.
+
+aws-s3fs is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+On Debian systems, the complete text of the GNU General Public
+License version 3 can be found in "/usr/share/common-licenses/GPL-3".
+
+*/

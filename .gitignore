@@ -34,3 +34,4 @@ test/test-decodecmdline
 test/testsuite
 test/testsuite.log
 stamp-h1
+doc/main.doc
