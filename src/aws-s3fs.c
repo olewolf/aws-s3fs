@@ -60,7 +60,9 @@ struct configuration configuration =
 int
 main( int argc, char **argv )
 {
-    Configure( &configuration, argc, (const char * const *) argv );
+    char *mountPoint;
+
+    Configure( &configuration, &mountPoint, argc, (const char * const *) argv );
 
     return( 0 );
 }

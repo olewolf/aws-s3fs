@@ -18,7 +18,7 @@
 bin_PROGRAMS = aws-s3fs
 aws_s3fs_SOURCES = aws-s3fs.h aws-s3fs.c decodecmdline.c configfile.c common.c fix-i386-cc.c config.c sysconffile.h
 
-sysconffile.h : sysconffile.generate-h
-	sh ../script/generate-sysconffile.sh
-
+BUILT_SOURCES = sysconffile.h
 CLEANFILES = sysconffile.h
+sysconffile.h : sysconffile.generate-h sysconffile.generate-h.in ../script/generate-sysconffile.sh
+	sh ../script/generate-sysconffile.sh
