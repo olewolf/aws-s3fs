@@ -98,17 +98,41 @@ AC_SYS_LARGEFILE
 CFLAGS="$CFLAGS -Wall -Werror $libconfig_CFLAGS $libfuse_CFLAGS"
 LIBS="$libfuse_LIBS $libconfig_LIBS $LIBS"
 
+#AS_IF([test -z "$ETCDIRHASPREFIX_TRUE"], [AC_DEFINE([ETCPATH], [@prefix@/etc], [Decode full path of /prefix/etc.])])
+
+#AS_IF([test -z "$ETCDIRHASPREFIX_TRUE"], [AC_DEFINE([ETCPATH], ["somedef"], [Description])])
+#AC_DEFINE([ETCPATH], [@prefix@/etc], [Expand /.../etc path])
+
+#AM_CONDITIONAL([ETCDIRHASPREFIX], [test '${prefix}/etc' = "${sysconfdir}"])
+#AS_IF([test -z "$ETCDIRHASPREFIX_TRUE"],
+#    [AC_DEFINE_UNQUOTED([DEFAULT_CONFIG_FILENAME], ["true @prefix@/etc/aws-s3fs.conf"], [description])])
+#AS_IF([test -z "$ETCDIRHASPREFIX_FALSE"],
+#    [AC_DEFINE_UNQUOTED([DEFAULT_CONFIG_FILENAME], ["false ${sysconfdir}/aws-s3fs.conf"], [description])])
+
+#AC_DEFINE_UNQUOTED([DEFAULT_CONFIG_FILENAME], ["${sysconfdir}"], [description])
+
+#AC_CONFIG_COMMANDS([sysconffile], [SYSCONFPATH=`echo ${sysconfdir} says hello`])
+#AC_SUBST(SYSCONFPATH)
+
 # Output files.
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_FILES([Makefile src/Makefile data/Makefile doc/Makefile doc/man/Makefile test/Makefile])
-AC_OUTPUT([src/sysconffile.generate-h doc/main.doc])
+#AC_OUTPUT([src/sysconffile.generate-h doc/main.doc])
+AC_OUTPUT([doc/main.doc])
 
 echo "
-  ($PACKAGE_NAME) version $PACKAGE_VERSION
+  $PACKAGE_NAME version $PACKAGE_VERSION
   Prefix.........: $prefix
   C Compiler.....: $CC $CFLAGS
   C++ Compiler...: $CXX $CXXFLAGS $CPPFLAGS
   Linker.........: $LD $LDFLAGS $LIBS
   Doxygen........: ${DOXYGEN:-NONE}
+  SYSCONFPATH....: ${SYSCONFPATH}
 "
+
+#SYSCONFPATH=`echo ${sysconfdir}`
+#SYSCONFPATH=`eval echo $SYSCONFPATH`
+#SYSCONFPATH=`eval echo $SYSCONFPATH`
+#echo $SYSCONFPATH
+
 #  Splint.........: ${SPLINT:-NO}

@@ -10,12 +10,17 @@ export DH_ALWAYS_EXCLUDE=ChangeLog
 # Build rule for man1 pages.
 %.1 : %.1.src
 	REPLACE="$$""{sysconfdir}"; \
-	cat $< | sed "s^$$REPLACE^${sysconfdir}^" > $@
+	sed < $< "s^$$REPLACE^${sysconfdir}^" > $@
 
 # Build rule for man5 pages.
 %.5 : %.5.src
 	REPLACE="$$""{sysconfdir}"; \
-	cat $< | sed "s^$$REPLACE^${sysconfdir}^" > $@
+	sed < $< "s^$$REPLACE^${sysconfdir}^" > $@
+
+# Build rule for sysconffile.h
+sysconffile.h : sysconffile.h.src
+	REPLACE="$$""{sysconfdir}"; \
+	sed < $< "s^$$REPLACE^/etc^" > $@
 
 %:
 	dh $@ --with autotools_dev
@@ -25,11 +30,11 @@ override_dh_auto_configure:
 	dh_auto_configure --
 
 override_dh_auto_build:
-	cd src; sh ../script/generate-sysconffile.sh
 	dh_auto_build --
 
 override_dh_auto_clean:
 	rm -f src/sysconffile.h src/sysconffile.generate-h
+	rm -rf doc/doxygen
 	dh_auto_clean --
 
 override_dh_builddeb:
