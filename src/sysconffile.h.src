@@ -1,5 +1,5 @@
 /**
- * \file sysconffile.generate-h
+ * \file sysconffile.h
  * \brief Create a sysconffile.h with the default configuration file name.
  *
  * Copyright (C) 2012 Ole Wolf <wolf@blazingangles.com>

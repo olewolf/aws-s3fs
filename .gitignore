@@ -32,6 +32,7 @@ test/test-common
 test/test-config
 test/test-configfile
 test/test-decodecmdline
+test/test-logging
 test/testsuite
 test/testsuite.log
 stamp-h1
