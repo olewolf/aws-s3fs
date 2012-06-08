@@ -4,13 +4,14 @@
 	added -f option for foreground (i.e., non-daemon) operation.
 	thread safety modifications begun (not that it's really necessary, but
 	still).
-	  * decodecmdline.c is thread-safe.
-	  * logger.c is thread-safe.
-	  * common.c is thread-safe.
-	  * configfile.c is thread-safe.
-	  * fix-i386-cc.c is thread-safe.
-	  * config.c is thread-safe.
-	  * aws-s3fs.c is thread-safe.
+	  * decodecmdline.c seems thread-safe.
+	  * logger.c seems thread-safe.
+	  * common.c seems thread-safe.
+	  * configfile.c seems thread-safe.
+	  * fix-i386-cc.c seems thread-safe.
+	  * config.c seems thread-safe.
+	  * aws-s3fs.c seems thread-safe.
+	  * regression test passed.
 
 2012-06-07:
 	slight refactoring of the test functions by adding shared.c.

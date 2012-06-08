@@ -22,6 +22,7 @@
 
 
 #include <config.h>
+#include <stdlib.h>
 #include <syslog.h>
 #include <stdio.h>
 #include <stdbool.h>
@@ -33,10 +34,16 @@
 #include <time.h>
 #include "aws-s3fs.h"
 
-#include <stdlib.h>
+
+#define MAX_LOG_ENTRY_LENGTH 1024
 
 
 
+/**
+ * Initialize the process context for the logging module.
+ * @param logging [out] Context for the logging module.
+ * @return Nothing.
+ */
 void InitializeLoggingModule(
     struct ThreadsafeLogging *logging
 			     )
@@ -195,7 +202,7 @@ LogMessage(
         "Jan", "Feb", "Mar", "Apr", "May", "Jun",
 	"Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
     };
-    char logmessage[ 1024 ];
+    char logmessage[ MAX_LOG_ENTRY_LENGTH + 1 ];
 
     if( loggingEnabled )
     {
@@ -248,9 +255,9 @@ Syslog(
         int   d;
         char  *s;
     } printable;
-    char compile[ 1024 ];
-    char *outString = compile;
-    char argument[ 256 ];
+    char compile[ MAX_LOG_ENTRY_LENGTH + 1 ];
+    int  outIdx = 0;
+    char argument[ MAX_LOG_ENTRY_LENGTH + 1 ];
     va_list v1;
 
     va_start( v1, format );
@@ -259,15 +266,16 @@ Syslog(
     idx = 0;
     while( ( ch = format[ idx++ ] ) != '\0' )
     {
+        assert( outIdx < MAX_LOG_ENTRY_LENGTH );
         if( ch != '%' )
 	{
-	    *outString++ = ch;
+	    compile[ outIdx++ ] = ch;
         }
         else
 	{
 	    if( format[ idx ] == '%' )
 	    {
-	        *outString++ = ch;
+	        compile[ outIdx++ ] = ch;
 	    }
 	    else
 	    {
@@ -285,13 +293,14 @@ Syslog(
 		        argument[ 0 ] = '\0';
 		        break;
 		}
-		strcpy( outString, argument );
-		outString += strlen( argument );
+		assert( outIdx + strlen( argument ) < MAX_LOG_ENTRY_LENGTH );
+		strcpy( &compile[ outIdx ], argument );
+		outIdx += strlen( argument );
 	    }
 	    idx++;
 	}
     }
-    *outString = '\0';
+    compile[ outIdx ] = '\0';
 
     va_end( v1 );
 
