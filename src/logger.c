@@ -31,39 +31,72 @@
 #include <unistd.h>
 #include <limits.h>
 #include <time.h>
+#include "aws-s3fs.h"
+
+#include <stdlib.h>
 
 
-bool              loggingEnabled = true;
+static bool       loggingEnabled = true;
 static bool       logToSyslog    = false;
 static FILE       *logFh         = NULL;
 static char       hostname[ HOST_NAME_MAX + 1 ];
 static const char *logFilename   = NULL;
 
 
+
 void
 Syslog(
-       int        priority,
-       const char *format,
-       ...
+    int        priority,
+    const char *format,
+    ...
        );
 
 
+
+/**
+ * Disable logging of any messages.
+ * @return Nothing.
+ */
+void
+DisableLogging(
+    void
+	       )
+{
+    loggingEnabled = false;
+}
+
+
+/**
+ * Enable logging of all messages.
+ * @return Nothing.
+ */
+void
+EnableLogging(
+    void
+	       )
+{
+    loggingEnabled = true;
+}
+
+
 const char *LogFilename(
-			void
+    void
 			)
 {
     return logFilename;
 }
 
 
-
+/**
+ * Initialize the logging to use syslog, a specified filename, or stdout.
+ * @param logfile [in] The name of the logfile: syslog, a filename, or NULL.
+ * @return Nothing.
+ */
 void
 InitLog(
-	const char *logfile
+    const char *logfile
 	)
 {
-    logFilename = logfile;
-
     if( loggingEnabled != true )
     {
         logToSyslog = false;
@@ -71,32 +104,40 @@ InitLog(
         return;
     }
 
+    logFilename = logfile;
+
     /* Get the hostname. */
     gethostname( hostname, HOST_NAME_MAX );
     hostname[ HOST_NAME_MAX ] = '\0';
 
     /* Open the log file. */
-    if( strcmp( logfile, "syslog" ) == 0 )
+    if( logfile != NULL )
     {
-        logToSyslog = true;
-        openlog( "aws-s3fs", LOG_CONS, LOG_DAEMON );
-    }
-    else
-    {
-        logToSyslog = false;
-	logFh = fopen( logfile, "a" );
-	if( logFh == NULL )
+	if( strcmp( logfile, "syslog" ) == 0 )
+        {
+	    logToSyslog = true;
+	    openlog( "aws-s3fs", LOG_CONS, LOG_DAEMON );
+	}
+	else
 	{
-	    Syslog( LOG_ERR, "Cannot open %s logfile for writing", logfile );
+	    logToSyslog = false;
+	    logFh = fopen( logfile, "a" );
+	    if( logFh == NULL )
+	    {
+		Syslog( LOG_ERR, "Cannot open %s logfile for writing", logfile );
+	    }
 	}
     }
 }
 
 
-
+/**
+ * Close the log file for now.
+ * @return Nothing.
+ */
 void
 CloseLog(
-	 void
+    void
 	 )
 {
     if( logFh != NULL )
@@ -104,14 +145,23 @@ CloseLog(
         fclose( logFh );
 	logFh = NULL;
     }
+    else if( ( logFilename ) && ( strcmp( LogFilename( ), "syslog" ) == 0 ) )
+    {
+        closelog( );
+    }
 }
 
 
-
+/**
+ * Commit a parsed message string to the log.
+ * @param priority [in] Whether the message is a LOG_ERR, LOG_WARNING, etc.
+ * @param message [in] String to append to the log.
+ * @return Nothing.
+ */
 static void
 LogMessage( 
-	   int        priority,
-	   const char *message
+    int        priority,
+    const char *message
 	    )
 {
     time_t t     = time( NULL );
@@ -132,18 +182,18 @@ LogMessage(
 	else
 	{
 	    /* Generate log message with preamble. */
-	    sprintf( logmessage, "%s %2d %02d:%02d:%02d %s aws-s3fs %s",
+	    sprintf( logmessage, "%s %2d %02d:%02d:%02d %s aws-s3fs: %s",
 		     months[ tm.tm_mon + 1 ], tm.tm_mday,
 		     tm.tm_hour, tm.tm_min, tm.tm_sec,
 		     hostname,
 		     message );
-
 	    if( logFh != NULL )
 	    {
 	        fputs( logmessage, logFh );
 	    }
 	    else
 	    {
+	        fputs( logmessage, stdout );
 	    }
 	}
     }
@@ -151,11 +201,19 @@ LogMessage(
 
 
 
+/**
+ * Log a message to file, stdout, or syslog, depending on the log
+ * initialization.
+ * @param priority [in] Whether the message is a LOG_ERR, LOG_WARNING, etc.
+ * @param format [in] Formatting string for the message.
+ * @param ... [in] Variable number of arguments for the formatting string.
+ * @return Nothing.
+ */
 void
 Syslog(
-       int        priority,
-       const char *format,
-       ...
+    int        priority,
+    const char *format,
+    ...
        )
 {
     int ch;

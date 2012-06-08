@@ -1,0 +1,27 @@
+# Copyright (C) 2012 Ole Wolf <wolf@blazingangles.com>
+#
+# This file is part of aws-s3fs.
+# 
+# aws-s3fs is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+AT_BANNER([Logging Tests])
+
+AT_SETUP([Syslog])
+AT_CHECK([test-logging Syslog 1], [], [stdout])
+AT_CHECK([grep -e '\(Jan\|Feb\|Mar\|Apr\|May\|Jun\|Jul\|Aug\|Sep\|Oct\|Nov\|Dec\)@<:@@<:@:space:@:>@@:>@\+@<:@0-9@:>@\{1,2\} @<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\} @<:@a-zA-Z0-9@:>@\+ aws-s3fs: Message 1: 42 Test$' stdout], [], [ignore])
+AT_CHECK([test-logging Syslog 2], [], [stdout])
+AT_CHECK([rm -f >/dev/null 2>&1 test-log.log; test-logging Syslog 3], [], [stdout])
+AT_CHECK([grep -e '\(Jan\|Feb\|Mar\|Apr\|May\|Jun\|Jul\|Aug\|Sep\|Oct\|Nov\|Dec\)@<:@@<:@:space:@:>@@:>@\+@<:@0-9@:>@\{1,2\} @<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\} @<:@a-zA-Z0-9@:>@\+ aws-s3fs: Message 3: 42 Test$' test-log.log], [], [ignore])
+AT_CLEANUP

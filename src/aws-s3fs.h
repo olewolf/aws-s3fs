@@ -76,31 +76,16 @@ struct cmdlineConfiguration {
 
 
 /* In logger.c */
-void Syslog(
-    int        priority,
-    const char *format,
-    ...
-	    );
-
-const char *LogFilename(
-    void
-			);
-
-void InitLog(
-        const char *logfile
-        );
-
+void Syslog( int priority, const char *format, ... );
+const char *LogFilename( void );
+void EnableLogging( void );
+void DisableLogging( void );
+void InitLog( const char *logfile );
 void CloseLog( void );
 
 
-
 /* In common.c */
-void
-VerboseOutput(
-    const char *format,
-    ...
-	      );
-
+void VerboseOutput( const char *format, ... );
 
 /* In aws-s3fs.c. */
 void
