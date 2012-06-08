@@ -27,10 +27,29 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <signal.h>
+#include <stdbool.h>
 #include "aws-s3fs.h"
 
 
 #define RUN_DIR "/tmp"
+
+
+static bool daemonizeFlag = true;
+
+
+/**
+ * Call this function to instruct the daemonization routine not to fork this
+ * process.
+ * @return Nothing.
+ */
+void
+DoNotDaemonize(
+    void
+	       )
+{
+    daemonizeFlag = false;
+}
+
 
 
 /**
@@ -64,7 +83,9 @@ SignalHandler(
 
 
 /**
- * Fork the process into the background and prepare signal response.
+ * Fork the process into the background and prepare signal responses. If the
+ * function \a DoNotDaemonize has been called, the process stays in the
+ * foreground.
  * @return Nothing.
  */
 void
@@ -78,84 +99,87 @@ Daemonize(
     char pid[ 10 ];
 #endif /* USE_LOCK */
 
-    /* Already a daemon */
-    if( getppid( ) == 1 )
+    if( daemonizeFlag )
     {
-        return;
-    }
+        /* Already a daemon */
+        if( getppid( ) == 1 )
+	{
+	    return;
+	}
 
-    /* Attempt to fork into background. */
-    i = fork( );
-    /* Fork error. */
-    if( i < 0 )
-    {
-        exit( EXIT_FAILURE );
-    }
-    /* Parent exits. */
-    else if( i > 0 )
-    {
-        exit( EXIT_SUCCESS );
-    }
-    /* Child (daemon) continues. */
-    else
-    {
-        /* Obtain a new process group. */
-	setsid( ); 
-	/* Close all descriptors. */
-	for( i = getdtablesize( ); i >= 0; --i )
-	{
-	    close(i);
-	}
-	/* Handle standard I/O. */
-	i = open( "/dev/null", O_RDWR );
-	if( dup( i ) < 0 )
+	/* Attempt to fork into background. */
+	i = fork( );
+	/* Fork error. */
+	if( i < 0 )
 	{
 	    exit( EXIT_FAILURE );
 	}
-	if( dup( i ) < 0 )
+	/* Parent exits. */
+	else if( i > 0 )
 	{
-	    exit( EXIT_FAILURE );
+	    exit( EXIT_SUCCESS );
 	}
-	/* Set default file permissions for created files. */
-	umask(027);
-	/* Change running directory. */
-	if( chdir( RUN_DIR ) != 0 )
-	{
-	    Syslog( LOG_WARNING, "Cannot change to directory %s", RUN_DIR );
-	}
-#ifdef USE_LOCK
-	/* Create lock file. */
-	lockFp = open( LOCK_FILE, O_RDWR | O_CREAT, 0640 );
-	if( lockFp < 0 )
-	{
-	    /* Cannot create lock file. */
-	    exit( EXIT_FAILURE );
-        }
-	else if( lockf( lockFp, F_TLOCK, 0 ) < 0 )
-	{
-	    /* Cannot create lock. */
-	    exit( EXIT_FAILURE );
-        }
+	/* Child (daemon) continues. */
 	else
 	{
-	    /* First instance continues. */
-	    /* Record pid in lockfile. */
-	    sprintf( pid, "%d\n", getpid( ) );
-	    write( lockFp, pid, strlen( pid ) );
-#endif /* USE_LOCK */
-	    /* Ignore child. */
-	    signal( SIGCHLD, SIG_IGN);
-	    /* Ignore tty signals. */
-	    signal( SIGTSTP, SIG_IGN);
-	    signal( SIGTTOU, SIG_IGN);
-	    signal( SIGTTIN, SIG_IGN);
-	    /* Respond to SIGHUP. */
-	    signal( SIGHUP, SignalHandler );
-	    /* Respond to SIGTERM. */
-	    signal( SIGTERM, SignalHandler );
+	    /* Obtain a new process group. */
+	    setsid( ); 
+	    /* Close all descriptors. */
+	    for( i = getdtablesize( ); i >= 0; --i )
+	    {
+		close(i);
+	    }
+	    /* Handle standard I/O. */
+	    i = open( "/dev/null", O_RDWR );
+	    if( dup( i ) < 0 )
+	    {
+		exit( EXIT_FAILURE );
+	    }
+	    if( dup( i ) < 0 )
+	    {
+		exit( EXIT_FAILURE );
+	    }
+	    /* Set default file permissions for created files. */
+	    umask(027);
+	    /* Change running directory. */
+	    if( chdir( RUN_DIR ) != 0 )
+	    {
+		Syslog( LOG_WARNING, "Cannot change to directory %s", RUN_DIR );
+	    }
 #ifdef USE_LOCK
-	}
+	    /* Create lock file. */
+	    lockFp = open( LOCK_FILE, O_RDWR | O_CREAT, 0640 );
+	    if( lockFp < 0 )
+	    {
+		/* Cannot create lock file. */
+	        exit( EXIT_FAILURE );
+	    }
+	    else if( lockf( lockFp, F_TLOCK, 0 ) < 0 )
+	    {
+		/* Cannot create lock. */
+		exit( EXIT_FAILURE );
+	    }
+	    else
+	    {
+		/* First instance continues. */
+		/* Record pid in lockfile. */
+		sprintf( pid, "%d\n", getpid( ) );
+		write( lockFp, pid, strlen( pid ) );
 #endif /* USE_LOCK */
+		/* Ignore child. */
+		signal( SIGCHLD, SIG_IGN);
+		/* Ignore tty signals. */
+		signal( SIGTSTP, SIG_IGN);
+		signal( SIGTTOU, SIG_IGN);
+		signal( SIGTTIN, SIG_IGN);
+		/* Respond to SIGHUP. */
+		signal( SIGHUP, SignalHandler );
+		/* Respond to SIGTERM. */
+		signal( SIGTERM, SignalHandler );
+#ifdef USE_LOCK
+	    }
+#endif /* USE_LOCK */
+	}
     }
 }
 

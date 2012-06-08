@@ -45,6 +45,8 @@ void test_ExtractKey( const char * );
 void test_CopyDefaultString( const char * );
 void test_Configure( const char * );
 
+void DoNotDaemonize( void ) { }
+
 
 struct configuration configuration;
 

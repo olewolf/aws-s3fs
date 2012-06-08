@@ -63,6 +63,7 @@ PrintSoftwareHelp( const char *commandName, bool showOptions )
 	printf( "      -p, --path=path       Set the path relative to the root of the S3 bucket\n" );
 	printf( "      -k, --key=xxxx:yyyy   Set the access key and secret key\n" );
 	printf( "      -c, --config=file     Specify an alternative configuration file\n" );
+	printf( "      -f, --foreground      Run in foreground, i.e., not as a daemon\n" );
 	printf( "      -l, --log=file|syslog Specify a log file, or syslog\n" );
 	printf( "      -v, --verbose         Generate verbose output\n" );
 	printf( "      -L, --license         Print licensing information and exit\n" );
@@ -216,16 +217,17 @@ DecodeCommandLine(
     /*@-null@*/
     static struct option longOptions[ ] =
     {
-        { "help",      no_argument,       NULL, (int)'h' },
-        { "version",   no_argument,       NULL, (int)'V' },
-        { "license",   no_argument,       NULL, (int)'L' },
-	{ "region",    required_argument, NULL, (int)'r' },
-	{ "bucket",    required_argument, NULL, (int)'b' },
-	{ "path",      required_argument, NULL, (int)'p' },
-	{ "logfile",   required_argument, NULL, (int)'l' },
-	{ "key",       required_argument, NULL, (int)'k' },
-        { "verbose",   no_argument,       NULL, (int)'v' },
-        { "config",    required_argument, NULL, (int)'c' },
+        { "help",       no_argument,       NULL, (int)'h' },
+        { "version",    no_argument,       NULL, (int)'V' },
+        { "license",    no_argument,       NULL, (int)'L' },
+	{ "region",     required_argument, NULL, (int)'r' },
+	{ "bucket",     required_argument, NULL, (int)'b' },
+	{ "path",       required_argument, NULL, (int)'p' },
+	{ "logfile",    required_argument, NULL, (int)'l' },
+	{ "foreground", no_argument,       NULL, (int)'f' },
+	{ "key",        required_argument, NULL, (int)'k' },
+        { "verbose",    no_argument,       NULL, (int)'v' },
+        { "config",     required_argument, NULL, (int)'c' },
 	{ NULL, 0, NULL, 0 }
     };
     /*@+null@*/
@@ -257,7 +259,7 @@ DecodeCommandLine(
 
     /* Decode the command-line switches. */
     while( ( optionCharacter = getopt_long( argc, (char * const *) argv,
-	    "hVLr:b:p:l:k:vc:", longOptions, &optionIndex ) )
+	    "hVLr:b:p:l:k:vfc:", longOptions, &optionIndex ) )
 	   != -1 )
     {
         switch( optionCharacter )
@@ -331,6 +333,10 @@ DecodeCommandLine(
 	case 'v':
 	    cmdlineConfiguration->configuration.verbose.isset = true;
 	    cmdlineConfiguration->configuration.verbose.value = true;
+	    break;
+	/* Run in foreground */
+	case 'f':
+	    DoNotDaemonize( );
 	    break;
 	/* Set config file. */
 	case 'c':

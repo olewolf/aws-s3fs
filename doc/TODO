@@ -1,1 +1,0 @@
-* Add -f option to let aws-s3fs run in the foreground without daemonizing.

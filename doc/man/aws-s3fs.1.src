@@ -105,6 +105,14 @@ Any options specified on the command line override the corresponding setting in 
 
 .TP
 .PD 0
+.B \-f
+.TP
+.PD
+.B \-\-foreground
+Run aws-s3fs in the foreground rather than daemonizing it.
+
+.TP
+.PD 0
 .B \-k \fRaccesskey:secretkey
 .TP
 .PD

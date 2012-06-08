@@ -20,6 +20,9 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#ifndef __AWS_S3FS_H
+#define __AWS_S3FS_H
+
 #include <config.h>
 #include <assert.h>
 #include <stdio.h>
@@ -155,3 +158,12 @@ DecodeCommandLine(
     const char * const          *argv
 );
 
+
+/* In daemon.c. */
+
+void DoNotDaemonize( );
+void Daemonize( );
+
+
+
+#endif /* __AWS_S3FS_H */

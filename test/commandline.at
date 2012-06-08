@@ -91,4 +91,7 @@ AT_CHECK([test-decodecmdline DecodeCommandLine 10], [], [stdout])
 AT_CHECK([grep '^10: R 0 B overridebucket10 P override1 k (null):(null) l (null) v 0 m mountdir/dir c (null)$' stdout], [], [ignore])
 AT_CHECK([test-decodecmdline DecodeCommandLine 11], [], [stdout])
 AT_CHECK([grep '^11: R 0 B bucket11 P overridepath11 k (null):(null) l (null) v 0 m mountdir/dir c (null)$' stdout], [], [ignore])
+AT_CHECK([test-decodecmdline DecodeCommandLine 12], [], [stdout])
+AT_CHECK([grep '^Will run in foreground$' stdout], [], [ignore])
+AT_CHECK([grep '^12: R 0 B bucket11 P path11 k (null):(null) l (null) v 0 m mountdir/dir c (null)$' stdout], [], [ignore])
 AT_CLEANUP

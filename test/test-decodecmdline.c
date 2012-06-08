@@ -34,6 +34,11 @@ extern void SplitS3MountPath( const char *, char **, char ** );
 void test_SplitS3MountPath( const char * );
 void test_DecodeCommandLine( const char * );
 
+void DoNotDaemonize( void )
+{
+    printf( "Will run in foreground\n" );
+}
+
 
 const struct dispatchTable dispatchTable[ ] =
 {
@@ -146,11 +151,17 @@ void test_DecodeCommandLine( const char *parms )
 	"-p", "override1",
 	":overridepath11",
 	"mountdir/dir",
+
+	/* argc = 5 */
+	"aws-s3fs",
+	"-b", "bucket11:path11",
+	"-f",
+	"mountdir/dir",
     };
 
     int testNumber;
     char *mountPoint;
-    int argcounts[ ] = { 0, 13, 11, 3, 6, 4, 6, 7, 7, 7, 7, 7 };
+    int argcounts[ ] = { 0, 13, 11, 3, 6, 4, 6, 7, 7, 7, 7, 7, 5 };
     int argc;
     int argvbegins;
     int i;
@@ -208,6 +219,4 @@ void test_SplitS3MountPath( const char *parms )
 	if( path   != NULL ) free( path );
     }
 }
-
-
 

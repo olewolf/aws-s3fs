@@ -36,8 +36,9 @@ extern void ConfigSetBoolean( struct configurationBoolean *,
 extern bool ReadConfigFile( const FILE *, const char *,
 			    struct configuration * );
 
-
 void test_LookupConfigString( const char * );
+
+void DoNotDaemonize( void ) { }
 
 
 const struct dispatchTable dispatchTable[ ] =
