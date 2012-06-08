@@ -28,8 +28,6 @@
 
 
 
-extern void Syslog( int, const char *, ... );
-
 void test_Syslog( const char * );
 
 
@@ -40,34 +38,40 @@ const struct dispatchTable dispatchTable[ ] =
 };
 
 
+static struct ThreadsafeLogging logging;
+
 
 
 void test_Syslog( const char *parms )
 {
     int testNumber;
     sscanf( parms, "%d", &testNumber );
+    InitializeLoggingModule( &logging );
 
     switch( testNumber )
     {
         case 1:
-	    InitLog( NULL );
-	    EnableLogging( );
-	    Syslog( LOG_INFO, "Message %d: %d %s\n", testNumber, 42, "Test" );
-	    CloseLog( );
+	    InitLog( &logging, NULL );
+	    EnableLogging( &logging );
+	    Syslog( &logging, LOG_INFO,
+		    "Message %d: %d %s\n", testNumber, 42, "Test" );
+	    CloseLog( &logging );
 	    break;
 
         case 2:
-	    InitLog( "syslog" );
-	    EnableLogging( );
-	    Syslog( LOG_INFO, "Message %d: %d %s\n", testNumber, 42, "Test" );
-	    CloseLog( );
+	    InitLog( &logging, "syslog" );
+	    EnableLogging( &logging );
+	    Syslog( &logging, LOG_INFO,
+		    "Message %d: %d %s\n", testNumber, 42, "Test" );
+	    CloseLog( &logging );
 	    break;
 
         case 3:
-	    InitLog( "test-log.log" );
-	    EnableLogging( );
-	    Syslog( LOG_INFO, "Message %d: %d %s\n", testNumber, 42, "Test" );
-	    CloseLog( );
+	    InitLog( &logging, "test-log.log" );
+	    EnableLogging( &logging );
+	    Syslog( &logging, LOG_INFO,
+		    "Message %d: %d %s\n", testNumber, 42, "Test" );
+	    CloseLog( &logging );
 	    break;
     }
 }

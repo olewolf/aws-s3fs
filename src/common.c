@@ -28,32 +28,39 @@
 #include "aws-s3fs.h"
 
 
+/* Maximum message for each verbose output string. */
+#define MAX_OUTPUT_STRING 1024
 
 
-struct configuration configuration =
+void
+InitializeThreadConfiguration(
+    struct configuration *configuration
+			      )
 {
-    US_STANDARD,  /* region */
-    NULL,         /* bucketName */
-    NULL,         /* path */
-    NULL,         /* keyId */
-    NULL,         /* secretKey */
-    NULL,         /* logfile */
-    {
-        false,    /* value */
-	false     /* isset */
-    }             /* verbose */
-};
+    configuration->region     = US_STANDARD;
+    configuration->bucketName = NULL;
+    configuration->path       = NULL;
+    configuration->keyId      = NULL;
+    configuration->secretKey  = NULL;
+    configuration->logfile    = NULL;
+    configuration->verbose.value = false;
+    configuration->verbose.isset = false;
+    configuration->daemonize  = true;
+}
 
 
 
 /**
  * Write verbose output if the verbose output option has been specified.
+ * @param verboseOutput [in] \a true if verbose output is enabled; \a false
+ *        otherwise.
  * @param format [in] Formatting string for the output.
  * @param ... [in] Parameters for the format string.
  * @return FILE* pointer, or NULL if the file cannot be read.
  */
 void
 VerboseOutput(
+    bool       verboseOutput,
     const char *format,
     ...
 	      )
@@ -66,9 +73,9 @@ VerboseOutput(
         char  c;
         char  *s;
     } printable;
-    char compile[ 1024 ];
-    char *outString = compile;
-    char argument[ 256 ];
+    char compile[ MAX_OUTPUT_STRING ];
+    int  outIdx = 0;
+    char argument[ MAX_OUTPUT_STRING ];
     va_list v1;
 
     va_start( v1, format );
@@ -77,15 +84,16 @@ VerboseOutput(
     idx = 0;
     while( ( ch = format[ idx++ ] ) != '\0' )
     {
+        assert( outIdx < MAX_OUTPUT_STRING - 1 );
         if( ch != '%' )
 	{
-	    *outString++ = ch;
+	    compile[ outIdx++ ] = ch;
         }
         else
 	{
 	    if( format[ idx ] == '%' )
 	    {
-	        *outString++ = ch;
+	        compile[ outIdx++ ] = ch;
 	    }
 	    else
 	    {
@@ -97,6 +105,7 @@ VerboseOutput(
 		        break;
 		    case 's':
 		        printable.s = va_arg( v1, char* );
+			assert( strlen( printable.s ) < MAX_OUTPUT_STRING );
 			sprintf( argument, "%s", printable.s );
 		        break;
 		    case 'f':
@@ -111,17 +120,18 @@ VerboseOutput(
 		        argument[ 0 ] = '\0';
 		        break;
 		}
-		strcpy( outString, argument );
-		outString += strlen( argument );
+		assert( outIdx + strlen( argument ) < MAX_OUTPUT_STRING );
+		strcpy( &compile[ outIdx ], argument );
+		outIdx += strlen( argument );
 	    }
 	    idx++;
 	}
     }
-    *outString = '\0';
+    compile[ outIdx ] = '\0';
 
     va_end( v1 );
 
-    if( configuration.verbose.value && configuration.verbose.isset )
+    if( verboseOutput )
     {
 	printf( "%s", compile );
     }

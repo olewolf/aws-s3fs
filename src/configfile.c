@@ -44,7 +44,7 @@ LookupConfigString(
     const char *configValue = NULL;
 
     /*@-compdef@*/
-    ( void )config_lookup_string ( config, key, &configValue );
+    ( void )config_lookup_string( config, key, &configValue );
     /*@+compdef@*/
     return( configValue );
 }

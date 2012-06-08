@@ -326,6 +326,7 @@ InitializeConfiguration(
     /*@+null@*/
     configuration->verbose.value = DEFAULT_VERBOSE;
     configuration->verbose.isset = false;
+    configuration->daemonize     = true;
 }
 
 
@@ -383,7 +384,8 @@ Configure(
 	    {
   	        .value = false,
 		.isset = false
-	    }
+	    },
+	    .daemonize   = true
 	},
         .configFile          = NULL,
 	.regionSpecified     = false,
@@ -454,7 +456,6 @@ Configure(
     }
     if( configFp != NULL )
     {
-        VerboseOutput( "Reading configuration from %s.\n", configFile );
 	configSuccess = ReadConfigFile( configFp, configFile, configuration );
     }
     if( ( configFp == NULL ) && ( forcedConfigFile != false ) )
@@ -468,15 +469,18 @@ Configure(
 	fprintf( stderr, "Invalid config file settings.\n" );
 	exit( EXIT_FAILURE );
     }
+    else
+    {
+        VerboseOutput( configuration->verbose.value,
+		       "Read configuration from %s.\n", configFile );
+    }
 
     /* Having read the config file (if any of them existed), overwrite any
        configuration setting that is specified by the secret key environment
        variable. */
     accessKeys = getenv( "AWS_S3FS_KEY" );
-    printf( "Environment variable AWS_S3FS_KEY: %s\n", accessKeys );
     if( accessKeys != NULL )
     {
-        VerboseOutput( "AWS_S3FS_KEY variable found.\n" );
         keyError = false;
 	/*@-null@*/
 	ConfigSetKey( &configuration->keyId, &configuration->secretKey,
@@ -486,6 +490,11 @@ Configure(
 	{
 	    fprintf( stderr, "AWS_S3FS_KEY: invalid format.\n" );
 	    exit( EXIT_FAILURE );
+	}
+	else
+	{
+	    VerboseOutput( configuration->verbose.value,
+			   "Keys set from AWS_S3FS_KEY variable.\n" );
 	}
     }
 
@@ -535,6 +544,7 @@ Configure(
 	configuration->verbose.isset = true;
 	configuration->verbose.value = cmdlineConfiguration.configuration.verbose.value;
     }
+    configuration->daemonize = cmdlineConfiguration.configuration.daemonize;
 
     /* Destroy the temporary configuration structure holding the command-line
        options. */
@@ -544,10 +554,12 @@ Configure(
     free( cmdlineConfiguration.configuration.secretKey );
     free( cmdlineConfiguration.configuration.logfile );
 
-    VerboseOutput( "Configuration:\n" );
-    VerboseOutput( "  Region: %s\n", regionNames[ configuration->region ] );
-    VerboseOutput( "  Bucket: %s\n", ShowStringValue( configuration->bucketName ) );
-    VerboseOutput( "  Path: %s\n", ShowStringValue( configuration->path ) );
-    VerboseOutput( "  Syslog: %s\n", ShowStringValue( configuration->logfile ) );
-    VerboseOutput( "  Mount point: %s\n", ShowStringValue( *mountPoint ) );
+    VerboseOutput( configuration->verbose.value,
+		   "Configuration:\n  Region: %s\n  Bucket: %s\n"
+		   "  Path: %s\n  Syslog: %s\n  Mount point %s\n",
+		   regionNames[ configuration->region ],
+		   ShowStringValue( configuration->bucketName ),
+		   ShowStringValue( configuration->path ),
+		   ShowStringValue( configuration->logfile ),
+		   ShowStringValue( *mountPoint ) );
 }

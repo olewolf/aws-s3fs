@@ -64,6 +64,7 @@ struct configuration {
     /*@null@*/ char             *secretKey;
     /*@null@*/ char             *logfile;
     struct configurationBoolean verbose;
+    bool                        daemonize;
 };
 
 struct cmdlineConfiguration {
@@ -77,18 +78,30 @@ struct cmdlineConfiguration {
     bool                 logfileSpecified;
 };
 
+/* For logging. */
+struct ThreadsafeLogging
+{
+    bool       loggingEnabled;
+    bool       logToSyslog;
+    FILE       *logFh;
+    const char *hostname;
+    const char *logFilename;
+};
+
 
 /* In logger.c */
-void Syslog( int priority, const char *format, ... );
-const char *LogFilename( void );
-void EnableLogging( void );
-void DisableLogging( void );
-void InitLog( const char *logfile );
-void CloseLog( void );
+void InitializeLoggingModule( struct ThreadsafeLogging * );
+void Syslog( const struct ThreadsafeLogging *,
+	     int priority, const char *format, ... );
+const char *LogFilename( const struct ThreadsafeLogging * );
+void EnableLogging( struct ThreadsafeLogging * );
+void DisableLogging( struct ThreadsafeLogging * );
+void InitLog( struct ThreadsafeLogging *, const char *logfile );
+void CloseLog( struct ThreadsafeLogging * );
 
 
 /* In common.c */
-void VerboseOutput( const char *format, ... );
+void VerboseOutput( bool, const char *format, ... );
 
 /* In aws-s3fs.c. */
 void
@@ -99,11 +112,6 @@ Configure(
     const char * const   *argv
 );
 
-extern bool verboseOutput;
-/*@-exportlocal@*/
-extern struct configuration configuration;
-/*@+exportlocal@*/
-
 
 
 /* In config.c. */
@@ -111,6 +119,8 @@ void CopyDefaultString(
     char       **key,
     const char *value
 );
+
+void InitializeThreadConfiguration( struct configuration * );
 
 bool
 ReadConfigFile(
@@ -159,11 +169,19 @@ DecodeCommandLine(
 );
 
 
+
 /* In daemon.c. */
 
-void DoNotDaemonize( );
-void Daemonize( );
+void Daemonize( bool daemonize, const struct ThreadsafeLogging * );
 
+
+
+struct ThreadState
+{
+    struct ThreadsafeLogging logging;
+    struct configuration     configuration;
+    char                     *mountPoint;
+};
 
 
 #endif /* __AWS_S3FS_H */

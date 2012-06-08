@@ -27,6 +27,20 @@
 #include "aws-s3fs.h"
 
 
+
+
+void
+InitializeThread(
+    struct ThreadState *state
+		 )
+{
+    InitializeLoggingModule( &state->logging );
+    InitializeThreadConfiguration( &state->configuration );
+    state->mountPoint = NULL;
+}
+
+
+
 /**
  * Determine whether required, external programs are available, and prints
  * an error to stderr for each missing program.
@@ -86,14 +100,20 @@ static bool CheckAppsSupport( void )
 int
 main( int argc, char **argv )
 {
-    char *mountPoint;
+    struct ThreadState state;
 
     if( CheckAppsSupport( ) != true )
     {
 	exit( EXIT_FAILURE );
     }
 
-    Configure( &configuration, &mountPoint, argc, (const char * const *) argv );
+    InitializeThread( &state );
+
+    Configure( &state.configuration,
+	       &state.mountPoint,
+	       argc, (const char * const *) argv );
 
     return( EXIT_SUCCESS );
 }
+
+

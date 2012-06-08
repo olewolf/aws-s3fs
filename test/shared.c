@@ -38,7 +38,8 @@ void PrintConfig( int testNo, const struct cmdlineConfiguration *config, const c
     printf( "l %s ", config->configuration.logfile );
     printf( "v %d ", verbose );
     printf( "m %s ", mountPoint );
-    printf( "c %s\n", config->configFile );
+    printf( "c %s ", config->configFile );
+    printf( "d %d\n", config->configuration.daemonize );
 }
 
 
@@ -59,9 +60,14 @@ void ReleaseConfig( struct cmdlineConfiguration *config )
     conf->logfile = NULL;
     conf->verbose.value = false;
     conf->verbose.isset = false;
+    conf->daemonize = true;
     free( config->configFile );
     config->configFile = NULL;
     config->regionSpecified = false;
-    configuration.verbose.value = false;
+    config->bucketNameSpecified = false;
+    config->pathSpecified = false;
+    config->keyIdSpecified = false;
+    config->secretKeySpecified = false;
+    config->logfileSpecified = false;
 }
 

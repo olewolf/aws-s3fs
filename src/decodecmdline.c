@@ -250,12 +250,13 @@ DecodeCommandLine(
 	exit( EXIT_SUCCESS );
     }
 
-    cmdlineConfiguration->regionSpecified     = false;
-    cmdlineConfiguration->bucketNameSpecified = false;
-    cmdlineConfiguration->pathSpecified       = false;
-    cmdlineConfiguration->keyIdSpecified      = false;
-    cmdlineConfiguration->secretKeySpecified  = false;
-    cmdlineConfiguration->logfileSpecified    = false;
+    cmdlineConfiguration->regionSpecified         = false;
+    cmdlineConfiguration->bucketNameSpecified     = false;
+    cmdlineConfiguration->pathSpecified           = false;
+    cmdlineConfiguration->keyIdSpecified          = false;
+    cmdlineConfiguration->secretKeySpecified      = false;
+    cmdlineConfiguration->logfileSpecified        = false;
+    cmdlineConfiguration->configuration.daemonize = true;
 
     /* Decode the command-line switches. */
     while( ( optionCharacter = getopt_long( argc, (char * const *) argv,
@@ -336,7 +337,7 @@ DecodeCommandLine(
 	    break;
 	/* Run in foreground */
 	case 'f':
-	    DoNotDaemonize( );
+	    cmdlineConfiguration->configuration.daemonize = false;
 	    break;
 	/* Set config file. */
 	case 'c':

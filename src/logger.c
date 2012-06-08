@@ -36,95 +36,109 @@
 #include <stdlib.h>
 
 
-static bool       loggingEnabled = true;
-static bool       logToSyslog    = false;
-static FILE       *logFh         = NULL;
-static char       hostname[ HOST_NAME_MAX + 1 ];
-static const char *logFilename   = NULL;
 
-
-
-void
-Syslog(
-    int        priority,
-    const char *format,
-    ...
-       );
+void InitializeLoggingModule(
+    struct ThreadsafeLogging *logging
+			     )
+{
+    logging->loggingEnabled = true;
+    logging->logToSyslog    = false;
+    logging->logFh          = NULL;
+    logging->hostname       = NULL;
+    logging->logFilename    = NULL;
+}
 
 
 
 /**
  * Disable logging of any messages.
+ * @param logging [out] Thread state.
  * @return Nothing.
  */
 void
 DisableLogging(
-    void
+    struct ThreadsafeLogging *logging
 	       )
 {
-    loggingEnabled = false;
+    logging->loggingEnabled = false;
 }
 
 
 /**
  * Enable logging of all messages.
+ * @param logging [out] Thread state.
  * @return Nothing.
  */
 void
 EnableLogging(
-    void
-	       )
+    struct ThreadsafeLogging *logging
+	      )
 {
-    loggingEnabled = true;
+    logging->loggingEnabled = true;
 }
 
 
+/**
+ * Return the filename of the log.
+ * @param logging [in] Thread state.
+ * @return Name of the log file.
+ */
 const char *LogFilename(
-    void
+    const struct ThreadsafeLogging *logging
 			)
 {
-    return logFilename;
+    return logging->logFilename;
 }
 
 
 /**
  * Initialize the logging to use syslog, a specified filename, or stdout.
+ * @param logging [in/out] Thread state.
  * @param logfile [in] The name of the logfile: syslog, a filename, or NULL.
  * @return Nothing.
  */
 void
 InitLog(
-    const char *logfile
+    struct ThreadsafeLogging *logging,
+    const char               *logfile
 	)
 {
-    if( loggingEnabled != true )
+    char hostnameBuf[ HOST_NAME_MAX + 1 ];
+    char *hostname;
+
+    if( logging->loggingEnabled != true )
     {
-        logToSyslog = false;
-	logFh = NULL;
+        logging->logToSyslog = false;
+	logging->logFh = NULL;
         return;
     }
 
-    logFilename = logfile;
+    logging->logFilename = logfile;
 
     /* Get the hostname. */
-    gethostname( hostname, HOST_NAME_MAX );
-    hostname[ HOST_NAME_MAX ] = '\0';
+    gethostname( hostnameBuf, HOST_NAME_MAX );
+    hostnameBuf[ HOST_NAME_MAX ] = '\0';
+    
+    hostname = malloc( strlen( hostnameBuf ) + sizeof( char ) );
+    strcpy( hostname, hostnameBuf );
+    logging->hostname = hostname;
 
     /* Open the log file. */
     if( logfile != NULL )
     {
 	if( strcmp( logfile, "syslog" ) == 0 )
         {
-	    logToSyslog = true;
+	    logging->logToSyslog = true;
 	    openlog( "aws-s3fs", LOG_CONS, LOG_DAEMON );
 	}
 	else
 	{
-	    logToSyslog = false;
-	    logFh = fopen( logfile, "a" );
-	    if( logFh == NULL )
+	    logging->logToSyslog = false;
+	    logging->logFh = fopen( logfile, "a" );
+	    if( logging->logFh == NULL )
 	    {
-		Syslog( LOG_ERR, "Cannot open %s logfile for writing", logfile );
+	      Syslog( logging, LOG_ERR,
+		      "Cannot open %s logfile for writing", logfile );
 	    }
 	}
     }
@@ -133,39 +147,49 @@ InitLog(
 
 /**
  * Close the log file for now.
+ * @param logging [in/out] Thread state.
  * @return Nothing.
  */
 void
 CloseLog(
-    void
+    struct ThreadsafeLogging *logging
 	 )
 {
-    if( logFh != NULL )
+    if( logging->logFh != NULL )
     {
-        fclose( logFh );
-	logFh = NULL;
+        fclose( logging->logFh );
+	logging->logFh = NULL;
     }
-    else if( ( logFilename ) && ( strcmp( LogFilename( ), "syslog" ) == 0 ) )
+    else if( ( logging->logFilename ) &&
+	     ( strcmp( LogFilename( logging ), "syslog" ) == 0 ) )
     {
-        closelog( );
+        closelog( ); /* Is this thread-safe? */
     }
 }
 
 
 /**
  * Commit a parsed message string to the log.
+ * @param logFh [in] File handle of the log file, or NULL if there's no
+ *        log file.
+ * @param loggingEnabled [in] State whether logging is enabled at all.
+ * @param logToSyslog [in] Indicate that logs go to the syslog.
  * @param priority [in] Whether the message is a LOG_ERR, LOG_WARNING, etc.
  * @param message [in] String to append to the log.
  * @return Nothing.
  */
 static void
-LogMessage( 
+LogMessage(
+    FILE       *logFh,
+    bool       loggingEnabled,
+    bool       logToSyslog,
     int        priority,
+    const char *hostname,
     const char *message
-	    )
+	   )
 {
-    time_t t     = time( NULL );
-    struct tm tm = *localtime( &t );
+    time_t t                           = time( NULL );
+    struct tm tm                       = *localtime( &t );
     static const char const *months[ ] =
     {
         "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -204,6 +228,7 @@ LogMessage(
 /**
  * Log a message to file, stdout, or syslog, depending on the log
  * initialization.
+ * @param logging [in] Thread state.
  * @param priority [in] Whether the message is a LOG_ERR, LOG_WARNING, etc.
  * @param format [in] Formatting string for the message.
  * @param ... [in] Variable number of arguments for the formatting string.
@@ -211,9 +236,10 @@ LogMessage(
  */
 void
 Syslog(
-    int        priority,
-    const char *format,
-    ...
+    const struct ThreadsafeLogging *logging,
+    int                            priority,
+    const char                     *format,
+                                   ...
        )
 {
     int ch;
@@ -269,6 +295,7 @@ Syslog(
 
     va_end( v1 );
 
-    LogMessage( priority, compile );
+    LogMessage( logging->logFh, logging->loggingEnabled, logging->logToSyslog,
+		priority, logging->hostname, compile );
 }
 

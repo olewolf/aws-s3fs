@@ -33,24 +33,11 @@
 
 #define RUN_DIR "/tmp"
 
-
-static bool daemonizeFlag = true;
-
-
-/**
- * Call this function to instruct the daemonization routine not to fork this
- * process.
- * @return Nothing.
- */
-void
-DoNotDaemonize(
-    void
-	       )
+static void hdl (int sig, siginfo_t *siginfo, void *context)
 {
-    daemonizeFlag = false;
+	printf ("Sending PID: %ld, UID: %ld\n",
+			(long)siginfo->si_pid, (long)siginfo->si_uid);
 }
-
-
 
 /**
  * Respond to HUP and TERM signals.
@@ -59,17 +46,18 @@ DoNotDaemonize(
  */
 static void
 SignalHandler(
-	      int sig
+    int sig
 	      )
 {
     switch( sig )
     {
         /* Restart log if a HUP is received. */
         case SIGHUP:
+	  /*
 	    CloseLog( );
 	    InitLog( LogFilename( ) );
+	  */
 	    break;
-
         case SIGTERM:
 	    exit( EXIT_SUCCESS );
 	    break;
@@ -90,7 +78,8 @@ SignalHandler(
  */
 void
 Daemonize(
-	  void
+    bool                           daemonize,
+    const struct ThreadsafeLogging *logging
 	  )
 {
     int i;
@@ -98,8 +87,9 @@ Daemonize(
     int lockFp;
     char pid[ 10 ];
 #endif /* USE_LOCK */
+    struct sigaction sigAction;
 
-    if( daemonizeFlag )
+    if( daemonize )
     {
         /* Already a daemon */
         if( getppid( ) == 1 )
@@ -144,7 +134,8 @@ Daemonize(
 	    /* Change running directory. */
 	    if( chdir( RUN_DIR ) != 0 )
 	    {
-		Syslog( LOG_WARNING, "Cannot change to directory %s", RUN_DIR );
+	        Syslog( logging, LOG_WARNING,
+			"Cannot change to directory %s", RUN_DIR );
 	    }
 #ifdef USE_LOCK
 	    /* Create lock file. */
@@ -166,20 +157,88 @@ Daemonize(
 		sprintf( pid, "%d\n", getpid( ) );
 		write( lockFp, pid, strlen( pid ) );
 #endif /* USE_LOCK */
+
+		/* Use sigaction instead of signal. */
+		memset( &sigAction, 0, sizeof( sigAction ) );
+ 
+	/* Use the sa_sigaction field because the handles has two additional parameters */
+	act.sa_sigaction = &hdl;
+ 
+	/* The SA_SIGINFO flag tells sigaction() to use the sa_sigaction field, not sa_handler. */
+	act.sa_flags = SA_SIGINFO;
+ 
+	if (sigaction(SIGTERM, &act, NULL) < 0) {
+		perror ("sigaction");
+		return 1;
+	}
+
+
 		/* Ignore child. */
-		signal( SIGCHLD, SIG_IGN);
+/*		signal( SIGCHLD, SIG_IGN); */
 		/* Ignore tty signals. */
-		signal( SIGTSTP, SIG_IGN);
-		signal( SIGTTOU, SIG_IGN);
-		signal( SIGTTIN, SIG_IGN);
+/*		signal( SIGTSTP, SIG_IGN); */
+/*		signal( SIGTTOU, SIG_IGN); */
+/*		signal( SIGTTIN, SIG_IGN); */
 		/* Respond to SIGHUP. */
-		signal( SIGHUP, SignalHandler );
+/*		signal( SIGHUP, SignalHandler ); */
 		/* Respond to SIGTERM. */
-		signal( SIGTERM, SignalHandler );
+/*		signal( SIGTERM, SignalHandler ); */
 #ifdef USE_LOCK
 	    }
 #endif /* USE_LOCK */
 	}
     }
 }
+
+
+
+
+
+
+static volatile sig_atomic_t doneflag = 0;  
+  
+static void setdoneflag(int sig, siginfo_t *siginfo, void *context)  
+{  
+  printf ("Signo     -  %d\n",siginfo->si_signo);  
+  printf ("SigCode   -  %d\n",siginfo->si_code);  
+  doneflag = 1;  
+}  
+  
+int main (int argc, char *argv[])  
+{  
+  struct sigaction act;  
+  
+  memset (&act, '\0', sizeof(act));  
+  
+  act.sa_sigaction = &setdoneflag;  
+  
+  act.sa_flags = SA_SIGINFO;  
+  
+  if (sigaction(SIGINT, &act, NULL) < 0) {  
+      perror ("sigaction");  
+      return 1;  
+  }  
+  
+  while (!doneflag) {  
+      printf("press CTRL+C to kill the Loop\n");  
+      sleep(1);  
+  }  
+  
+  printf("Program terminating ...\n");  
+  return 0;  
+}  
+  
+Output:  
+  
+$ ./a.out  
+press CTRL+C to kill the Loop  
+press CTRL+C to kill the Loop  
+^C  
+Signo     -  2  
+SigCode   -  128  
+Program terminating ...  
+$ 
+
+
+http://www.cplusplus.com/forum/unices/6452/
 

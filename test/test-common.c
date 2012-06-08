@@ -70,15 +70,12 @@ void test_TestFileReadable( const char *parms )
 
 void test_VerboseOutput( const char *parms )
 {
-    configuration.verbose.isset = true;
-    configuration.verbose.value = true;
     printf( "1: " );
-    VerboseOutput( "d: %d, f: %f, c: %c, s: %s, %%.",
+    VerboseOutput( true, "d: %d, f: %f, c: %c, s: %s, %%.",
 		   42, (float)2.4, 'a', "test" );
     printf( "\n" );
-    configuration.verbose.isset = false;
     printf( "2: " );
-    VerboseOutput( "d: %d, f: %f, c: %c, s: %s, %%.",
+    VerboseOutput( false, "d: %d, f: %f, c: %c, s: %s, %%.",
 		   42, (float)2.4, 'a', "test" );
     printf( "\n" );
 }

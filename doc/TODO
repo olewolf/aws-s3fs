@@ -1,0 +1,6 @@
+* Make daemon.c thread-safe. In particular, the signal handler won't
+   know which thread state to address.
+
+* Regression test all functions and fix test code framework to allow
+   thread-safe functions.
+
