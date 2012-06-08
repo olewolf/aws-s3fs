@@ -16,7 +16,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 bin_PROGRAMS = aws-s3fs
-aws_s3fs_SOURCES = aws-s3fs.h aws-s3fs.c decodecmdline.c configfile.c common.c fix-i386-cc.c config.c logger.c sysconffile.h
+aws_s3fs_SOURCES = aws-s3fs.h aws-s3fs.c decodecmdline.c configfile.c common.c fix-i386-cc.c config.c logger.c daemon.c sysconffile.h
 
 BUILT_SOURCES = sysconffile.h
 CLEANFILES = sysconffile.h

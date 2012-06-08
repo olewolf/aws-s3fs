@@ -1,3 +1,6 @@
+2012-06-08:
+	work begun on daemon.c and logger.c.
+
 2012-06-07:
 	slight refactoring of the test functions by adding shared.c.
 	config.c: all functions tested.

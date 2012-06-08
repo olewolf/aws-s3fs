@@ -24,6 +24,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include <syslog.h>
 
 
 #define bool_equal( a, b ) ( (a) ? (b) : !(b) )
@@ -72,6 +73,25 @@ struct cmdlineConfiguration {
     bool                 secretKeySpecified;
     bool                 logfileSpecified;
 };
+
+
+/* In logger.c */
+void Syslog(
+    int        priority,
+    const char *format,
+    ...
+	    );
+
+const char *LogFilename(
+    void
+			);
+
+void InitLog(
+        const char *logfile
+        );
+
+void CloseLog( void );
+
 
 
 /* In common.c */

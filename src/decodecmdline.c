@@ -45,6 +45,8 @@ PrintSoftwareVersion( const char *commandName )
 /**
  * Print a help screen for this software and exit.
  * @param commandName [in] The filename of this file's executable.
+ * @param showOptions [in] \a true if the options should be displayed, or
+ *        \a false if only the usage summary should be displayed.
  * @return Nothing.
  */
 static void

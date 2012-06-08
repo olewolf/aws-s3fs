@@ -79,18 +79,34 @@ AC_CHECK_HEADERS([ctype.h],,
     AC_MSG_ERROR([*** ctype.h not found **]))
 AC_CHECK_HEADERS([syslog.h],,
     AC_MSG_ERROR([*** syslog.h not found **]))
+AC_CHECK_HEADERS([signal.h],,
+    AC_MSG_ERROR([*** signal.h not found **]))
+AC_CHECK_HEADERS([unistd.h],,
+    AC_MSG_ERROR([*** unistd.h not found **]))
+AC_CHECK_HEADERS([limits.h],,
+    AC_MSG_ERROR([*** limits.h not found **]))
+AC_CHECK_HEADERS([time.h],,
+    AC_MSG_ERROR([*** time.h not found **]))
+AC_CHECK_HEADERS([fcntl.h],,
+    AC_MSG_ERROR([*** fcntl.h not found **]))
+AC_CHECK_HEADERS([sys/stat.h],,
+    AC_MSG_ERROR([*** sys/stat.h not found **]))
 
 # Check for typedefs, structures, and compiler characteristics.
 # Check for library functions.
 AC_FUNC_MALLOC
 AC_CHECK_FUNCS([getopt_long],,
     AC_MSG_ERROR([*** Getopt functions not found. **]))
-AC_CHECK_FUNCS([strcasecmp fopen fprintf fclose strlen strcat strcpy strncpy isspace getenv system],,
+AC_CHECK_FUNCS([strcasecmp fopen fprintf fclose strlen strcat strcpy strncpy isspace getenv system lockf chdir umask dup open write close],,
     AC_MSG_ERROR([*** File or string handling functions not found. **]))
 AC_CHECK_FUNCS([malloc free memset],,
     AC_MSG_ERROR([*** Memory allocation functions not found. **]))
 AC_CHECK_FUNCS([openlog syslog closelog],,
     AC_MSG_ERROR([*** Syslog functions not found. **]))
+AC_CHECK_FUNCS([time localtime],,
+    AC_MSG_ERROR([*** Time functions not found. **]))
+AC_CHECK_FUNCS([signal fork setsid getdtablesize exit],,
+    AC_MSG_ERROR([*** Process functions not found. **]))
 
 # Large file support.
 AC_SYS_LARGEFILE
@@ -127,7 +143,6 @@ echo "
   C++ Compiler...: $CXX $CXXFLAGS $CPPFLAGS
   Linker.........: $LD $LDFLAGS $LIBS
   Doxygen........: ${DOXYGEN:-NONE}
-  SYSCONFPATH....: ${SYSCONFPATH}
 "
 
 #SYSCONFPATH=`echo ${sysconfdir}`
