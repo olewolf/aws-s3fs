@@ -16,14 +16,10 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 
-AM_CFLAGS = -I../src
-
-TESTSCRIPTS = testsuite.at commandline.at config.at common.at logging.at
+TESTSCRIPTS = commandline.at config.at common.at logging.at cache.at
 
 noinst_PROGRAMS = test-decodecmdline test-config test-configfile test-common \
-	test-logging
-
-SHAREDTESTSOURCE = dispatch.c src/aws-s3fs.h shared.c testfunctions.h
+	test-logging test-cache
 
 test_decodecmdline_SOURCES = $(SHAREDTESTSOURCE) test-decodecmdline.c \
 	../src/decodecmdline.c ../src/config.c ../src/configfile.c \
@@ -37,7 +33,12 @@ test_configfile_SOURCES = $(SHAREDTESTSOURCE) test-configfile.c \
 test_common_SOURCES = $(SHAREDTESTSOURCE) test-common.c ../src/common.c
 test_logging_SOURCES = $(SHAREDTESTSOURCE) test-logging.c \
 	../src/logger.c ../src/common.c
+test_cache_SOURCES= $(SHAREDTESTSOURCE) test-cache.c \
+	../src/singlelist.c ../src/singlelist.h
 
+
+AM_CFLAGS = -I../src
+SHAREDTESTSOURCE = dispatch.c src/aws-s3fs.h shared.c testfunctions.h
 
 
 # See 
@@ -51,10 +52,19 @@ check-local: atconfig $(TESTSUITE)
 #installcheck-local: atconfig atlocal $(TESTSUITE)
 #	$(SHELL) '$(TESTSUITE)' AUTOTEST_PATH='$(bindir)' $(TESTSUITEFLAGS)
 
-$(TESTSUITE): $(TESTSCRIPTS) atlocal.in
+$(TESTSUITE): $(TESTSUITE).at $(TESTSCRIPTS) atlocal.in \
+	../configure ../configure.ac \
+	Makefile.am Makefile.in Makefile
 	autom4te -l autotest $(TESTSUITE).at -o $(TESTSUITE)
 
-CLEANFILES = $(noinst_PROGRAMS)
+$(TESTSUITE).at : $(TESTSCRIPTS)
+	echo >$@ "# This file is auto-generated. Do not edit!"; echo >>$@ "";
+	echo >>$@ "m4_define([AT_PACKAGE_STRING],    [aws-s3fs S3 FUSE Filesystem])";
+	echo >>$@ "m4_define([AT_PACKAGE_BUGREPORT], [wolf@blazingangles.com])";
+	echo >>$@ "AT_INIT([Regression Tests])";
+	for f in $(TESTSCRIPTS); do echo >>$@ "m4_include([$$f])"; done
+
+CLEANFILES = $(noinst_PROGRAMS) $(TESTSUITE).at
 
 clean-local:
 	if [ -f $(TESTSUITE) ]; then ./$(TESTSUITE) --clean; fi
@@ -63,5 +73,4 @@ distclean-local:
 	rm -f atconfig atlocal
 	rm -f $(TESTSUITE)
 
-EXTRA_DIST = $(TESTSCRIPTS) atlocal.in
-
+EXTRA_DIST = $(TESTSCRIPTS) $(TESTSUITE).at atlocal.in

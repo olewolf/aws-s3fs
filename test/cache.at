@@ -16,14 +16,14 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 
-m4_define([AT_PACKAGE_STRING],    [aws-s3fs S3 FUSE Filesystem])
-m4_define([AT_PACKAGE_BUGREPORT], [wolf@blazingangles.com])
+AT_BANNER([Cache])
 
-AT_INIT([Executable Output Tests])
+AT_SETUP([Linked List])
+AT_CHECK([test-cache FillList], [], [stdout])
+AT_CHECK([grep '^3 1 4 2 $' stdout], [], [ignore])
+AT_CHECK([test-cache DeleteNode], [], [stdout])
+AT_CHECK([grep '^1 4 2 $' stdout], [], [ignore])
+AT_CHECK([grep '^1 2 $' stdout], [], [ignore])
+AT_CHECK([grep '^1 $' stdout], [], [ignore])
+AT_CLEANUP
 
-m4_include([commandline.at])
-m4_include([config.at])
-m4_include([common.at])
-m4_include([logging.at])
-
-#AT_TESTED([aws-s3fs])

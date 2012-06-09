@@ -1,3 +1,7 @@
+2012-06-09:
+	work begun on singlelist.c.
+	singlelist.c documented and tested.
+
 2012-06-08:
 	work begun on daemon.c, logger.c, and fuseif.c.
 	logger.c: all functions documented and tested.
