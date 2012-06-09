@@ -32,20 +32,12 @@ AC_PROG_CC_STDC
 AM_PROG_CC_C_O
 AC_PROG_INSTALL
 AC_PROG_MAKE_SET
+AC_PATH_PROGS(DOXYGEN, doxygen)
 AC_PATH_PROGS(SPLINT, splint)
 AC_PATH_PROGS(FLAWFINDER, flawfinder)
 AC_PATH_PROGS(RATS, rats)
 AC_PATH_PROGS(PSCAN, pscan)
-# Check for doxygen program.
-AC_PROG_TRY_DOXYGEN
-if test -z "$DOXYGEN"; then
-  echo "-----------------------------------------"
-  echo " No Doxygen program found - continuing"
-  echo " without Doxygen documentation support."
-  echo "-----------------------------------------"
-fi
-AM_CONDITIONAL([HAVE_DOXYGEN],[test -n "$DOXYGEN"])
-#AM_CONDITIONAL([HAVE_SPLINT],[test -n "$SPLINT"])
+AC_PATH_PROGS(GRAPHVIZ, dot)
 
 AC_C_CONST
 #AC_C_INLINE
@@ -58,6 +50,8 @@ PKG_CHECK_MODULES([libconfig], libconfig >= 1.3,,
 
 # Check for libraries.
 AC_CHECK_LIB([config], [config_init],,
+    AC_MSG_ERROR([*** config_init function not found **]))
+AC_CHECK_LIB([fuse], [fuse_main],,
     AC_MSG_ERROR([*** config_init function not found **]))
 
 # Check for header files.
@@ -91,22 +85,43 @@ AC_CHECK_HEADERS([fcntl.h],,
     AC_MSG_ERROR([*** fcntl.h not found **]))
 AC_CHECK_HEADERS([sys/stat.h],,
     AC_MSG_ERROR([*** sys/stat.h not found **]))
+AC_CHECK_HEADERS([sys/signal.h],,
+    AC_MSG_ERROR([*** sys/stat.h not found **]))
 
 # Check for typedefs, structures, and compiler characteristics.
 # Check for library functions.
 AC_FUNC_MALLOC
 AC_CHECK_FUNCS([getopt_long],,
     AC_MSG_ERROR([*** Getopt functions not found. **]))
-AC_CHECK_FUNCS([strcasecmp fopen fprintf fclose strlen strcat strcpy strncpy isspace getenv system lockf chdir umask dup open write close],,
-    AC_MSG_ERROR([*** File or string handling functions not found. **]))
+AC_CHECK_FUNCS([strcasecmp strlen strcat strcpy strncpy isspace],,
+    AC_MSG_ERROR([*** String handling functions not found. **]))
+AC_CHECK_FUNCS([fopen fprintf fclose getenv system lockf chdir umask dup \
+               open write close getdtablesize],,
+    AC_MSG_ERROR([*** File handling functions not found. **]))
 AC_CHECK_FUNCS([malloc free memset],,
     AC_MSG_ERROR([*** Memory allocation functions not found. **]))
 AC_CHECK_FUNCS([openlog syslog closelog],,
     AC_MSG_ERROR([*** Syslog functions not found. **]))
 AC_CHECK_FUNCS([time localtime],,
     AC_MSG_ERROR([*** Time functions not found. **]))
-AC_CHECK_FUNCS([signal fork setsid getdtablesize exit],,
+AC_CHECK_FUNCS([sigaction fork setsid exit perror],,
     AC_MSG_ERROR([*** Process functions not found. **]))
+# The following functions are not checked:
+#
+#   config_error_line
+#   config_error_text
+#
+# If the configure script fails, it may be that the following check isn't
+# required, since the libopt library has already been determined to be
+# available:
+AC_CHECK_FUNCS([config_init config_lookup_bool config_lookup_string \
+               config_read_file config_destroy],,
+AC_MSG_ERROR([*** libopt functions not found. **]))
+# If the configure script fails, it may be that the following check isn't
+# required, since the FUSE library has already been determined to be
+# available:
+AC_CHECK_FUNCS([fuse_main],,
+    AC_MSG_ERROR([*** FUSE functions not found. **]))
 
 # Large file support.
 AC_SYS_LARGEFILE
@@ -114,40 +129,21 @@ AC_SYS_LARGEFILE
 CFLAGS="$CFLAGS -Wall -Werror $libconfig_CFLAGS $libfuse_CFLAGS"
 LIBS="$libfuse_LIBS $libconfig_LIBS $LIBS"
 
-#AS_IF([test -z "$ETCDIRHASPREFIX_TRUE"], [AC_DEFINE([ETCPATH], [@prefix@/etc], [Decode full path of /prefix/etc.])])
-
-#AS_IF([test -z "$ETCDIRHASPREFIX_TRUE"], [AC_DEFINE([ETCPATH], ["somedef"], [Description])])
-#AC_DEFINE([ETCPATH], [@prefix@/etc], [Expand /.../etc path])
-
-#AM_CONDITIONAL([ETCDIRHASPREFIX], [test '${prefix}/etc' = "${sysconfdir}"])
-#AS_IF([test -z "$ETCDIRHASPREFIX_TRUE"],
-#    [AC_DEFINE_UNQUOTED([DEFAULT_CONFIG_FILENAME], ["true @prefix@/etc/aws-s3fs.conf"], [description])])
-#AS_IF([test -z "$ETCDIRHASPREFIX_FALSE"],
-#    [AC_DEFINE_UNQUOTED([DEFAULT_CONFIG_FILENAME], ["false ${sysconfdir}/aws-s3fs.conf"], [description])])
-
-#AC_DEFINE_UNQUOTED([DEFAULT_CONFIG_FILENAME], ["${sysconfdir}"], [description])
-
-#AC_CONFIG_COMMANDS([sysconffile], [SYSCONFPATH=`echo ${sysconfdir} says hello`])
-#AC_SUBST(SYSCONFPATH)
-
 # Output files.
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_FILES([Makefile src/Makefile data/Makefile doc/Makefile doc/man/Makefile test/Makefile])
-#AC_OUTPUT([src/sysconffile.generate-h doc/main.doc])
 AC_OUTPUT([doc/main.doc])
 
 echo "
   $PACKAGE_NAME version $PACKAGE_VERSION
-  Prefix.........: $prefix
-  C Compiler.....: $CC $CFLAGS
-  C++ Compiler...: $CXX $CXXFLAGS $CPPFLAGS
-  Linker.........: $LD $LDFLAGS $LIBS
-  Doxygen........: ${DOXYGEN:-NONE}
+  Prefix..........: $prefix
+  C Compiler......: $CC $CFLAGS
+  C++ Compiler....: $CXX $CXXFLAGS $CPPFLAGS
+  Linker..........: $LD $LDFLAGS $LIBS
+  Doxygen.........: ${DOXYGEN:-no}
+  Dot (GraphViz)..: ${GRAPHVIZ:-no}
+  Splint..........: ${SPLINT:-no}
+  Flawfinder......: ${FLAWFINDER:-no}
+  Rats............: ${RATS:-no}
+  Pscan...........: ${PSCAN:-no}
 "
-
-#SYSCONFPATH=`echo ${sysconfdir}`
-#SYSCONFPATH=`eval echo $SYSCONFPATH`
-#SYSCONFPATH=`eval echo $SYSCONFPATH`
-#echo $SYSCONFPATH
-
-#  Splint.........: ${SPLINT:-NO}

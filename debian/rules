@@ -17,10 +17,14 @@ export DH_ALWAYS_EXCLUDE=ChangeLog
 	REPLACE="$$""{sysconfdir}"; \
 	sed < $< "s^$$REPLACE^${sysconfdir}^" > $@
 
-# Build rule for sysconffile.h
-sysconffile.h : sysconffile.h.src
+# Build rule for sysdirs.h
+sysdirs.h : sysdirs.h.src
+	TMPFILE=`mktemp`; \
 	REPLACE="$$""{sysconfdir}"; \
-	sed < $< "s^$$REPLACE^/etc^" > $@
+	sed < $< "s^$$REPLACE^${sysconfdir}^" >$$TMPFILE; \
+	REPLACE="$$""{localstatedir}"; \
+	sed < $$TMPFILE "s^$$REPLACE^${localstatedir}^" > $@
+
 
 %:
 	dh $@ --with autotools_dev

@@ -16,14 +16,14 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 bin_PROGRAMS = aws-s3fs
-aws_s3fs_SOURCES = aws-s3fs.h aws-s3fs.c decodecmdline.c configfile.c common.c fix-i386-cc.c config.c logger.c sysconffile.h
+aws_s3fs_SOURCES = aws-s3fs.h sysdirs.h aws-s3fs.c decodecmdline.c configfile.c common.c fix-i386-cc.c config.c logger.c daemon.c
 
-BUILT_SOURCES = sysconffile.h
-CLEANFILES = sysconffile.h
+BUILT_SOURCES = sysdirs.h
+CLEANFILES = sysdirs.h
 
-#sysconffile.h : sysconffile.generate-h sysconffile.generate-h.in ../script/generate-sysconffile.sh
-#	sh ../script/generate-sysconffile.sh
-
-sysconffile.h : sysconffile.h.src
+sysdirs.h : sysdirs.h.src
+	TMPFILE=`mktemp`; \
 	REPLACE="$$""{sysconfdir}"; \
-	sed < $< "s^$$REPLACE^${sysconfdir}^" > $@
+	sed < $< "s^$$REPLACE^${sysconfdir}^" >$$TMPFILE; \
+	REPLACE="$$""{localstatedir}"; \
+	sed < $$TMPFILE "s^$$REPLACE^${localstatedir}^" > $@

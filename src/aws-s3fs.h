@@ -28,12 +28,12 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <syslog.h>
-
+#include "sysdirs.h"
 
 #define bool_equal( a, b ) ( (a) ? (b) : !(b) )
 
-/** Path of the configuration file. */
-#include "sysconffile.h"
+#define DEFAULT_TMP_DIR "/tmp"
+
 
 /** Default configuration values. */
 #define DEFAULT_REGION     "US Standard"
@@ -86,6 +86,7 @@ struct ThreadsafeLogging
     FILE       *logFh;
     const char *hostname;
     const char *logFilename;
+    bool       stdoutDisabled;
 };
 
 

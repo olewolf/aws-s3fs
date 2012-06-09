@@ -53,6 +53,7 @@ void InitializeLoggingModule(
     logging->logFh          = NULL;
     logging->hostname       = NULL;
     logging->logFilename    = NULL;
+    logging->stdoutDisabled = false;
 }
 
 
@@ -181,6 +182,8 @@ CloseLog(
  *        log file.
  * @param loggingEnabled [in] State whether logging is enabled at all.
  * @param logToSyslog [in] Indicate that logs go to the syslog.
+ * @param stdoutDisabled [in] If \true, don't write to stdout. This flag must
+ *        be set during signal handling.
  * @param priority [in] Whether the message is a LOG_ERR, LOG_WARNING, etc.
  * @param message [in] String to append to the log.
  * @return Nothing.
@@ -190,6 +193,7 @@ LogMessage(
     FILE       *logFh,
     bool       loggingEnabled,
     bool       logToSyslog,
+    bool       stdoutDisabled,
     int        priority,
     const char *hostname,
     const char *message
@@ -224,7 +228,10 @@ LogMessage(
 	    }
 	    else
 	    {
-	        fputs( logmessage, stdout );
+	        if( ! stdoutDisabled )
+		{
+		    fputs( logmessage, stdout );
+		}
 	    }
 	}
     }
@@ -305,6 +312,7 @@ Syslog(
     va_end( v1 );
 
     LogMessage( logging->logFh, logging->loggingEnabled, logging->logToSyslog,
+		logging->stdoutDisabled,
 		priority, logging->hostname, compile );
 }
 

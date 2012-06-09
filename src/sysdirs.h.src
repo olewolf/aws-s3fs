@@ -1,5 +1,5 @@
 /**
- * \file sysconffile.h
+ * \file sysdirs.h
  * \brief Create a sysconffile.h with the default configuration file name.
  *
  * Copyright (C) 2012 Ole Wolf <wolf@blazingangles.com>
@@ -20,11 +20,15 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef __sysconffile_h
-#define __sysconffile_h
+#ifndef __sysdirs_h
+#define __sysdirs_h
 
 /* sysconfdir: @sysconfdir@ */
 /* prefix: @prefix@ */
+/* Default, system-wide aws-s3fs.conf file. */
 #define DEFAULT_CONFIG_FILENAME "${sysconfdir}/aws-s3fs.conf"
 
-#endif /* __sysconffile_h */
+/* Lock file. */
+#define LOCK_FILE "${localstatedir}/run/aws-s3fs.lock"
+
+#endif /* __sysdirs_h */
