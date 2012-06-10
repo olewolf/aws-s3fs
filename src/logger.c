@@ -121,7 +121,7 @@ InitLog(
         return;
     }
 
-    logging->logFilename = logfile;
+    logging->logFilename = strdup( logfile );
 
     /* Get the hostname. */
     gethostname( hostnameBuf, HOST_NAME_MAX );
@@ -146,7 +146,7 @@ InitLog(
 	    if( logging->logFh == NULL )
 	    {
 	      Syslog( logging, LOG_ERR,
-		      "Cannot open %s logfile for writing", logfile );
+		      "Cannot open %s logfile for writing\n", logfile );
 	    }
 	}
     }
@@ -172,6 +172,10 @@ CloseLog(
 	     ( strcmp( LogFilename( logging ), "syslog" ) == 0 ) )
     {
         closelog( ); /* Is this thread-safe? */
+    }
+    if( logging->logFilename != NULL )
+    {
+        free( (char*) logging->logFilename );
     }
 }
 

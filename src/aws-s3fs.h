@@ -173,7 +173,7 @@ DecodeCommandLine(
 
 /* In daemon.c. */
 
-void Daemonize( bool daemonize, const struct ThreadsafeLogging * );
+void Daemonize( struct ThreadsafeLogging*, struct configuration* );
 
 
 

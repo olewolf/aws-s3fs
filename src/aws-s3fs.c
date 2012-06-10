@@ -24,6 +24,7 @@
 #include <config.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include "aws-s3fs.h"
 
 
@@ -108,10 +109,20 @@ main( int argc, char **argv )
     }
 
     InitializeThread( &state );
+    InitializeLoggingModule( &state.logging );
 
     Configure( &state.configuration,
 	       &state.mountPoint,
 	       argc, (const char * const *) argv );
+
+    InitLog( &state.logging, state.configuration.logfile );
+
+    if( state.configuration.daemonize )
+    {
+        Daemonize( &state.logging, &state.configuration );
+    }
+
+    while( 1 ) sleep( 10 );
 
     return( EXIT_SUCCESS );
 }
