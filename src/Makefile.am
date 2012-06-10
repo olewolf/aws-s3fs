@@ -18,14 +18,18 @@
 bin_PROGRAMS = aws-s3fs
 aws_s3fs_SOURCES = aws-s3fs.h sysdirs.h aws-s3fs.c \
 	decodecmdline.c configfile.c common.c fix-i386-cc.c config.c \
-	logger.c daemon.c singlelist.c singlelist.h
+	logger.c daemon.c statcache.c
 
 BUILT_SOURCES = sysdirs.h
 CLEANFILES = sysdirs.h
 
 sysdirs.h : sysdirs.h.src
-	TMPFILE=`mktemp`; \
+	TMPFILE1=`mktemp`; \
+	TMPFILE2=`mktemp`; \
 	REPLACE="$$""{sysconfdir}"; \
-	sed < $< "s^$$REPLACE^${sysconfdir}^" >$$TMPFILE; \
+	sed < $< "s^$$REPLACE^${sysconfdir}^" >$$TMPFILE1; \
 	REPLACE="$$""{localstatedir}"; \
-	sed < $$TMPFILE "s^$$REPLACE^${localstatedir}^" > $@
+	sed < $$TMPFILE1 "s^$$REPLACE^${localstatedir}^" > $$TMPFILE2; \
+	REPLACE="$$""{datadir}"; \
+	sed < $$TMPFILE2 "s^$$REPLACE^${datadir}^" > $$TMPFILE1; \
+	mv $$TMPFILE1 $@

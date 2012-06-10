@@ -43,16 +43,18 @@ AC_C_CONST
 #AC_C_INLINE
 
 # Check for modules.
-PKG_CHECK_MODULES([libfuse], [fuse >= 2.8],,
-    AC_MSG_ERROR([*** libfuse source not found - this program requires libfuse >= 2.8 **]))
-PKG_CHECK_MODULES([libconfig], libconfig >= 1.3,,
-    AC_MSG_ERROR([*** libconfig source not found - this program requires libconfig >= 1.3 **]))
+#PKG_CHECK_MODULES([DEPS], [fuse >= 2.8 libconfig >= 1.3 cmph >= 0.9],,
+#    AC_MSG_ERROR([*** libfuse, libconfig, or libcmph source not found **]))
+PKG_CHECK_MODULES([DEPS], [fuse >= 2.8 libconfig >= 1.3],,
+    AC_MSG_ERROR([*** libfuse or libconfig source not found **]))
 
 # Check for libraries.
 AC_CHECK_LIB([config], [config_init],,
     AC_MSG_ERROR([*** config_init function not found **]))
 AC_CHECK_LIB([fuse], [fuse_main],,
     AC_MSG_ERROR([*** config_init function not found **]))
+#AC_CHECK_LIB([cmph], [cmph_new],,
+#    AC_MSG_ERROR([*** cmph_new function not found **]))
 
 # Check for header files.
 AC_CHECK_HEADERS([stdio.h],,
@@ -87,6 +89,8 @@ AC_CHECK_HEADERS([sys/stat.h],,
     AC_MSG_ERROR([*** sys/stat.h not found **]))
 AC_CHECK_HEADERS([sys/signal.h],,
     AC_MSG_ERROR([*** sys/stat.h not found **]))
+AC_CHECK_HEADERS([uthash.h],,
+    AC_MSG_ERROR([*** uthash.h not found **]))
 
 # Check for typedefs, structures, and compiler characteristics.
 # Check for library functions.
@@ -123,11 +127,14 @@ AC_MSG_ERROR([*** libopt functions not found. **]))
 AC_CHECK_FUNCS([fuse_main],,
     AC_MSG_ERROR([*** FUSE functions not found. **]))
 
+
 # Large file support.
 AC_SYS_LARGEFILE
 
-CFLAGS="$CFLAGS -Wall -Werror $libconfig_CFLAGS $libfuse_CFLAGS"
-LIBS="$libfuse_LIBS $libconfig_LIBS $LIBS"
+#CFLAGS="$CFLAGS -Wall -Werror $libconfig_CFLAGS $libfuse_CFLAGS $libcmph_CFLAGS"
+#LIBS="$libfuse_LIBS  $libcmph_CFLAGS $libconfig $LIBS"
+CFLAGS="$CFLAGS -Wall -Werror $DEPS_CFLAGS"
+LIBS="$DEPS_LIBS $LIBS"
 
 # Output files.
 AC_CONFIG_HEADERS([config.h])

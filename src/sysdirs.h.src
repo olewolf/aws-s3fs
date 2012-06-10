@@ -23,12 +23,10 @@
 #ifndef __sysdirs_h
 #define __sysdirs_h
 
-/* sysconfdir: @sysconfdir@ */
-/* prefix: @prefix@ */
 /* Default, system-wide aws-s3fs.conf file. */
 #define DEFAULT_CONFIG_FILENAME "${sysconfdir}/aws-s3fs.conf"
 
-/* Lock file. */
+/* Lock file (if enabled in daemon.c). */
 #define LOCK_FILE "${localstatedir}/run/aws-s3fs.lock"
 
 #endif /* __sysdirs_h */

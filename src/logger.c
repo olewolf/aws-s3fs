@@ -182,9 +182,10 @@ CloseLog(
  *        log file.
  * @param loggingEnabled [in] State whether logging is enabled at all.
  * @param logToSyslog [in] Indicate that logs go to the syslog.
- * @param stdoutDisabled [in] If \true, don't write to stdout. This flag must
+ * @param stdoutDisabled [in] If \a true, don't write to stdout. This flag must
  *        be set during signal handling.
  * @param priority [in] Whether the message is a LOG_ERR, LOG_WARNING, etc.
+ * @param hostname [in] The name of the machine that runs the software.
  * @param message [in] String to append to the log.
  * @return Nothing.
  */
