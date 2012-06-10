@@ -33,8 +33,7 @@ test_configfile_SOURCES = $(SHAREDTESTSOURCE) test-configfile.c \
 test_common_SOURCES = $(SHAREDTESTSOURCE) test-common.c ../src/common.c
 test_logging_SOURCES = $(SHAREDTESTSOURCE) test-logging.c \
 	../src/logger.c ../src/common.c
-test_cache_SOURCES= $(SHAREDTESTSOURCE) test-cache.c \
-	../src/singlelist.c ../src/singlelist.h
+test_cache_SOURCES= $(SHAREDTESTSOURCE) test-cache.c ../src/statcache.c
 
 
 AM_CFLAGS = -I../src
