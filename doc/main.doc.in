@@ -26,6 +26,7 @@ The following software is needed to generate aws-s3fs:
 @li libfuse
 @li libconfig
 @li automake
+@li uthash
 @li <a href="http://www.stack.nl/~dimitri/doxygen/index.html">doxygen</a>
 1.2.13+ for generating the documentation.
 @li <a href="http://www.graphviz.org/">GraphViz</a> for generating call graphs

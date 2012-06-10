@@ -42,8 +42,12 @@ Your Amazon Access Key ID and your Secret Access Key separated with a ':'
 aws-s3fs logs output to either "syslog", or the filename specified here. Default is "/var/log/aws-s3fs.log".
 
 .TP
+\fBloglevel\fP
+Log only messages with this priority or higher. Valid values are: "LOG_ERR", "LOG_WARNING", "LOG_NOTICE", "LOG_INFO", and "LOG_DEBUG". Default is "LOG_WARNING".
+
+.TP
 \fBverbose\fP
-Write verbose output about the S3 connection to stdout. Default is false.
+Write verbose output about the S3 connection to stdout. Default is "false".
 
 .SH FILES
 .I ${sysconfdir}/aws-s3sf.conf

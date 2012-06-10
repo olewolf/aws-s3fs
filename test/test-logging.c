@@ -51,25 +51,25 @@ void test_Syslog( const char *parms )
     switch( testNumber )
     {
         case 1:
-	    InitLog( &logging, NULL );
+	    InitLog( &logging, NULL, log_DEBUG );
 	    EnableLogging( &logging );
-	    Syslog( &logging, LOG_INFO,
+	    Syslog( &logging, log_INFO,
 		    "Message %d: %d %s\n", testNumber, 42, "Test" );
 	    CloseLog( &logging );
 	    break;
 
         case 2:
-	    InitLog( &logging, "syslog" );
+	    InitLog( &logging, "syslog", log_DEBUG );
 	    EnableLogging( &logging );
-	    Syslog( &logging, LOG_INFO,
+	    Syslog( &logging, log_INFO,
 		    "Message %d: %d %s\n", testNumber, 42, "Test" );
 	    CloseLog( &logging );
 	    break;
 
         case 3:
-	    InitLog( &logging, "test-log.log" );
+	    InitLog( &logging, "test-log.log", log_DEBUG );
 	    EnableLogging( &logging );
-	    Syslog( &logging, LOG_INFO,
+	    Syslog( &logging, log_INFO,
 		    "Message %d: %d %s\n", testNumber, 42, "Test" );
 	    CloseLog( &logging );
 	    break;

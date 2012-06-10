@@ -102,6 +102,49 @@ ConfigSetPath(
 
 
 
+/**
+ * Set the log verbosity.
+ * @param loglevel [out] One of log_ERR, log_WARNING, log_NOTICE, log_INFO, or
+ *        log_DEBUG.
+ * @param configValue [in] String value of the above.
+ * @param configError [out] Configuration error flag.
+ * @return Nothing.
+ */
+void
+ConfigSetLoglevel(
+    enum LogLevels *loglevel,
+    const char     *configValue,
+    bool           *configError
+	      )
+{
+    if( strcasecmp( configValue, "log_err" ) == 0 )
+    {
+        *loglevel = log_ERR;
+    }
+    else if( strcasecmp( configValue, "log_warning" ) == 0 )
+    {
+        *loglevel = log_WARNING;
+    }
+    else if( strcasecmp( configValue, "log_notice" ) == 0 )
+    {
+        *loglevel = log_NOTICE;
+    }
+    else if( strcasecmp( configValue, "log_info" ) == 0 )
+    {
+        *loglevel = log_NOTICE;
+    }
+    else if( strcasecmp( configValue, "log_debug" ) == 0 )
+    {
+        *loglevel = log_NOTICE;
+    }
+    else
+    {
+        *configError = true;
+    }
+}
+
+
+
 /*@-exportlocal@*//*for testing purposes*/
 /**
  * Extract a key string from a string where keys are separated by ':'. The
@@ -351,6 +394,39 @@ static const char *ShowStringValue( const char *string )
 }
 
 
+static const char *ShowLogLevel( enum LogLevels logLevel )
+{
+    static const char *strErr     = "LOG_ERR";
+    static const char *strWarning = "LOG_WARNING";
+    static const char *strNotice  = "LOG_NOTICE";
+    static const char *strInfo    = "LOG_INFO";
+    static const char *strDebug   = "LOG_DEBUG";
+    static const char *invalid    = "INVALID";
+
+    switch( logLevel )
+    {
+        case log_ERR:
+	    return( strErr );
+	    break;
+        case log_WARNING:
+	    return( strWarning );
+	    break;
+        case log_NOTICE:
+	    return( strNotice );
+	    break;
+        case log_INFO:
+	    return( strInfo );
+	    break;
+        case log_DEBUG:
+	    return( strDebug );
+	    break;
+        default:
+	    return( invalid );
+	    break;
+    }
+}
+
+
 
 /**
  * Fill a \a configuration structure according to aws-s3fs.conf file contents
@@ -385,6 +461,7 @@ Configure(
   	        .value = false,
 		.isset = false
 	    },
+	    .logLevel    = log_WARNING,
 	    .daemonize   = true
 	},
         .configFile          = NULL,
@@ -393,7 +470,8 @@ Configure(
 	.pathSpecified       = false,
 	.keyIdSpecified      = false,
 	.secretKeySpecified  = false,
-	.logfileSpecified    = false
+	.logfileSpecified    = false,
+	.loglevelSpecified   = false
     };
 
     char                        *configFile = NULL;
@@ -539,6 +617,10 @@ Configure(
 		       cmdlineConfiguration.configuration.logfile );
 	/*@+null@*/
     }
+    if( cmdlineConfiguration.loglevelSpecified )
+    {
+        configuration->logLevel = cmdlineConfiguration.configuration.logLevel;
+    }
     if( cmdlineConfiguration.configuration.verbose.isset )
     {
 	configuration->verbose.isset = true;
@@ -561,5 +643,6 @@ Configure(
 		   ShowStringValue( configuration->bucketName ),
 		   ShowStringValue( configuration->path ),
 		   ShowStringValue( configuration->logfile ),
+		   ShowLogLevel( configuration->logLevel ),
 		   ShowStringValue( *mountPoint ) );
 }

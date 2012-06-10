@@ -53,6 +53,7 @@ void InitializeLoggingModule(
     logging->logFh          = NULL;
     logging->hostname       = NULL;
     logging->logFilename    = NULL;
+    logging->logLevel       = LOG_WARNING;
     logging->stdoutDisabled = false;
 }
 
@@ -108,7 +109,8 @@ const char *LogFilename(
 void
 InitLog(
     struct ThreadsafeLogging *logging,
-    const char               *logfile
+    const char               *logfile,
+    enum LogLevels           loglevel
 	)
 {
     char hostnameBuf[ HOST_NAME_MAX + 1 ];
@@ -121,7 +123,19 @@ InitLog(
         return;
     }
 
-    logging->logFilename = strdup( logfile );
+    if( logfile != NULL )
+    {
+        if( logging->logFilename != NULL )
+	{
+	    free( (char*) logging->logFilename );
+	}
+        logging->logFilename = strdup( logfile );
+    }
+    else
+    {
+        logging->logFilename = NULL;
+    }
+    logging->logLevel = loglevel;
 
     /* Get the hostname. */
     gethostname( hostnameBuf, HOST_NAME_MAX );
@@ -316,8 +330,11 @@ Syslog(
 
     va_end( v1 );
 
-    LogMessage( logging->logFh, logging->loggingEnabled, logging->logToSyslog,
-		logging->stdoutDisabled,
-		priority, logging->hostname, compile );
+    if( priority <= logging->logLevel )
+    {
+        LogMessage( logging->logFh, logging->loggingEnabled,
+		    logging->logToSyslog, logging->stdoutDisabled,
+		    priority, logging->hostname, compile );
+    }
 }
 

@@ -40,8 +40,8 @@ struct FileStat
 
 struct StatCacheEntry
 {
-    const char      *filename;
-    struct FileStat *fileStat;
+    const char              *filename;
+    struct FileStat         *fileStat;
 
     UT_hash_handle hh;
 };
@@ -52,7 +52,8 @@ struct StatCacheEntry *statCache = NULL;
 
 struct FileStat*
 SearchStatEntry(
-    const char *filename
+    const struct ThreadsafeLogging *logger,
+    const        char              *filename
 		)
 {
     struct StatCacheEntry *entry;
@@ -65,8 +66,10 @@ SearchStatEntry(
         HASH_DELETE( hh, statCache, entry );
         HASH_ADD_KEYPTR( hh, statCache, 
 			 entry->filename, strlen( entry->filename ), entry );
+	Syslog( logger, LOG_DEBUG, "Stat cache hit, marking entry as LRU\n" );
         return( entry->fileStat );
     }
+    Syslog( logger, LOG_DEBUG, "Stat cache miss\n" );
     return( NULL );
 }
 
@@ -74,20 +77,22 @@ SearchStatEntry(
 
 void
 DeleteStatEntry(
-    struct StatCacheEntry *entry
+    const struct ThreadsafeLogging *logger,
+    struct StatCacheEntry          *entry
 		)
 {
     HASH_DEL( statCache, entry );
     free( entry->fileStat );
     free( (char*) entry->filename );
     free( entry );
+    Syslog( logger, LOG_DEBUG, "Stat cache entry deleted\n" );
 }
 
 
 
 void
 TruncateCache(
-    void
+    const struct ThreadsafeLogging *logger
 	      )
 {
     struct StatCacheEntry *entry;
@@ -112,6 +117,8 @@ TruncateCache(
 	        break;
 	    }
 	}
+	Syslog( logger, LOG_DEBUG, "%d entr%s expired from cache\n",
+		numberDeleted, numberDeleted == 1 ? "y" : "ies" );
     }
 }
 
@@ -119,8 +126,9 @@ TruncateCache(
 
 void
 InsertCacheElement(
-    const char      *filename,
-    struct FileStat *fileStat
+    const struct ThreadsafeLogging *logger,
+    const char                     *filename,
+    struct FileStat                *fileStat
 		   )
 {
     struct StatCacheEntry *entry;
@@ -135,7 +143,8 @@ InsertCacheElement(
 
     HASH_ADD_KEYPTR( hh, statCache, 
 		     entry->filename, strlen( entry->filename ), entry );
+    Syslog( logger, LOG_DEBUG, "Entry added to stat cache\n" );
 
-    TruncateCache( );
+    TruncateCache( logger );
 }
 

@@ -224,6 +224,7 @@ DecodeCommandLine(
 	{ "bucket",     required_argument, NULL, (int)'b' },
 	{ "path",       required_argument, NULL, (int)'p' },
 	{ "logfile",    required_argument, NULL, (int)'l' },
+	{ "loglevel",   required_argument, NULL, (int)'O' },
 	{ "foreground", no_argument,       NULL, (int)'f' },
 	{ "key",        required_argument, NULL, (int)'k' },
         { "verbose",    no_argument,       NULL, (int)'v' },
@@ -256,11 +257,12 @@ DecodeCommandLine(
     cmdlineConfiguration->keyIdSpecified          = false;
     cmdlineConfiguration->secretKeySpecified      = false;
     cmdlineConfiguration->logfileSpecified        = false;
+    cmdlineConfiguration->loglevelSpecified       = false;
     cmdlineConfiguration->configuration.daemonize = true;
 
     /* Decode the command-line switches. */
     while( ( optionCharacter = getopt_long( argc, (char * const *) argv,
-	    "hVLr:b:p:l:k:vfc:", longOptions, &optionIndex ) )
+	    "hVLr:b:p:l:O:k:vfc:", longOptions, &optionIndex ) )
 	   != -1 )
     {
         switch( optionCharacter )
@@ -319,6 +321,14 @@ DecodeCommandLine(
 	   ConfigSetPath( &cmdlineConfiguration->configuration.logfile, optarg );
 	    /*@+null@*/
 	    cmdlineConfiguration->logfileSpecified = true;
+	    break;
+	/* Set log level. */
+	case 'O':
+	    /*@-null@*/
+	    ConfigSetLoglevel( &cmdlineConfiguration->configuration.logLevel,
+			       optarg, &optionError );
+	    /*@+null@*/
+	    cmdlineConfiguration->loglevelSpecified = true;
 	    break;
 	/* Set access key and secret key. */
 	case 'k':

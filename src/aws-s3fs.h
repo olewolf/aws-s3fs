@@ -56,6 +56,15 @@ struct configurationBoolean {
     bool isset;
 };
 
+enum LogLevels {
+    log_ERR     = LOG_ERR,
+    log_WARNING = LOG_WARNING,
+    log_NOTICE  = LOG_NOTICE,
+    log_INFO    = LOG_INFO,
+    log_DEBUG   = LOG_DEBUG
+};
+
+
 struct configuration {
     enum bucketRegions          region;
     /*@null@*/ char             *bucketName;
@@ -64,6 +73,7 @@ struct configuration {
     /*@null@*/ char             *secretKey;
     /*@null@*/ char             *logfile;
     struct configurationBoolean verbose;
+    enum LogLevels              logLevel;
     bool                        daemonize;
 };
 
@@ -76,17 +86,19 @@ struct cmdlineConfiguration {
     bool                 keyIdSpecified;
     bool                 secretKeySpecified;
     bool                 logfileSpecified;
+    bool                 loglevelSpecified;
 };
 
 /* For logging. */
 struct ThreadsafeLogging
 {
-    bool       loggingEnabled;
-    bool       logToSyslog;
-    FILE       *logFh;
-    const char *hostname;
-    const char *logFilename;
-    bool       stdoutDisabled;
+    bool           loggingEnabled;
+    bool           logToSyslog;
+    FILE           *logFh;
+    const char     *hostname;
+    const char     *logFilename;
+    enum LogLevels logLevel;
+    bool           stdoutDisabled;
 };
 
 
@@ -97,7 +109,7 @@ void Syslog( const struct ThreadsafeLogging *,
 const char *LogFilename( const struct ThreadsafeLogging * );
 void EnableLogging( struct ThreadsafeLogging * );
 void DisableLogging( struct ThreadsafeLogging * );
-void InitLog( struct ThreadsafeLogging *, const char *logfile );
+void InitLog( struct ThreadsafeLogging *, const char *logfile, enum LogLevels );
 void CloseLog( struct ThreadsafeLogging * );
 
 
@@ -136,6 +148,13 @@ ConfigSetKey(
     char       **secretKey,
     const char *configValue,
     bool       *configError
+);
+
+void
+ConfigSetLoglevel(
+    enum LogLevels *loglevel,
+    const char     *configValue,
+    bool           *configError
 );
 
 void

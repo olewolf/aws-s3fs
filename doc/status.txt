@@ -1,6 +1,7 @@
 2012-06-10:
 	singlelist.c removed and replaced with uthash macros. Not tested.
 	daemon.c documented and tested.
+	logging added to statcache.c.
 
 2012-06-09:
 	work begun on singlelist.c.

@@ -115,7 +115,8 @@ main( int argc, char **argv )
 	       &state.mountPoint,
 	       argc, (const char * const *) argv );
 
-    InitLog( &state.logging, state.configuration.logfile );
+    InitLog( &state.logging, state.configuration.logfile,
+	     state.configuration.logLevel );
 
     if( state.configuration.daemonize )
     {

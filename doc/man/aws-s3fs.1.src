@@ -150,10 +150,35 @@ To write to the system log, enter "syslog" as the logfile name. For example:
 
 .RE
 .IP
-mounts an S3 bucket in this bucket at
+mounts an S3 bucket at
 .I /mnt/s3
 and logs all output to
 .I s3fs.log\fR in the user's home directory.
+
+
+.TP
+.PD 0
+.B \-O \fRlevel
+.TP
+.PD
+.B \-\-loglevel\fR=level
+Tell
+.B aws-s3fs
+to log messages only of severity
+.I level\fR
+or higher. Valid log level values are: LOG_ERR, LOG_WARNING, LOG_NOTICE, LOG_INFO, and LOG_DEBUG. (See the man page for
+.I syslog\fR
+for information on the log levels.) For example:
+
+.RS
+.IP
+\fCaws-s3fs -l syslog -O LOG_NOTICE /mnt/s3\fP
+
+.RE
+.IP
+mounts an S3 bucket at
+.I /mnt/s3
+and logs all messages with severity LOG_NOTICE and above to the system log.
 
 
 .TP

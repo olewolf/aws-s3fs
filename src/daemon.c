@@ -66,7 +66,7 @@ SignalHandler(
  	    Syslog( logger, LOG_INFO, "SIGHUP received\n" );
 	    logfile = strdup( LogFilename( logger ) );
 	    CloseLog( logger );
-	    InitLog( logger, logfile );
+	    InitLog( logger, logfile, logger->logLevel );
 	    free( (char*) logfile );
  	    Syslog( logger, LOG_INFO, "Restarting log\n" );
 	    break;
