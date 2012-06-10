@@ -34,6 +34,8 @@
 
 #define DEFAULT_TMP_DIR "/tmp"
 
+/* Make room for 50,000 files in the stat cache. */
+#define MAX_STAT_CACHE_SIZE 50000l
 
 /** Default configuration values. */
 #define DEFAULT_REGION     "US Standard"

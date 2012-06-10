@@ -16,10 +16,48 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 
-#AT_BANNER([Cache])
+AT_BANNER([File Stat Cache])
 
-#AT_SETUP([Linked List])
-#AT_CHECK([test-cache FillList], [], [stdout])
-#AT_CHECK([grep '^3 1 4 2 $' stdout], [], [ignore])
-#AT_CLEANUP
+AT_SETUP([Add Entry])
+AT_CHECK([test-cache AddEntry], [], [stdout])
+AT_CHECK([grep -e '^\(Jan\|Feb\|Mar\|Apr\|May\|Jun\|Jul\|Aug\|Sep\|Oct\|Nov\|Dec\)@<:@@<:@:space:@:>@@:>@\+@<:@0-9@:>@\{1,2\} @<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\} @<:@a-zA-Z0-9@:>@\+ aws-s3fs: Entry added to stat cache$' stdout], [], [ignore])
+AT_CLEANUP
 
+AT_SETUP([Find Entry])
+AT_CHECK([test-cache FindEntry 1], [], [stdout])
+AT_CHECK([grep -e '^\(Jan\|Feb\|Mar\|Apr\|May\|Jun\|Jul\|Aug\|Sep\|Oct\|Nov\|Dec\)@<:@@<:@:space:@:>@@:>@\+@<:@0-9@:>@\{1,2\} @<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\} @<:@a-zA-Z0-9@:>@\+ aws-s3fs: Stat cache hit, marking entry as LRU$' stdout], [], [ignore])
+AT_CHECK([grep -e '^Found correct value$' stdout], [], [ignore])
+
+AT_CHECK([test-cache FindEntry 2], [], [stdout])
+AT_CHECK([grep -e '^\(Jan\|Feb\|Mar\|Apr\|May\|Jun\|Jul\|Aug\|Sep\|Oct\|Nov\|Dec\)@<:@@<:@:space:@:>@@:>@\+@<:@0-9@:>@\{1,2\} @<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\} @<:@a-zA-Z0-9@:>@\+ aws-s3fs: Stat cache hit, marking entry as LRU$' stdout], [], [ignore])
+AT_CHECK([grep -e '^Found correct value$' stdout], [], [ignore])
+
+AT_CHECK([test-cache FindEntry 3], [], [stdout])
+AT_CHECK([grep -e '^\(Jan\|Feb\|Mar\|Apr\|May\|Jun\|Jul\|Aug\|Sep\|Oct\|Nov\|Dec\)@<:@@<:@:space:@:>@@:>@\+@<:@0-9@:>@\{1,2\} @<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\} @<:@a-zA-Z0-9@:>@\+ aws-s3fs: Stat cache miss$' stdout], [], [ignore])
+AT_CHECK([grep -e '^Found correct value$' stdout], [], [ignore])
+AT_CLEANUP
+
+AT_SETUP([Overfill])
+AT_CHECK([test-cache Overfill], [], [stdout])
+AT_CHECK([grep -e '^\(Jan\|Feb\|Mar\|Apr\|May\|Jun\|Jul\|Aug\|Sep\|Oct\|Nov\|Dec\)@<:@@<:@:space:@:>@@:>@\+@<:@0-9@:>@\{1,2\} @<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\} @<:@a-zA-Z0-9@:>@\+ aws-s3fs: Entry added to stat cache$' stdout], [], [ignore])
+AT_CHECK([grep -e '^\(Jan\|Feb\|Mar\|Apr\|May\|Jun\|Jul\|Aug\|Sep\|Oct\|Nov\|Dec\)@<:@@<:@:space:@:>@@:>@\+@<:@0-9@:>@\{1,2\} @<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\} @<:@a-zA-Z0-9@:>@\+ aws-s3fs: 1 entry expired from cache$' stdout], [], [ignore])
+AT_CHECK([grep -e '^\(Jan\|Feb\|Mar\|Apr\|May\|Jun\|Jul\|Aug\|Sep\|Oct\|Nov\|Dec\)@<:@@<:@:space:@:>@@:>@\+@<:@0-9@:>@\{1,2\} @<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\} @<:@a-zA-Z0-9@:>@\+ aws-s3fs: Stat cache miss$' stdout], [], [ignore])
+AT_CHECK([grep -e '^Found correct value$' stdout], [], [ignore])
+AT_CLEANUP
+
+AT_SETUP([Delete Entry])
+AT_CHECK([test-cache DeleteEntry 1], [], [stdout])
+AT_CHECK([grep -e '^\(Jan\|Feb\|Mar\|Apr\|May\|Jun\|Jul\|Aug\|Sep\|Oct\|Nov\|Dec\)@<:@@<:@:space:@:>@@:>@\+@<:@0-9@:>@\{1,2\} @<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\} @<:@a-zA-Z0-9@:>@\+ aws-s3fs: Stat cache entry deleted$' stdout], [], [ignore])
+AT_CHECK([grep -e '^\(Jan\|Feb\|Mar\|Apr\|May\|Jun\|Jul\|Aug\|Sep\|Oct\|Nov\|Dec\)@<:@@<:@:space:@:>@@:>@\+@<:@0-9@:>@\{1,2\} @<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\} @<:@a-zA-Z0-9@:>@\+ aws-s3fs: Stat cache miss$' stdout], [], [ignore])
+AT_CHECK([grep -e '^Found correct value$' stdout], [], [ignore])
+
+AT_CHECK([test-cache DeleteEntry 2], [], [stdout])
+AT_CHECK([grep -e '^\(Jan\|Feb\|Mar\|Apr\|May\|Jun\|Jul\|Aug\|Sep\|Oct\|Nov\|Dec\)@<:@@<:@:space:@:>@@:>@\+@<:@0-9@:>@\{1,2\} @<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\} @<:@a-zA-Z0-9@:>@\+ aws-s3fs: Stat cache entry deleted$' stdout], [], [ignore])
+AT_CHECK([grep -e '^\(Jan\|Feb\|Mar\|Apr\|May\|Jun\|Jul\|Aug\|Sep\|Oct\|Nov\|Dec\)@<:@@<:@:space:@:>@@:>@\+@<:@0-9@:>@\{1,2\} @<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\} @<:@a-zA-Z0-9@:>@\+ aws-s3fs: Stat cache hit, marking entry as LRU$' stdout], [], [ignore])
+AT_CHECK([grep -e '^Found correct value$' stdout], [], [ignore])
+
+AT_CHECK([test-cache DeleteEntry 3], [], [stdout])
+AT_CHECK([grep -e '^\(Jan\|Feb\|Mar\|Apr\|May\|Jun\|Jul\|Aug\|Sep\|Oct\|Nov\|Dec\)@<:@@<:@:space:@:>@@:>@\+@<:@0-9@:>@\{1,2\} @<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\} @<:@a-zA-Z0-9@:>@\+ aws-s3fs: Stat cache entry deleted$' stdout], [], [ignore])
+AT_CHECK([grep -e '^\(Jan\|Feb\|Mar\|Apr\|May\|Jun\|Jul\|Aug\|Sep\|Oct\|Nov\|Dec\)@<:@@<:@:space:@:>@@:>@\+@<:@0-9@:>@\{1,2\} @<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\} @<:@a-zA-Z0-9@:>@\+ aws-s3fs: Stat cache hit, marking entry as LRU$' stdout], [], [ignore])
+AT_CHECK([grep -e '^Found correct value$' stdout], [], [ignore])
+AT_CLEANUP

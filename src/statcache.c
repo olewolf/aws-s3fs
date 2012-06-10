@@ -23,34 +23,21 @@
 
 #include <config.h>
 #include <uthash.h>
+#include "statcache.h"
 #include "aws-s3fs.h"
 
 
-/* Make room for 50,000 files in the stat cache. */
-#define MAX_CACHE_SIZE 50000l
+#ifdef AUTOTEST
+#undef MAX_STAT_CACHE_SIZE
+#define MAX_STAT_CACHE_SIZE 4
+#endif
+
+
+ struct StatCacheEntry *statCache = NULL;
 
 
 
-struct FileStat
-{
-    int dummy;
-};
-
-
-
-struct StatCacheEntry
-{
-    const char              *filename;
-    struct FileStat         *fileStat;
-
-    UT_hash_handle hh;
-};
-
-struct StatCacheEntry *statCache = NULL;
-
-
-
-struct FileStat*
+void*
 SearchStatEntry(
     const struct ThreadsafeLogging *logger,
     const        char              *filename
@@ -67,7 +54,7 @@ SearchStatEntry(
         HASH_ADD_KEYPTR( hh, statCache, 
 			 entry->filename, strlen( entry->filename ), entry );
 	Syslog( logger, LOG_DEBUG, "Stat cache hit, marking entry as LRU\n" );
-        return( entry->fileStat );
+        return( entry->data );
     }
     Syslog( logger, LOG_DEBUG, "Stat cache miss\n" );
     return( NULL );
@@ -78,14 +65,23 @@ SearchStatEntry(
 void
 DeleteStatEntry(
     const struct ThreadsafeLogging *logger,
-    struct StatCacheEntry          *entry
+    const char                     *filename
 		)
 {
-    HASH_DEL( statCache, entry );
-    free( entry->fileStat );
-    free( (char*) entry->filename );
-    free( entry );
-    Syslog( logger, LOG_DEBUG, "Stat cache entry deleted\n" );
+    struct StatCacheEntry *entry;
+
+    HASH_FIND_STR( statCache, filename, entry );
+    if( entry != NULL )
+    {
+        HASH_DEL( statCache, entry );
+	free( (char*) entry->filename );
+	free( entry );
+	Syslog( logger, LOG_DEBUG, "Stat cache entry deleted\n" );
+    }
+    else
+    {
+	Syslog( logger, LOG_DEBUG, "Stat cache entry deletion failed\n" );
+    }
 }
 
 
@@ -98,7 +94,7 @@ TruncateCache(
     struct StatCacheEntry *entry;
     struct StatCacheEntry *tmpEntry;
     int                   cacheSize     = HASH_COUNT( statCache );
-    int                   toDelete      = MAX_CACHE_SIZE - cacheSize;
+    int                   toDelete      = cacheSize - MAX_STAT_CACHE_SIZE;
     int                   numberDeleted = 0;
 
     if( 0 < toDelete )
@@ -108,7 +104,6 @@ TruncateCache(
 	HASH_ITER( hh, statCache, entry, tmpEntry )
 	{
 	    HASH_DELETE( hh, statCache, entry );
-	    free( entry->fileStat );
 	    free( (char*) entry->filename );
 	    free( entry );
 	    numberDeleted++;
@@ -128,7 +123,7 @@ void
 InsertCacheElement(
     const struct ThreadsafeLogging *logger,
     const char                     *filename,
-    struct FileStat                *fileStat
+    void                           *data
 		   )
 {
     struct StatCacheEntry *entry;
@@ -137,9 +132,7 @@ InsertCacheElement(
     assert( entry != NULL );
     entry->filename = strdup( filename );
     assert( entry->filename != NULL );
-    entry->fileStat = malloc( sizeof( struct FileStat ) );
-    assert( entry->fileStat != NULL );
-    memcpy( entry->fileStat, fileStat, sizeof( struct FileStat ) );
+    entry->data = data;
 
     HASH_ADD_KEYPTR( hh, statCache, 
 		     entry->filename, strlen( entry->filename ), entry );

@@ -37,7 +37,7 @@ test_cache_SOURCES= $(SHAREDTESTSOURCE) test-cache.c ../src/statcache.c \
 	../src/logger.c
 
 
-AM_CFLAGS = -I../src
+AM_CFLAGS = -I../src -DAUTOTEST
 SHAREDTESTSOURCE = dispatch.c src/aws-s3fs.h shared.c testfunctions.h
 
 
