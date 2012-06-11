@@ -19,16 +19,37 @@ export DH_ALWAYS_EXCLUDE=ChangeLog
 
 # Build rule for sysdirs.h
 sysdirs.h : sysdirs.h.src
+	prefix="${prefix}"; \
+	exec_prefix="${exec_prefix}"; \
+	bindir="${bindir}"; \
+	sbindir="${sbindir}"; \
+	libexecdir="${libexecdir}"; \
+	sharedstatedir="${sharedstatedir}"; \
+	includedir="${includedir}"; \
+	sysconfdir="${sysconfdir}"; \
+	localstatedir="${localstatedir}"; \
+	datadir="${datadir}"; \
+	datarootdir="${datarootdir}"; \
+	localedir="${localedir}"; \
+	mandir="${mandir}"; \
+	docdir="${docdir}"; \
+	infodir="${infodir}"; \
+	htmldir="${htmldir}"; \
+	dvidir="${dvidir}"; \
+	pdfdir="${pdfdir}"; \
+	psdir="${psdir}"; \
+	libdir="${libdir}"; \
 	TMPFILE1=`mktemp`; \
 	TMPFILE2=`mktemp`; \
-	REPLACE="$$""{sysconfdir}"; \
-	sed < $< "s^$$REPLACE^${sysconfdir}^" >$$TMPFILE1; \
-	REPLACE="$$""{localstatedir}"; \
-	sed < $$TMPFILE1 "s^$$REPLACE^${localstatedir}^" > $$TMPFILE2; \
-	REPLACE="$$""{datadir}"; \
-	sed < $$TMPFILE2 "s^$$REPLACE^${datadir}^" > $$TMPFILE1; \
-	mv $$TMPFILE1 $@
-
+	cat $< > $$TMPFILE1; \
+	for REPLACE in prefix exec_prefix bindir sbindir libexecdir sharedstatedir includedir datarootdir infodir htmldir dvidir pdfdir psdir sysconfdir localstatedir datadir localedir mandir docdir libdir; do \
+	    REPLACESTR="$$""{$$REPLACE}"; \
+	    ACTUALDIR=`eval echo "$$""{$$REPLACE}"`; \
+	    echo "Debug: $$REPLACESTR -> $$ACTUALDIR"; \
+	    sed "s^$$REPLACESTR^$$ACTUALDIR^" >$$TMPFILE2 $$TMPFILE1; \
+	    cp $$TMPFILE2 $$TMPFILE1; \
+	done; \
+	cp $$TMPFILE2 $@
 
 %:
 	dh $@ --with autotools_dev

@@ -23,10 +23,38 @@
 #ifndef __sysdirs_h
 #define __sysdirs_h
 
+
+#define SYSCONFDIR    "${sysconfdir}"
+#define LOCALSTATEDIR "${localstatedir}"
+
+#define DATADIR       "${datadir}"
+
+/*
+#define LOCALEDIR     "${localedir}"
+#define PREFIX        "${prefix}"
+#define EXEC_PREFIX   "${exec_prefix}";
+#define BINDIR        "${bindir}"
+#define MANDIR        "${mandir}"
+#define DOCDIR        "${docdir}"
+#define LIBDIR        "${libdir}"
+sbindir="${sbindir}"
+libexecdir="${libexecdir}"
+sharedstatedir="${sharedstatedir}"
+includedir="${includedir}"
+datarootdir="${datarootdir}"
+localedir="${localedir}"
+infodir="${infodir}"
+htmldir="${htmldir}"
+dvidir="${dvidir}"
+pdfdir="${pdfdir}"
+psdir="${psdir}"
+*/
+
+
 /* Default, system-wide aws-s3fs.conf file. */
-#define DEFAULT_CONFIG_FILENAME "${sysconfdir}/aws-s3fs.conf"
+#define DEFAULT_CONFIG_FILENAME SYSCONFDIR "/aws-s3fs.conf"
 
 /* Lock dir. */
-#define LOCK_DIR "${localstatedir}/lock"
+#define LOCK_DIR LOCALSTATEDIR "/lock"
 
 #endif /* __sysdirs_h */
