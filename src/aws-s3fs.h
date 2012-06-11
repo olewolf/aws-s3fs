@@ -130,10 +130,12 @@ Configure(
 
 
 /* In config.c. */
+/*
 void CopyDefaultString(
     char       **key,
     const char *value
 );
+*/
 
 void InitializeThreadConfiguration( struct configuration * );
 

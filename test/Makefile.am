@@ -44,6 +44,8 @@ SHAREDTESTSOURCE = dispatch.c src/aws-s3fs.h shared.c testfunctions.h
 # See 
 # http://www.lrde.epita.fr/~akim/ccmp/doc/gnuprog2/The-GNU-M4-Test-Suite.html#The%20GNU%20M4%20Test%20Suite
 
+AM_LIBS = pthread
+
 TESTSUITE = testsuite
 
 check-local: atconfig $(TESTSUITE)

@@ -114,7 +114,6 @@ InitLog(
 	)
 {
     char hostnameBuf[ HOST_NAME_MAX + 1 ];
-    char *hostname;
 
     if( logging->loggingEnabled != true )
     {
@@ -130,6 +129,7 @@ InitLog(
 	    free( (char*) logging->logFilename );
 	}
         logging->logFilename = strdup( logfile );
+	assert( logging->logFilename != NULL );
     }
     else
     {
@@ -140,10 +140,8 @@ InitLog(
     /* Get the hostname. */
     gethostname( hostnameBuf, HOST_NAME_MAX );
     hostnameBuf[ HOST_NAME_MAX ] = '\0';
-    
-    hostname = malloc( strlen( hostnameBuf ) + sizeof( char ) );
-    strcpy( hostname, hostnameBuf );
-    logging->hostname = hostname;
+    logging->hostname = strdup( hostnameBuf );
+    assert( logging->hostname != NULL );
 
     /* Open the log file. */
     if( logfile != NULL )
@@ -159,8 +157,8 @@ InitLog(
 	    logging->logFh = fopen( logfile, "a" );
 	    if( logging->logFh == NULL )
 	    {
-	      Syslog( logging, LOG_ERR,
-		      "Cannot open %s logfile for writing\n", logfile );
+	        Syslog( logging, LOG_ERR,
+			"Cannot open %s logfile for writing\n", logfile );
 	    }
 	}
     }

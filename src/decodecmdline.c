@@ -101,13 +101,15 @@ PrintSoftwareLicense( const char *commandName )
  * @param path [out] Pointer to where the "path" component is stored.
  * @return Nothing.
 */
-/*@-exportlocal@*//* for testing purposes*/ void
+#ifndef AUTOTEST
+static
+#endif
+void
 SplitS3MountPath(
     const char     *s3Path,
     /*@out@*/ char **bucket,
     /*@out@*/ char **path
 		 )
-/*@+exportlocal@*/
 {
     char *bucketName;
     char *pathName;

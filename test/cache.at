@@ -60,4 +60,8 @@ AT_CHECK([test-cache DeleteEntry 3], [], [stdout])
 AT_CHECK([grep -e '^\(Jan\|Feb\|Mar\|Apr\|May\|Jun\|Jul\|Aug\|Sep\|Oct\|Nov\|Dec\)@<:@@<:@:space:@:>@@:>@\+@<:@0-9@:>@\{1,2\} @<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\} @<:@a-zA-Z0-9@:>@\+ aws-s3fs: Stat cache entry deleted$' stdout], [], [ignore])
 AT_CHECK([grep -e '^\(Jan\|Feb\|Mar\|Apr\|May\|Jun\|Jul\|Aug\|Sep\|Oct\|Nov\|Dec\)@<:@@<:@:space:@:>@@:>@\+@<:@0-9@:>@\{1,2\} @<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\} @<:@a-zA-Z0-9@:>@\+ aws-s3fs: Stat cache hit, marking entry as LRU$' stdout], [], [ignore])
 AT_CHECK([grep -e '^Found correct value$' stdout], [], [ignore])
+
+AT_CHECK([test-cache DeleteEntry 4], [], [stdout])
+AT_CHECK([grep -e '^Delete function for entry 3 called.$' stdout], [], [ignore])
+
 AT_CLEANUP

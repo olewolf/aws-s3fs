@@ -35,7 +35,11 @@
  * @param key [in] Key of the configuration file value.
  * @return The value for the specified key.
  */
-/*@null@*/ /*static removed for testing purposes*/ const char *
+/*@null@*/
+#ifndef AUTOTEST
+static
+#endif
+const char *
 LookupConfigString(
     const struct config_t *config,
     const char            *key
@@ -61,7 +65,10 @@ LookupConfigString(
  * @param [in] key Key of the configuration file value.
  * @return Nothing.
  */
-/*static removed for testing purposes*/ void
+#ifndef AUTOTEST
+static
+#endif
+void
 ConfigSetBoolean(
     struct configurationBoolean *configBoolean,
     const struct config_t       *config,

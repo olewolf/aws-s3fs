@@ -106,6 +106,7 @@ Daemonize(
     const char *runDir;
 #ifdef USE_LOCKFILE
     char       pidStr[ 10 ];
+    char       lockFilename[ 500 ];
 #endif /* USE_LOCKFILE */
     struct sigaction sigAction;
 
@@ -169,7 +170,11 @@ Daemonize(
 
 #ifdef USE_LOCKFILE
 	/* Create lock file. */
-	lockFp = open( LOCK_FILE, O_RDWR | O_CREAT, 0640 );
+	strcpy( lockFilename, LOCK_DIR );
+	strcat( lockFilename, "aws-s3fs-" );
+	strcat( lockFilename, config->bucketName );
+	strcat( lockFilename, ".lock" );
+	lockFp = open( lockFilename, O_RDWR | O_CREAT, 0640 );
 	if( lockFp < 0 )
 	{
 	    /* Cannot create lock file. */

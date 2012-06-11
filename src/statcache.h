@@ -32,6 +32,7 @@ struct StatCacheEntry
 {
     const char *filename;
     void       *data;
+    void       (*dataDeleteFunction)( void );
 
     UT_hash_handle hh;
 };
@@ -49,7 +50,9 @@ void
 InsertCacheElement(
     const struct ThreadsafeLogging *logger,
     const char                     *filename,
-    void                           *fileStat );
+    void                           *fileStat,
+    void                           (*dataDeleteFunction)( void )
+);
 
 
 #endif /* __STAT_CACHE_H */

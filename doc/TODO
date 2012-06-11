@@ -1,4 +1,19 @@
-* Test ConfigSetLoglevel.
+* Recheck thread safety.
+  - logging.c OK
+  - statcache.c OK
+  - common.c OK
+  - config.c OK
+  - configfile.c OK
+  - daemon.c not thread safe.
+  - decodecmdline.c OK
+  - logger.c OK
+  - statcache.c OK
+  - However, some files exit with exit().
 
-* Make daemon.c thread-safe. In particular, the signal handler won't
-   know which thread state to address.
+* Make daemon.c thread-safe.
+  - In particular, the signal handler won't know which thread state to address.
+
+* Multiple mounts of the same bucket MUST share the cache.
+  - For now, use a lock file to prevent processes from mounting the same bucket.
+  - Later, make threads.
+

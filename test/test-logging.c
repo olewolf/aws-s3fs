@@ -73,6 +73,16 @@ void test_Syslog( const char *parms )
 		    "Message %d: %d %s\n", testNumber, 42, "Test" );
 	    CloseLog( &logging );
 	    break;
+
+        case 4:
+	    InitLog( &logging, NULL, log_ERR );
+	    EnableLogging( &logging );
+	    printf( "Empty message: \"" );
+	    Syslog( &logging, log_WARNING,
+		    "This message should not be shown in the log" );
+	    CloseLog( &logging );
+	    printf( "\"\n" );
+	    break;
     }
 }
 

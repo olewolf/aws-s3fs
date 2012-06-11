@@ -20,8 +20,11 @@ AT_BANNER([Logging Tests])
 
 AT_SETUP([Syslog])
 AT_CHECK([test-logging Syslog 1], [], [stdout])
-AT_CHECK([grep -e '\(Jan\|Feb\|Mar\|Apr\|May\|Jun\|Jul\|Aug\|Sep\|Oct\|Nov\|Dec\)@<:@@<:@:space:@:>@@:>@\+@<:@0-9@:>@\{1,2\} @<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\} @<:@a-zA-Z0-9@:>@\+ aws-s3fs: Message 1: 42 Test$' stdout], [], [ignore])
+AT_CHECK([grep -e '^\(Jan\|Feb\|Mar\|Apr\|May\|Jun\|Jul\|Aug\|Sep\|Oct\|Nov\|Dec\)@<:@@<:@:space:@:>@@:>@\+@<:@0-9@:>@\{1,2\} @<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\} @<:@a-zA-Z0-9@:>@\+ aws-s3fs: Message 1: 42 Test$' stdout], [], [ignore])
 AT_CHECK([test-logging Syslog 2], [], [stdout])
 AT_CHECK([rm -f >/dev/null 2>&1 test-log.log; test-logging Syslog 3], [], [stdout])
-AT_CHECK([grep -e '\(Jan\|Feb\|Mar\|Apr\|May\|Jun\|Jul\|Aug\|Sep\|Oct\|Nov\|Dec\)@<:@@<:@:space:@:>@@:>@\+@<:@0-9@:>@\{1,2\} @<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\} @<:@a-zA-Z0-9@:>@\+ aws-s3fs: Message 3: 42 Test$' test-log.log], [], [ignore])
+AT_CHECK([grep -e '^\(Jan\|Feb\|Mar\|Apr\|May\|Jun\|Jul\|Aug\|Sep\|Oct\|Nov\|Dec\)@<:@@<:@:space:@:>@@:>@\+@<:@0-9@:>@\{1,2\} @<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\}:@<:@0-9@:>@\{2\} @<:@a-zA-Z0-9@:>@\+ aws-s3fs: Message 3: 42 Test$' test-log.log], [], [ignore])
+
+AT_CHECK([rm -f >/dev/null 2>&1 test-log.log; test-logging Syslog 4], [], [stdout])
+AT_CHECK([grep -e '^Empty message: \"\"$' stdout], [], [ignore])
 AT_CLEANUP

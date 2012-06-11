@@ -34,6 +34,43 @@ static const char *regionNames[ ] = {
 };
 
 
+
+/**
+ * Copy a string, allocating memory for the destination. If the destination
+ * string already exists, its memory is first freed.
+ * @param key [out] Pointer to the destination string.
+ * @param value [in] Input string to be copied.
+ * @return Nothing.
+ */
+#ifndef AUTOTEST
+static
+#endif
+void CopyDefaultString(
+    char       **key,
+    const char *value
+		       )
+{
+    char *currentKey;
+    char *newKey;
+
+    assert( key != NULL );
+
+    /* Delete the current string. */
+    if( *key != NULL )
+    {
+	currentKey = *key;
+	free( currentKey );
+	*key = NULL;
+    }
+
+    /* Copy the new string to the key. */
+    newKey = strdup( value );
+    assert( newKey != NULL );
+    *key = newKey;
+}
+
+
+
 /**
  * Write the bucket region value corresponding to the supplied region name
  * string. If the region name is invalid, the region value is left as is;
@@ -145,7 +182,6 @@ ConfigSetLoglevel(
 
 
 
-/*@-exportlocal@*//*for testing purposes*/
 /**
  * Extract a key string from a string where keys are separated by ':'. The
  * memory for the extracted key string is automatically allocated and written
@@ -156,13 +192,15 @@ ConfigSetLoglevel(
  * @return The position of the next key in the string, or 0 if there are no
  *         more keys in the string.
  */
+#ifndef AUTOTEST
+static
+#endif
 int
 ExtractKey(
     /*@out@*/ char **key,
     int            index,
     const char     *configValue
 	   )
-/*@+exportlocal@*/
 {
     char *tempBuffer;
     char *bufferPtr;
@@ -259,9 +297,8 @@ ConfigSetKey(
        possible. (It will always be possible to malloc this little memory,
        and it is only really necessary to work around a lint warning that
        the new secret key may become null.) */
-    invalidSecretKey = malloc( strlen( "*" ) + sizeof( char ) );
+    invalidSecretKey = strdup( "*" );
     assert( invalidSecretKey != NULL );
-    strcpy( invalidSecretKey, "*" );
 
     /* Release the current keys. */
     currentKeyId = *keyId;
@@ -307,41 +344,6 @@ ConfigSetKey(
 
 
 /**
- * Copy a string, allocating memory for the destination. If the destination
- * string already exists, its memory is first freed.
- * @param key [out] Pointer to the destination string.
- * @param value [in] Input string to be copied.
- * @return Nothing.
- */
-void CopyDefaultString(
-    char       **key,
-    const char *value
-		       )
-{
-    char *currentKey;
-    char *newKey;
-
-    assert( key != NULL );
-
-    /* Delete the current string. */
-    if( *key != NULL )
-    {
-	currentKey = *key;
-	free( currentKey );
-	*key = NULL;
-    }
-
-    /* Copy the new string to the key. */
-    newKey = malloc( strlen( value ) + sizeof( char ) );
-    assert( newKey != NULL );
-    strcpy( newKey, value );
-    *key = newKey;
-}
-
-
-
-/*@-exportlocal@*//*for testing purposes*/
-/**
  * Set all values in a \a configuration structure to default values. If
  * memory has been allocated for any of its current contents, this memory
  * must be freed prior to calling this function.
@@ -349,11 +351,20 @@ void CopyDefaultString(
  *        be initialized.
  * @return Nothing.
  */
+/**
+ * Copy a string, allocating memory for the destination. If the destination
+ * string already exists, its memory is first freed.
+ * @param key [out] Pointer to the destination string.
+ * @param value [in] Input string to be copied.
+ * @return Nothing.
+ */
+#ifndef AUTOTEST
+static
+#endif
 void
 InitializeConfiguration(
     struct configuration *configuration
 			)
-/*@+exportlocal@*/
 {
     assert( configuration != NULL );
 
@@ -502,9 +513,10 @@ Configure(
     InitializeConfiguration( configuration );
 
     /* Attempt to read the configuration file override, if specified. */
-    configFile = cmdlineConfiguration.configFile;
-    if( configFile != NULL )
+    if( cmdlineConfiguration.configFile != NULL )
     {
+        configFile = strdup( cmdlineConfiguration.configFile );
+	assert( configFile != NULL );
         forcedConfigFile = true;
 	configFp = TestFileReadable( configFile );
     }
@@ -523,12 +535,15 @@ Configure(
 	    strcat( configFile, "/.aws-s3fs" );
 	    configFp = TestFileReadable( configFile );
 	}
-
 	/* Still unsuccessful, attempt DEFAULT_CONFIG_FILENAME. */
 	if( configFp == NULL )
 	{
-	    configFile = malloc( strlen( DEFAULT_CONFIG_FILENAME ) + sizeof( char ) );
-	    strcpy( configFile, DEFAULT_CONFIG_FILENAME );
+	    if( configFile != NULL )
+	    {
+	        free( configFile );
+	    }
+	    configFile = strdup( DEFAULT_CONFIG_FILENAME );
+	    assert( configFile != NULL );
 	    configFp = TestFileReadable( configFile );
 	}
     }
@@ -536,7 +551,7 @@ Configure(
     {
 	configSuccess = ReadConfigFile( configFp, configFile, configuration );
     }
-    if( ( configFp == NULL ) && ( forcedConfigFile != false ) )
+    if( ( configFp == NULL ) && bool_equal( forcedConfigFile, true ) )
     {
 	fprintf( stderr, "Cannot open %s for reading.\n", configFile );
 	exit( EXIT_FAILURE );
@@ -630,6 +645,7 @@ Configure(
 
     /* Destroy the temporary configuration structure holding the command-line
        options. */
+    free( cmdlineConfiguration.configFile );
     free( cmdlineConfiguration.configuration.bucketName );
     free( cmdlineConfiguration.configuration.path );
     free( cmdlineConfiguration.configuration.keyId );

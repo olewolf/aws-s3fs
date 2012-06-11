@@ -43,8 +43,6 @@ AC_C_CONST
 #AC_C_INLINE
 
 # Check for modules.
-#PKG_CHECK_MODULES([DEPS], [fuse >= 2.8 libconfig >= 1.3 cmph >= 0.9],,
-#    AC_MSG_ERROR([*** libfuse, libconfig, or libcmph source not found **]))
 PKG_CHECK_MODULES([DEPS], [fuse >= 2.8 libconfig >= 1.3],,
     AC_MSG_ERROR([*** libfuse or libconfig source not found **]))
 
@@ -53,8 +51,8 @@ AC_CHECK_LIB([config], [config_init],,
     AC_MSG_ERROR([*** config_init function not found **]))
 AC_CHECK_LIB([fuse], [fuse_main],,
     AC_MSG_ERROR([*** config_init function not found **]))
-#AC_CHECK_LIB([cmph], [cmph_new],,
-#    AC_MSG_ERROR([*** cmph_new function not found **]))
+AC_CHECK_LIB([pthread], [pthread_mutex_lock],,
+    AC_MSG_ERROR([*** pthread_mutex_lock function not found **]))
 
 # Check for header files.
 AC_CHECK_HEADERS([stdio.h],,
@@ -91,6 +89,8 @@ AC_CHECK_HEADERS([sys/signal.h],,
     AC_MSG_ERROR([*** sys/stat.h not found **]))
 AC_CHECK_HEADERS([uthash.h],,
     AC_MSG_ERROR([*** uthash.h not found **]))
+AC_CHECK_HEADERS([pthread.h],,
+    AC_MSG_ERROR([*** uthash.h not found **]))
 
 # Check for typedefs, structures, and compiler characteristics.
 # Check for library functions.
@@ -108,7 +108,8 @@ AC_CHECK_FUNCS([openlog syslog closelog],,
     AC_MSG_ERROR([*** Syslog functions not found. **]))
 AC_CHECK_FUNCS([time localtime],,
     AC_MSG_ERROR([*** Time functions not found. **]))
-AC_CHECK_FUNCS([sigaction fork setsid exit perror],,
+AC_CHECK_FUNCS([sigaction fork setsid exit perror pthread_mutex_lock \
+	       pthread_mutex_unlock],,
     AC_MSG_ERROR([*** Process functions not found. **]))
 # The following functions are not checked:
 #
