@@ -20,7 +20,7 @@ AM_LIBS = pthread
 bin_PROGRAMS = aws-s3fs
 aws_s3fs_SOURCES = aws-s3fs.h sysdirs.h aws-s3fs.c \
 	decodecmdline.c configfile.c common.c fix-i386-cc.c config.c \
-	logger.c daemon.c statcache.c
+	md5digest.c logger.c daemon.c statcache.c
 
 BUILT_SOURCES = sysdirs.h
 CLEANFILES = sysdirs.h

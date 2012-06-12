@@ -16,10 +16,10 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 
-TESTSCRIPTS = commandline.at config.at common.at logging.at cache.at
+TESTSCRIPTS = commandline.at config.at common.at logging.at cache.at md5.at
 
 noinst_PROGRAMS = test-decodecmdline test-config test-configfile test-common \
-	test-logging test-cache
+	test-logging test-cache test-md5
 
 test_decodecmdline_SOURCES = $(SHAREDTESTSOURCE) test-decodecmdline.c \
 	../src/decodecmdline.c ../src/config.c ../src/configfile.c \
@@ -35,6 +35,7 @@ test_logging_SOURCES = $(SHAREDTESTSOURCE) test-logging.c \
 	../src/logger.c ../src/common.c
 test_cache_SOURCES= $(SHAREDTESTSOURCE) test-cache.c ../src/statcache.c \
 	../src/logger.c
+test_md5_SOURCES= $(SHAREDTESTSOURCE) test-md5.c ../src/md5digest.c
 
 
 AM_CFLAGS = -I../src -DAUTOTEST
