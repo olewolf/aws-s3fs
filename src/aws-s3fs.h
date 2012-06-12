@@ -30,12 +30,26 @@
 #include <syslog.h>
 #include "sysdirs.h"
 
-#define bool_equal( a, b ) ( (a) ? (b) : !(b) )
 
 #define DEFAULT_TMP_DIR "/tmp"
 
+/* Maximum number of open files. */
+#define MAX_FILE_DESCRIPTORS 16
+
+
+
 /* Make room for 50,000 files in the stat cache. */
 #define MAX_STAT_CACHE_SIZE 50000l
+
+/* Default, system-wide aws-s3fs.conf file. */
+#define DEFAULT_CONFIG_FILENAME SYSCONFDIR "/aws-s3fs.conf"
+
+/* Lock dir. */
+#define LOCK_DIR LOCALSTATEDIR "/lock"
+
+/* Chache dir. */
+#define CACHE_DIR LOCALSTATEDIR "/cache/aws-s3fs"
+
 
 /** Default configuration values. */
 #define DEFAULT_REGION     "US Standard"
@@ -104,6 +118,8 @@ struct ThreadsafeLogging
 };
 
 
+#define bool_equal( a, b ) ( (a) ? (b) : !(b) )
+
 /* In logger.c */
 void InitializeLoggingModule( struct ThreadsafeLogging * );
 void Syslog( const struct ThreadsafeLogging *,
@@ -127,15 +143,6 @@ Configure(
     const char * const   *argv
 );
 
-
-
-/* In config.c. */
-/*
-void CopyDefaultString(
-    char       **key,
-    const char *value
-);
-*/
 
 void InitializeThreadConfiguration( struct configuration * );
 

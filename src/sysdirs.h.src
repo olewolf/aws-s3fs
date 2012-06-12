@@ -1,6 +1,6 @@
 /**
  * \file sysdirs.h
- * \brief Create a sysconffile.h with the default configuration file name.
+ * \brief Create a sysdirs.h file with paths defined by the ./configure script.
  *
  * Copyright (C) 2012 Ole Wolf <wolf@blazingangles.com>
  *
@@ -23,38 +23,31 @@
 #ifndef __sysdirs_h
 #define __sysdirs_h
 
+/* The Automake.am file contains a rule for turning sysdirs.h.src into
+   sysdirs.h, where the following directories are defined according to the
+   ./configure options. */
 
-#define SYSCONFDIR    "${sysconfdir}"
-#define LOCALSTATEDIR "${localstatedir}"
+#define SYSCONFDIR     "${sysconfdir}"
+#define LOCALSTATEDIR  "${localstatedir}"
+#define DATADIR        "${datadir}"
+#define LOCALEDIR      "${localedir}"
+#define PREFIX         "${prefix}"
+#define EXEC_PREFIX    "${exec_prefix}"
+#define BINDIR         "${bindir}"
+#define MANDIR         "${mandir}"
+#define DOCDIR         "${docdir}"
+#define LIBDIR         "${libdir}"
+#define SBINDIR        "${sbindir}"
+#define LIBEXECDIR     "${libexecdir}"
+#define SHAREDSTATEDIR "${sharedstatedir}"
+#define INCLUDE	       "${includedir}"
+#define DATAROOTDIR    "${datarootdir}"
+#define LOCALEDIR      "${localedir}"
+#define INFODIR	       "${infodir}"
+#define HTMLDIR	       "${htmldir}"
+#define DVIDIR	       "${dvidir}"
+#define PDFDIR	       "${pdfdir}"
+#define PSDIR	       "${psdir}"
 
-#define DATADIR       "${datadir}"
-
-/*
-#define LOCALEDIR     "${localedir}"
-#define PREFIX        "${prefix}"
-#define EXEC_PREFIX   "${exec_prefix}";
-#define BINDIR        "${bindir}"
-#define MANDIR        "${mandir}"
-#define DOCDIR        "${docdir}"
-#define LIBDIR        "${libdir}"
-sbindir="${sbindir}"
-libexecdir="${libexecdir}"
-sharedstatedir="${sharedstatedir}"
-includedir="${includedir}"
-datarootdir="${datarootdir}"
-localedir="${localedir}"
-infodir="${infodir}"
-htmldir="${htmldir}"
-dvidir="${dvidir}"
-pdfdir="${pdfdir}"
-psdir="${psdir}"
-*/
-
-
-/* Default, system-wide aws-s3fs.conf file. */
-#define DEFAULT_CONFIG_FILENAME SYSCONFDIR "/aws-s3fs.conf"
-
-/* Lock dir. */
-#define LOCK_DIR LOCALSTATEDIR "/lock"
 
 #endif /* __sysdirs_h */
