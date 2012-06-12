@@ -1,0 +1,9 @@
+#!/bin/bash
+
+# Post-removal script for aws-s3fs.
+
+set -e
+
+if [ "$1" = "remove" ]; then
+    rm -rf @localstatedir@/cache/aws-s3fs >/dev/null 2>&1
+fi

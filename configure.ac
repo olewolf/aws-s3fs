@@ -140,7 +140,7 @@ LIBS="$DEPS_LIBS $LIBS"
 # Output files.
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_FILES([Makefile src/Makefile data/Makefile doc/Makefile doc/man/Makefile test/Makefile])
-AC_OUTPUT([doc/main.doc])
+AC_OUTPUT([doc/main.doc debian/postinst debian/postrm])
 
 echo "
   $PACKAGE_NAME version $PACKAGE_VERSION

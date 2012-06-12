@@ -1,0 +1,14 @@
+#!/bin/sh
+
+# Postinstallation script for aws-s3fs.
+
+set -e
+
+if [ "$1" = "configure" ]; then
+    CACHEDIR="@localstatedir@/cache/aws-s3fs"
+    mkdir -p $CACHEDIR
+    chmod 777 $CACHEDIR
+    chmod +t $CACHEDIR
+fi
+
+exit 0
