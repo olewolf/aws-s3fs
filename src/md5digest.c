@@ -8,13 +8,16 @@
  * licensed under GPLv2+.
  *
  * Modifications to the original code:
- *   - Changed naming and indentation convention to match the remainder of
- *     the code in aws-s3fs.
- *   - Made the code re-entrant.
- *   - Changed the output to 32-byte ASCII hex digest.
- *   - Changed some macros to inline functions, believing that compilers are
- *     capable of choosing the best option.
- *   - Got rid of extensive 32-bit checking, which isn't necessary nowadays.
+ *   * Functional modifications:
+ *     - Made the code re-entrant.
+ *     - Changed the output to 32-byte ASCII hex digest.
+ *   * Structural modifications:
+ *     - Changed all macros to inline functions, believing that compilers today
+ *       are capable of choosing the best option.
+ *     - Got rid of extensive 32-bit checking, which isn't necessary nowadays.
+ *   * Cosmetic modifications:
+ *     - Changed naming and indentation convention to match the remainder of
+ *       the code in aws-s3fs.
  *
  * This file is part of aws-s3fs.
  * 
@@ -38,90 +41,19 @@
 #include <stdint.h>
 #include <malloc.h>
 #include <memory.h>
-#include <stdio.h>
 #include <assert.h>
 #include <endian.h>
+#include "md5digest.h"
 
 
-/* These are the four functions used in the four steps of the MD5 algorithm
-   and defined in the RFC 1321.  The first function is a little bit optimized
-   (as found in Colin Plumbs public domain implementation).
-   Original function: #define FF(b, c, d) ((b & c) | (~b & d)) */
+/* Set to define MD5 functions as inline functions rather than macros. */
+#define NO_MACRO_FUNCTIONS
 
-/* The functions have been changed from macros to inline functions, assuming
-   that the compiler is capable of performing proper optimization. */
-
-/*#define FF( b, c, d ) ( d ^ ( b & ( c ^ d ) ) )*/
-static inline uint32_t
-FF(
-     register uint32_t b,
-     register uint32_t c,
-     register uint32_t d
-   )
-{
-    return( d ^ ( b & ( c ^ d ) ) );
-}
-
-
-/*#define FG( b, c, d ) FF( d, b, c )*/
-static inline uint32_t
-FG(
-     register uint32_t b,
-     register uint32_t c,
-     register uint32_t d
-   )
-{
-    return( FF( d, b, c ) );
-}
-
-
-/*#define FH( b, c, d ) ( b ^ c ^ d )*/
-static inline uint32_t
-FH(
-     register uint32_t b,
-     register uint32_t c,
-     register uint32_t d
-   )
-{
-    return( b ^ c ^ d );
-}
-
-
-/*#define FI( b, c, d ) ( c ^ ( b | ~d ) )*/
-static inline uint32_t
-FI(
-     register uint32_t b,
-     register uint32_t c,
-     register uint32_t d
-   )
-{
-    return(  c ^ ( b | ~d ) );
-}
-
-
-/* First round: using the given function, the context and a constant
-   the next context is computed.  Because the algorithms processing
-   unit is a 32-bit word and it is determined to work on words in
-   little endian byte order we perhaps have to change the byte order
-   before the computation.  To reduce the work for the next steps
-   we store the swapped words in the array CORRECT_WORDS.  */
-#define OP(a, b, c, d, s, T)						   \
-    a = a + FF( b, c, d ) + ( *cwp++ = MAKE_LITTLE_ENDIAN( *words ) ) + T; \
-    words = words + 1;				                           \
-    ROTATE( a, s );							   \
-    a = a + b
-
-/* For the second to fourth round we have the possibly swapped words
-   in CORRECT_WORDS. Define a similar macro that takes an additional
-   first argument specifying the function to use. */
-#define OP_fn( f, a, b, c, d, k, s, T )					\
-    a = a + f( b, c, d ) + correctWords[ k ] + T;			\
-    ROTATE( a, s );							\
-    a = a + b							
 
 /* It is unfortunate that C does not provide an operator for
    cyclic rotation.  Hope the C compiler is smart enough.  */
-/*#define ROTATE( w, s ) ( w = ( w << s ) | ( w >> ( 32 - s ) ) )*/
+#ifdef NO_MACRO_FUNCTIONS
+
 static inline uint32_t
 ROTATE(
     register uint32_t w,
@@ -131,22 +63,14 @@ ROTATE(
     return( w = ( w << s ) | ( w >> ( 32 - s ) ) );
 }
 
-
-
-/*
-#if __BYTE_ORDER == __BIG_ENDIAN
-#define MAKE_LITTLE_ENDIAN( n )	                     \
-    ( ( (n)            << 24 ) |                     \
-    ( ( (n) & 0xff00 ) <<  8 ) |                     \
-    ( ( (n)            >>  8 ) & 0xff00 )  |         \
-    (   (n)            >> 24) )
 #else
-#define MAKE_LITTLE_ENDIAN( n ) ( n )
-#endif
-*/
+#define ROTATE( w, s ) ( w = ( w << s ) | ( w >> ( 32 - s ) ) )
+#endif /* NO_MACRO_FUNCTIONS */
+
+
+#ifdef NO_MACRO_FUNCTIONS
 
 #if __BYTE_ORDER == __BIG_ENDIAN
-
 static inline uint32_t
 MAKE_LITTLE_ENDIAN(
     register uint32_t n
@@ -170,6 +94,145 @@ MAKE_LITTLE_ENDIAN(
 }
 
 #endif /* __BYTE_ORDER == __BIG_ENDIAN */
+
+
+#else
+
+#if __BYTE_ORDER == __BIG_ENDIAN
+#define MAKE_LITTLE_ENDIAN( n )	                     \
+    ( ( (n)            << 24 ) |                     \
+    ( ( (n) & 0xff00 ) <<  8 ) |                     \
+    ( ( (n)            >>  8 ) & 0xff00 )  |         \
+    (   (n)            >> 24) )
+#else
+#define MAKE_LITTLE_ENDIAN( n ) ( n )
+#endif
+
+#endif /* NO_MACRO_FUNCTIONS */
+
+
+/* These are the four functions used in the four steps of the MD5 algorithm
+   and defined in the RFC 1321.  The first function is a little bit optimized
+   (as found in Colin Plumbs public domain implementation).
+   Original function: #define FF(b, c, d) ((b & c) | (~b & d)) */
+
+/* The functions have been changed from macros to inline functions, assuming
+   that the compiler is capable of performing proper optimization. */
+#ifdef NO_MACRO_FUNCTIONS
+static inline uint32_t
+FF(
+     register uint32_t b,
+     register uint32_t c,
+     register uint32_t d
+   )
+{
+    return( d ^ ( b & ( c ^ d ) ) );
+}
+
+
+static inline uint32_t
+FG(
+     register uint32_t b,
+     register uint32_t c,
+     register uint32_t d
+   )
+{
+    return( FF( d, b, c ) );
+}
+
+
+static inline uint32_t
+FH(
+     register uint32_t b,
+     register uint32_t c,
+     register uint32_t d
+   )
+{
+    return( b ^ c ^ d );
+}
+
+
+static inline uint32_t
+FI(
+     register uint32_t b,
+     register uint32_t c,
+     register uint32_t d
+   )
+{
+    return(  c ^ ( b | ~d ) );
+}
+
+/* First round: using the given function, the context and a constant
+   the next context is computed.  Because the algorithms processing
+   unit is a 32-bit word and it is determined to work on words in
+   little endian byte order we perhaps have to change the byte order
+   before the computation.  To reduce the work for the next steps
+   we store the swapped words in the array CORRECT_WORDS.  */
+static inline void
+OP(
+    register                uint32_t *a,
+    register                uint32_t b,
+    register                uint32_t c,
+    register                uint32_t d,
+    register                uint32_t s,
+    register                uint32_t T,
+    register                uint32_t **cwp,
+    register const uint32_t **words
+   )
+{
+    *a = *a + FF( b, c, d ) + ( **cwp++ = MAKE_LITTLE_ENDIAN( **words ) ) + T;
+    *words = *words + 1;
+    ROTATE( *a, s );
+    *a = *a +b;
+}
+
+
+static inline void
+OP_fn(
+    register uint32_t (*f)( uint32_t, uint32_t, uint32_t ),
+    register uint32_t *a,
+    register uint32_t b,
+    register uint32_t c,
+    register uint32_t d,
+    register uint32_t s,
+    register uint32_t T,
+    register uint32_t correctWord
+   )
+{
+    *a = *a + f( b, c, d ) + correctWord + T;
+    ROTATE( *a, s );
+    *a = *a + b;
+}
+
+
+#else
+#define FF( b, c, d ) ( d ^ ( b & ( c ^ d ) ) )
+#define FG( b, c, d ) FF( d, b, c )
+#define FH( b, c, d ) ( b ^ c ^ d )
+#define FI( b, c, d ) ( c ^ ( b | ~d ) )
+/* First round: using the given function, the context and a constant
+   the next context is computed.  Because the algorithms processing
+   unit is a 32-bit word and it is determined to work on words in
+   little endian byte order we perhaps have to change the byte order
+   before the computation.  To reduce the work for the next steps
+   we store the swapped words in the array CORRECT_WORDS.  */
+#define OP(a, b, c, d, s, T, dummy1, dummy2)				   \
+    *a = *a + FF( b, c, d ) + ( *cwp++ = MAKE_LITTLE_ENDIAN( *words ) ) + T; \
+    words = words + 1;				                           \
+    ROTATE( *a, s );							   \
+    *a = *a + b
+
+/* For the second to fourth round we have the possibly swapped words
+   in CORRECT_WORDS. Define a similar macro that takes an additional
+   first argument specifying the function to use. */
+#define OP_fn( f, a, b, c, d, s, T, correctWord )			\
+    *a = *a + f( b, c, d ) + correctWord + T;				\
+    ROTATE( *a, s );							\
+    *a = *a + b							
+
+#endif /* NO_MACRO_FUNCTIONS */
+
+
 
 /* Structure to save state of computation between the steps. */
 struct MD5State
@@ -406,7 +469,7 @@ MD5ProcessBlock(
     struct MD5State *state
 		)
 {
-    uint32_t       correctWords[ 16 ];
+    uint32_t       correctWords[ 16 ] = { 0 };
     const uint32_t *words = (uint32_t*) buffer;
     size_t         nWords = len / sizeof( uint32_t );
     const uint32_t *endp  = &words[ nWords ];
@@ -443,76 +506,76 @@ MD5ProcessBlock(
 	*/
 
 	/* Round 1.  */
-	OP( A, B, C, D,  7, 0xd76aa478 );
-	OP( D, A, B, C, 12, 0xe8c7b756 );
-	OP( C, D, A, B, 17, 0x242070db );
-	OP( B, C, D, A, 22, 0xc1bdceee );
-	OP( A, B, C, D,  7, 0xf57c0faf );
-	OP( D, A, B, C, 12, 0x4787c62a );
-	OP( C, D, A, B, 17, 0xa8304613 );
-	OP( B, C, D, A, 22, 0xfd469501 );
-	OP( A, B, C, D,  7, 0x698098d8 );
-	OP( D, A, B, C, 12, 0x8b44f7af );
-	OP( C, D, A, B, 17, 0xffff5bb1 );
-	OP( B, C, D, A, 22, 0x895cd7be );
-	OP( A, B, C, D,  7, 0x6b901122 );
-	OP( D, A, B, C, 12, 0xfd987193 );
-	OP( C, D, A, B, 17, 0xa679438e );
-	OP( B, C, D, A, 22, 0x49b40821 );
+	OP( &A, B, C, D,  7, 0xd76aa478, &cwp, &words );
+	OP( &D, A, B, C, 12, 0xe8c7b756, &cwp, &words );
+	OP( &C, D, A, B, 17, 0x242070db, &cwp, &words );
+	OP( &B, C, D, A, 22, 0xc1bdceee, &cwp, &words );
+	OP( &A, B, C, D,  7, 0xf57c0faf, &cwp, &words );
+	OP( &D, A, B, C, 12, 0x4787c62a, &cwp, &words );
+	OP( &C, D, A, B, 17, 0xa8304613, &cwp, &words );
+	OP( &B, C, D, A, 22, 0xfd469501, &cwp, &words );
+	OP( &A, B, C, D,  7, 0x698098d8, &cwp, &words );
+	OP( &D, A, B, C, 12, 0x8b44f7af, &cwp, &words );
+	OP( &C, D, A, B, 17, 0xffff5bb1, &cwp, &words );
+	OP( &B, C, D, A, 22, 0x895cd7be, &cwp, &words );
+	OP( &A, B, C, D,  7, 0x6b901122, &cwp, &words );
+	OP( &D, A, B, C, 12, 0xfd987193, &cwp, &words );
+	OP( &C, D, A, B, 17, 0xa679438e, &cwp, &words );
+	OP( &B, C, D, A, 22, 0x49b40821, &cwp, &words );
 
 	/* Round 2.  */
-	OP_fn( FG, A, B, C, D,  1,  5, 0xf61e2562 );
-	OP_fn( FG, D, A, B, C,  6,  9, 0xc040b340 );
-	OP_fn( FG, C, D, A, B, 11, 14, 0x265e5a51 );
-	OP_fn( FG, B, C, D, A,  0, 20, 0xe9b6c7aa );
-	OP_fn( FG, A, B, C, D,  5,  5, 0xd62f105d );
-	OP_fn( FG, D, A, B, C, 10,  9, 0x02441453 );
-	OP_fn( FG, C, D, A, B, 15, 14, 0xd8a1e681 );
-	OP_fn( FG, B, C, D, A,  4, 20, 0xe7d3fbc8 );
-	OP_fn( FG, A, B, C, D,  9,  5, 0x21e1cde6 );
-	OP_fn( FG, D, A, B, C, 14,  9, 0xc33707d6 );
-	OP_fn( FG, C, D, A, B,  3, 14, 0xf4d50d87 );
-	OP_fn( FG, B, C, D, A,  8, 20, 0x455a14ed );
-	OP_fn( FG, A, B, C, D, 13,  5, 0xa9e3e905 );
-	OP_fn( FG, D, A, B, C,  2,  9, 0xfcefa3f8 );
-	OP_fn( FG, C, D, A, B,  7, 14, 0x676f02d9 );
-	OP_fn( FG, B, C, D, A, 12, 20, 0x8d2a4c8a );
+	OP_fn( FG, &A, B, C, D,  5, 0xf61e2562, correctWords[  1 ] );
+	OP_fn( FG, &D, A, B, C,  9, 0xc040b340, correctWords[  6 ] );
+	OP_fn( FG, &C, D, A, B, 14, 0x265e5a51, correctWords[ 11 ] );
+	OP_fn( FG, &B, C, D, A, 20, 0xe9b6c7aa, correctWords[  0 ] );
+	OP_fn( FG, &A, B, C, D,  5, 0xd62f105d, correctWords[  5 ] );
+	OP_fn( FG, &D, A, B, C,  9, 0x02441453, correctWords[ 10 ] );
+	OP_fn( FG, &C, D, A, B, 14, 0xd8a1e681, correctWords[ 15 ] );
+	OP_fn( FG, &B, C, D, A, 20, 0xe7d3fbc8, correctWords[  4 ] );
+	OP_fn( FG, &A, B, C, D,  5, 0x21e1cde6, correctWords[  9 ] );
+	OP_fn( FG, &D, A, B, C,  9, 0xc33707d6, correctWords[ 14 ] );
+	OP_fn( FG, &C, D, A, B, 14, 0xf4d50d87, correctWords[  3 ] );
+	OP_fn( FG, &B, C, D, A, 20, 0x455a14ed, correctWords[  8 ] );
+	OP_fn( FG, &A, B, C, D,  5, 0xa9e3e905, correctWords[ 13 ] );
+	OP_fn( FG, &D, A, B, C,  9, 0xfcefa3f8, correctWords[  2 ] );
+	OP_fn( FG, &C, D, A, B, 14, 0x676f02d9, correctWords[  7 ] );
+	OP_fn( FG, &B, C, D, A, 20, 0x8d2a4c8a, correctWords[ 12 ] );
 
 	/* Round 3.  */
-	OP_fn( FH, A, B, C, D,  5,  4, 0xfffa3942 );
-	OP_fn( FH, D, A, B, C,  8, 11, 0x8771f681 );
-	OP_fn( FH, C, D, A, B, 11, 16, 0x6d9d6122 );
-	OP_fn( FH, B, C, D, A, 14, 23, 0xfde5380c );
-	OP_fn( FH, A, B, C, D,  1,  4, 0xa4beea44 );
-	OP_fn( FH, D, A, B, C,  4, 11, 0x4bdecfa9 );
-	OP_fn( FH, C, D, A, B,  7, 16, 0xf6bb4b60 );
-	OP_fn( FH, B, C, D, A, 10, 23, 0xbebfbc70 );
-	OP_fn( FH, A, B, C, D, 13,  4, 0x289b7ec6 );
-	OP_fn( FH, D, A, B, C,  0, 11, 0xeaa127fa );
-	OP_fn( FH, C, D, A, B,  3, 16, 0xd4ef3085 );
-	OP_fn( FH, B, C, D, A,  6, 23, 0x04881d05 );
-	OP_fn( FH, A, B, C, D,  9,  4, 0xd9d4d039 );
-	OP_fn( FH, D, A, B, C, 12, 11, 0xe6db99e5 );
-	OP_fn( FH, C, D, A, B, 15, 16, 0x1fa27cf8 );
-	OP_fn( FH, B, C, D, A,  2, 23, 0xc4ac5665 );
+	OP_fn( FH, &A, B, C, D,  4, 0xfffa3942, correctWords[  5 ] );
+	OP_fn( FH, &D, A, B, C, 11, 0x8771f681, correctWords[  8 ] );
+	OP_fn( FH, &C, D, A, B, 16, 0x6d9d6122, correctWords[ 11 ] );
+	OP_fn( FH, &B, C, D, A, 23, 0xfde5380c, correctWords[ 14 ] );
+	OP_fn( FH, &A, B, C, D,  4, 0xa4beea44, correctWords[  1 ] );
+	OP_fn( FH, &D, A, B, C, 11, 0x4bdecfa9, correctWords[  4 ] );
+	OP_fn( FH, &C, D, A, B, 16, 0xf6bb4b60, correctWords[  7 ] );
+	OP_fn( FH, &B, C, D, A, 23, 0xbebfbc70, correctWords[ 10 ] );
+	OP_fn( FH, &A, B, C, D,  4, 0x289b7ec6, correctWords[ 13 ] );
+	OP_fn( FH, &D, A, B, C, 11, 0xeaa127fa, correctWords[  0 ] );
+	OP_fn( FH, &C, D, A, B, 16, 0xd4ef3085, correctWords[  3 ] );
+	OP_fn( FH, &B, C, D, A, 23, 0x04881d05, correctWords[  6 ] );
+	OP_fn( FH, &A, B, C, D,  4, 0xd9d4d039, correctWords[  9 ] );
+	OP_fn( FH, &D, A, B, C, 11, 0xe6db99e5, correctWords[ 12 ] );
+	OP_fn( FH, &C, D, A, B, 16, 0x1fa27cf8, correctWords[ 15 ] );
+	OP_fn( FH, &B, C, D, A, 23, 0xc4ac5665, correctWords[  2 ] );
 
 	/* Round 4.  */
-	OP_fn( FI, A, B, C, D,  0,  6, 0xf4292244 );
-	OP_fn( FI, D, A, B, C,  7, 10, 0x432aff97 );
-	OP_fn( FI, C, D, A, B, 14, 15, 0xab9423a7 );
-	OP_fn( FI, B, C, D, A,  5, 21, 0xfc93a039 );
-	OP_fn( FI, A, B, C, D, 12,  6, 0x655b59c3 );
-	OP_fn( FI, D, A, B, C,  3, 10, 0x8f0ccc92 );
-	OP_fn( FI, C, D, A, B, 10, 15, 0xffeff47d );
-	OP_fn( FI, B, C, D, A,  1, 21, 0x85845dd1 );
-	OP_fn( FI, A, B, C, D,  8,  6, 0x6fa87e4f );
-	OP_fn( FI, D, A, B, C, 15, 10, 0xfe2ce6e0 );
-	OP_fn( FI, C, D, A, B,  6, 15, 0xa3014314 );
-	OP_fn( FI, B, C, D, A, 13, 21, 0x4e0811a1 );
-	OP_fn( FI, A, B, C, D,  4,  6, 0xf7537e82 );
-	OP_fn( FI, D, A, B, C, 11, 10, 0xbd3af235 );
-	OP_fn( FI, C, D, A, B,  2, 15, 0x2ad7d2bb );
-	OP_fn( FI, B, C, D, A,  9, 21, 0xeb86d391 );
+	OP_fn( FI, &A, B, C, D,  6, 0xf4292244, correctWords[  0 ] );
+	OP_fn( FI, &D, A, B, C, 10, 0x432aff97, correctWords[  7 ] );
+	OP_fn( FI, &C, D, A, B, 15, 0xab9423a7, correctWords[ 14 ] );
+	OP_fn( FI, &B, C, D, A, 21, 0xfc93a039, correctWords[  5 ] );
+	OP_fn( FI, &A, B, C, D,  6, 0x655b59c3, correctWords[ 12 ] );
+	OP_fn( FI, &D, A, B, C, 10, 0x8f0ccc92, correctWords[  3 ] );
+	OP_fn( FI, &C, D, A, B, 15, 0xffeff47d, correctWords[ 10 ] );
+	OP_fn( FI, &B, C, D, A, 21, 0x85845dd1, correctWords[  1 ] );
+	OP_fn( FI, &A, B, C, D,  6, 0x6fa87e4f, correctWords[  8 ] );
+	OP_fn( FI, &D, A, B, C, 10, 0xfe2ce6e0, correctWords[ 15 ] );
+	OP_fn( FI, &C, D, A, B, 15, 0xa3014314, correctWords[  6 ] );
+	OP_fn( FI, &B, C, D, A, 21, 0x4e0811a1, correctWords[ 13 ] );
+	OP_fn( FI, &A, B, C, D,  6, 0xf7537e82, correctWords[  4 ] );
+	OP_fn( FI, &D, A, B, C, 10, 0xbd3af235, correctWords[ 11 ] );
+	OP_fn( FI, &C, D, A, B, 15, 0x2ad7d2bb, correctWords[  2 ] );
+	OP_fn( FI, &B, C, D, A, 21, 0xeb86d391, correctWords[  9 ] );
 
 	/* Add the starting values of the context.  */
 	A = A + A_save;
