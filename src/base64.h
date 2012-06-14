@@ -24,9 +24,8 @@
 #define __BASE64_H
 
 
-
 char* EncodeBase64( const unsigned char *source, int length );
-
+unsigned char* DecodeBase64( const char *source, int *length );
 
 
 #endif /* __BASE64_H */

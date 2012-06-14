@@ -28,22 +28,25 @@
 
 
 enum HashFunctions { HASH_MD5, HASH_SHA1 };
+enum HashEncodings { HASHENC_BASE64, HASHENC_BIN, HASHENC_HEX };
 
 
 /* Compute the MD5 or SHA1 message digest for bytes read from stream. The
    resulting message digest number will be written into the 16 bytes
    (for MD5) or 20 bytes (for SHA1) of ascDigest. */
-int DigestStream( FILE *stream, char *ascDigest, enum HashFunctions function );
+int DigestStream( FILE *stream, char *ascDigest, enum HashFunctions function,
+		  enum HashEncodings encoding );
 
 /* Compute MD5 or SHA1 message digest for len bytes stored in buffer. The
    resulting message digest number will be written into the 16 bytes
    (for MD5) or 20 bytes (for SHA1) of ascDigest. */
 void DigestBuffer( const unsigned char *buffer, size_t len, char *ascDigest,
-		   enum HashFunctions function );
+		   enum HashFunctions function, enum HashEncodings encoding );
 
 /* Compute the HMAC-hash signature for an in-memory message. */
 const char* HMAC( const unsigned char *message, int length,
-		  const char *key, enum HashFunctions function );
+		  const char *key, enum HashFunctions function,
+		  enum HashEncodings encoding );
 
 
 #endif /* __DIGEST_H */

@@ -35,7 +35,8 @@ test_logging_SOURCES = $(SHAREDTESTSOURCE) test-logging.c \
 	../src/logger.c ../src/common.c
 test_cache_SOURCES= $(SHAREDTESTSOURCE) test-cache.c ../src/statcache.c \
 	../src/logger.c
-test_hash_SOURCES= $(SHAREDTESTSOURCE) test-hash.c ../src/digest.c
+test_hash_SOURCES= $(SHAREDTESTSOURCE) test-hash.c ../src/digest.c \
+	../src/base64.c
 
 
 SHAREDTESTSOURCE = dispatch.c src/aws-s3fs.h shared.c testfunctions.h

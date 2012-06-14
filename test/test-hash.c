@@ -22,8 +22,10 @@
 
 #include <config.h>
 #include <stdio.h>
+#include <string.h>
 #include "testfunctions.h"
 #include "digest.h"
+#include "base64.h"
 
 
 static void test_MD5DigestBuffer( const char *parms );
@@ -36,6 +38,9 @@ static void test_SHA1DigestStream( const char *parms );
 #ifdef MAKE_OPENSSL_TESTS
 static void test_SHA1Signature( const char *parms );
 #endif
+static void test_EncodeBase64( const char *parms );
+static void test_DecodeBase64( const char *parms );
+
 
 #ifdef MAKE_OPENSSL_TESTS
 #define MD5Signature     test_MD5Signature
@@ -58,6 +63,8 @@ const struct dispatchTable dispatchTable[ ] =
     { "SHA1DigestBuffer", test_SHA1DigestBuffer },
     { "SHA1DigestStream", test_SHA1DigestStream },
     { "SHA1Signature", SHA1Signature },
+    { "EncodeBase64", test_EncodeBase64 },
+    { "DecodeBase64", test_DecodeBase64 },
     { NULL, NULL }
 };
 
@@ -72,8 +79,9 @@ static void test_MD5DigestBuffer( const char *parms )
     fh = fopen( parms, "r" );
     if( fh == NULL ) exit( EXIT_FAILURE );
     nBytes = fread( &filebuf, 1, 4096, fh );
+    fclose( fh );
     if( nBytes == 0 ) exit( EXIT_FAILURE );
-    DigestBuffer( &filebuf[ 0 ], nBytes, &md5sum[ 0 ], HASH_MD5 );
+    DigestBuffer( &filebuf[ 0 ], nBytes, &md5sum[ 0 ], HASH_MD5, HASHENC_HEX );
     md5sum[ 32 ] = '\0';
     printf( "%s  %s\n", md5sum, parms );
 }
@@ -88,7 +96,8 @@ static void test_MD5DigestStream( const char *parms )
 
     fh = fopen( parms, "r" );
     if( fh == NULL ) exit( EXIT_FAILURE );
-    success = DigestStream( fh, &md5sum[ 0 ], HASH_MD5 );
+    success = DigestStream( fh, &md5sum[ 0 ], HASH_MD5, HASHENC_HEX );
+    fclose( fh );
     if( success != 0 ) exit( EXIT_FAILURE );
     md5sum[ 32 ] = '\0';
     printf( "%s  %s\n", md5sum, parms );
@@ -106,8 +115,9 @@ static void test_SHA1DigestBuffer( const char *parms )
     fh = fopen( parms, "r" );
     if( fh == NULL ) exit( EXIT_FAILURE );
     nBytes = fread( &filebuf, 1, 4096, fh );
+    fclose( fh );
     if( nBytes == 0 ) exit( EXIT_FAILURE );
-    DigestBuffer( &filebuf[ 0 ], nBytes, &sha1sum[ 0 ], HASH_SHA1 );
+    DigestBuffer( &filebuf[ 0 ], nBytes, &sha1sum[ 0 ], HASH_SHA1, HASHENC_HEX );
     sha1sum[ 40 ] = '\0';
     printf( "%s  %s\n", sha1sum, parms );
 }
@@ -122,7 +132,8 @@ static void test_SHA1DigestStream( const char *parms )
 
     fh = fopen( parms, "r" );
     if( fh == NULL ) exit( EXIT_FAILURE );
-    success = DigestStream( fh, &sha1sum[ 0 ], HASH_SHA1 );
+    success = DigestStream( fh, &sha1sum[ 0 ], HASH_SHA1, HASHENC_HEX );
+    fclose( fh );
     if( success != 0 ) exit( EXIT_FAILURE );
     sha1sum[ 40 ] = '\0';
     printf( "%s  %s\n", sha1sum, parms );
@@ -133,10 +144,6 @@ static void test_SHA1DigestStream( const char *parms )
 #ifdef MAKE_OPENSSL_TESTS
 static void test_SHA1Signature( const char *parms )
 {
-    /* Test against:
-         openssl sha1 -hmac TestSecretKey ../README
-     */
-
     FILE* fh;
     int nBytes;
     unsigned char filebuf[ 8192 ];
@@ -145,8 +152,9 @@ static void test_SHA1Signature( const char *parms )
     fh = fopen( parms, "r" );
     if( fh == NULL ) exit( EXIT_FAILURE );
     nBytes = fread( &filebuf, 1, 4096, fh );
+    fclose( fh );
     if( nBytes == 0 ) exit( EXIT_FAILURE );
-    signature = HMAC( filebuf, nBytes, "TestSecretKey", HASH_SHA1 );
+    signature = HMAC( filebuf, nBytes, "TestSecretKey", HASH_SHA1, HASHENC_HEX );
     printf( "HMAC-SHA1(%s)= %s\n", parms, signature );
 
     free( (char*)signature );
@@ -158,10 +166,6 @@ static void test_SHA1Signature( const char *parms )
 #ifdef MAKE_OPENSSL_TESTS
 static void test_MD5Signature( const char *parms )
 {
-    /* Test against:
-         openssl md5 -hmac TestSecretKey ../README
-     */
-
     FILE* fh;
     int nBytes;
     unsigned char filebuf[ 8192 ];
@@ -170,10 +174,68 @@ static void test_MD5Signature( const char *parms )
     fh = fopen( parms, "r" );
     if( fh == NULL ) exit( EXIT_FAILURE );
     nBytes = fread( &filebuf, 1, 4096, fh );
+    fclose( fh );
     if( nBytes == 0 ) exit( EXIT_FAILURE );
-    signature = HMAC( filebuf, nBytes, "TestSecretKey", HASH_MD5 );
+    signature = HMAC( filebuf, nBytes, "TestSecretKey", HASH_MD5, HASHENC_HEX );
     printf( "HMAC-MD5(%s)= %s\n", parms, signature );
 
     free( (char*)signature );
 }
 #endif
+
+
+
+static void test_EncodeBase64( const char *parms )
+{
+    unsigned char buf[ 256 ];
+    int i;
+    /*int lf;*/
+    char *base64;
+    for( i = 0; i < 256; i++ )
+    {
+        buf[ i ] = i;
+    }
+
+    base64 = EncodeBase64( buf, 256 );
+
+    /*    lf = 0;*/
+    for( i = 0; i < strlen( base64 ); i++ )
+    {
+        printf( "%c", base64[ i ] );
+	/*
+	if( ++lf == 76 )
+	{
+	    printf( "\n" );
+	    lf = 0;
+	}
+	*/
+    }
+    printf( "\n" );
+}
+
+
+
+static void test_DecodeBase64( const char *parms )
+{
+    const char *base64 = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk9QUVJTVFVWV1hZWltcXV5fYGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn+AgYKDhIWGh4iJiouMjY6PkJGSk5SVlpeYmZqbnJ2en6ChoqOkpaanqKmqq6ytrq+wsbKztLW2t7i5uru8vb6/wMHCw8TFxsfIycrLzM3Oz9DR0tPU1dbX2Nna29zd3t/g4eLj5OXm5+jp6uvs7e7v8PHy8/T19vf4+fr7/P3+/w==";
+    int length;
+    unsigned char *binary;
+    int i;
+    int error = 0;
+
+    binary = DecodeBase64( base64, &length );
+    printf( "Length: %d\n", length );
+    for( i = 0; i < 256; i++ )
+    {
+        if( binary[ i ] != i )
+	{
+	    printf( "Binary mismatch at i = %d\n", i );
+	    error = 1;
+	    break;
+	}
+    }
+    if( error == 0 )
+    {
+        printf( "Success\n" );
+    }
+}

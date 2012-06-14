@@ -49,7 +49,7 @@
 #include <assert.h>
 #include <endian.h>
 #include "digest.h"
-
+#include "base64.h"
 
 
 /* Set to define functions as inline functions rather than macros. */
@@ -437,21 +437,97 @@ MD5FlushState(
 
 
 
+/**
+ * Convert an uint32_t to a little-endian binary string.
+ * @param [in] statePart The uint32_t value to convert.
+ * @param [out] out Four bytes of storage for the string.
+ * @return Nothing.
+ */
+static void
+Sha1StatePartToBinDigest(
+    uint32_t      statePart,
+    unsigned char *out
+			 )
+{
+    out[ 0 ] = ( statePart >> 24 ) & 0x00ff;
+    out[ 1 ] = ( statePart >> 16 ) & 0x00ff;
+    out[ 2 ] = ( statePart >>  8 ) & 0x00ff;
+    out[ 3 ] = statePart & 0x00ff;
+}
+
+
+
+/**
+ * Create a binary representation of the five 32-bit values that hold the
+ * SHA1 hash in the digest state variables.
+ * @param [in] state Digest state with state variables.
+ * @param [out] out Twenty bytes of storage for the binary hash.
+ * @return Nothing.
+ */
+static void
+Sha1StateToBinDigest(
+    const struct DigestState *state,
+    unsigned char            *out
+		     )
+{
+    Sha1StatePartToBinDigest( state->A, &out[  0 ] );
+    Sha1StatePartToBinDigest( state->B, &out[  4 ] );
+    Sha1StatePartToBinDigest( state->C, &out[  8 ] );
+    Sha1StatePartToBinDigest( state->D, &out[ 12 ] );
+    Sha1StatePartToBinDigest( state->E, &out[ 16 ] );
+}
+
+
+
+static void
+EncodeDigest(
+    const unsigned char *resblock,
+    char                *digest,
+    enum HashFunctions  function,
+    enum HashEncodings  encoding
+)
+{
+    int  size;
+    char *base64;
+
+    size = ( function == HASH_MD5 ? 16 : 20 );
+
+    if( encoding == HASHENC_HEX )
+    {
+        BinDigestToHexDigest( resblock, digest, function );
+    }
+    else if( encoding == HASHENC_BASE64 )
+    {
+        base64 = EncodeBase64( resblock, size );
+	strcpy( digest, base64 );
+	free( base64 );
+    }
+    else
+    {
+      memcpy( digest, resblock, size );
+    }
+}
+
+
+
 /* Compute MD5 message digest for bytes read from STREAM.  The
    resulting message digest number will be written into the 16 bytes
    beginning at RESBLOCK.  */
 /**
- * Compute the MD5 message digest for bytes read from a file. The message
- * digest is returned as 32 bytes of hex ASCII code (non-null-terminated).
- * @param stream [in] File to generate the MD5 digest of.
- * @param ascDigest [out] Destination string for the MD5 digest.
- * @return 0 if the MD5 digest was computed, or 1 on file errors.
+ * Compute the hash message digest for bytes read from a file. The message
+ * digest is returned in the specified format.
+ * @param stream [in] File to generate the digest of.
+ * @param digest [out] Destination string for the digest.
+ * @param function [in] Hash function; MD5 or SHA1.
+ * @param encoding [in] Encoding of the digest; BASE64, binary, or hex.
+ * @return 0 if the digest was computed, or 1 on file errors.
  */
 int
 DigestStream(
      FILE               *stream,
-     char               *ascDigest,
-     enum HashFunctions function
+     char               *digest,
+     enum HashFunctions function,
+     enum HashEncodings encoding
 	     )
 {
     /* Compute MD5 message digest for bytes read from STREAM.  The
@@ -521,7 +597,6 @@ DigestStream(
 
 	/* Construct result in desired memory.  */
 	MD5FlushState( &state, resblock );
-	BinDigestToHexDigest( resblock, ascDigest, function );
     }
     if( function == HASH_SHA1 )
     {
@@ -535,9 +610,11 @@ DigestStream(
 	SHA1Result( &state );
 
 	/* Put result in designated memory area.  */
-	sprintf( ascDigest, "%08x%08x%08x%08x%08x",
-		 state.A, state.B, state.C, state.D, state.E );
+	Sha1StateToBinDigest( &state, resblock );
     }
+
+    /* Encode the digest, which is stored in binary format in resblock. */
+    EncodeDigest( resblock, digest, function, encoding );
 
     return( 0 );
 }
@@ -753,20 +830,23 @@ MD5ProcessBlock(
 
 
 /**
- * Compute message digest for an in-memory buffer. The message
- * digest is returned as 32 bytes of hex ASCII code (non-null-terminated).
+ * Compute message digest for an in-memory buffer. The message digest is
+ * returned in the specified format.
  * @param buffer [in] Buffer with the message to generate the digest of.
  * @param len [in] Number of bytes in the buffer.
- * @param ascDigest [out] Destination string for the digest.
+ * @param digest [out] Destination string for the digest.
+ * @param function [in] Hash function; MD5 or SHA1.
+ * @param encoding [in] Encoding of the digest; binary, hex, or BASE64.
  * @return Nothing.
  */
 void
 DigestBuffer(
     const unsigned char *buffer,
     size_t              len,
-    char                *ascDigest,
-    enum HashFunctions  function
-		)
+    char                *digest,
+    enum HashFunctions  function,
+    enum HashEncodings  encoding
+	     )
 {
     /* Compute message digest for LEN bytes beginning at BUFFER.  The
        result is always in little endian byte order, so that a byte-wise
@@ -785,9 +865,6 @@ DigestBuffer(
 
 	/* Finish the remaining bytes. */
 	MD5FlushState( &state, resblock );
-
-	/* Put result in designated memory area.  */
-	BinDigestToHexDigest( resblock, ascDigest, function );
     }
 
     if( function == HASH_SHA1 )
@@ -798,9 +875,11 @@ DigestBuffer(
 	SHA1Result( &state );
 
 	/* Put result in designated memory area.  */
-	sprintf( ascDigest, "%08x%08x%08x%08x%08x",
-		 state.A, state.B, state.C, state.D, state.E );
+	Sha1StateToBinDigest( &state, resblock );
     }
+
+    /* Encode the digest, which is stored in binary format in resblock. */
+    EncodeDigest( resblock, digest, function, encoding );
 }
 
 
@@ -1134,47 +1213,6 @@ XorMemory(
 
 
 /**
- * Convert an uint32_t to a little-endian binary string.
- * @param [in] statePart The uint32_t value to convert.
- * @param [out] out Four bytes of storage for the string.
- * @return Nothing.
- */
-static void
-Sha1StatePartToBinDigest(
-    uint32_t      statePart,
-    unsigned char *out
-			 )
-{
-    out[ 0 ] = ( statePart >> 24 ) & 0x00ff;
-    out[ 1 ] = ( statePart >> 16 ) & 0x00ff;
-    out[ 2 ] = ( statePart >>  8 ) & 0x00ff;
-    out[ 3 ] = statePart & 0x00ff;
-}
-
-
-/**
- * Create a binary representation of the five 32-bit values that hold the
- * SHA1 hash in the digest state variables.
- * @param [in] state Digest state with state variables.
- * @param [out] out Twenty bytes of storage for the binary hash.
- * @return Nothing.
- */
-static void
-Sha1StateToBinDigest(
-    struct DigestState *state,
-    unsigned char      *out
-		     )
-{
-    Sha1StatePartToBinDigest( state->A, &out[  0 ] );
-    Sha1StatePartToBinDigest( state->B, &out[  4 ] );
-    Sha1StatePartToBinDigest( state->C, &out[  8 ] );
-    Sha1StatePartToBinDigest( state->D, &out[ 12 ] );
-    Sha1StatePartToBinDigest( state->E, &out[ 16 ] );
-}
-
-
-
-/**
  * HMAC sign a message with an MD5 or SHA1 hash.
  *
  * Let:
@@ -1215,7 +1253,8 @@ Sha1StateToBinDigest(
  * @param message [in] Message to sign.
  * @param length [in] Length of the message.
  * @param key [in] Key to sign the message with.
- * @param function [in] Type of hash function to sign with.
+ * @param function [in] Type of hash function to sign with; MD5 og SHA1.
+ * @param encoding [in] Encoding of the signature; BASE64, binary, or hex.
  * @return Allocated buffer with signature as a string.
  */
 
@@ -1224,7 +1263,8 @@ HMAC(
     const unsigned char *message,
     int                 length,
     const char          *key,
-    enum HashFunctions  function
+    enum HashFunctions  function,
+    enum HashEncodings  encoding
      )
 {
     char                workKey[ 64 ];
@@ -1238,13 +1278,13 @@ HMAC(
     unsigned char       sha1hashPass1[ 20 ];
     unsigned char       sha1hashPass2[ 20 ];
     const unsigned char *binSignature;
-    const char          *signature = NULL;
+    char                *signature = NULL;
 
     /* Shorten key to its hash if it is longer than blocksize. */
     if( strlen( key ) > 64 )
     {
         DigestBuffer( (const unsigned char*) key, strlen( key ),
-		      workKey, function );
+		      workKey, function, HASHENC_BIN );
     }
     else
     {
@@ -1309,6 +1349,8 @@ HMAC(
         signature = malloc( 41 );
 	binSignature = &sha1hashPass2[ 0 ];
     }
-    BinDigestToHexDigest( binSignature, ( char* )signature, function );
+
+    /* Encode the digest, which is stored in binary format in resblock. */
+    EncodeDigest( binSignature, signature, function, encoding );
     return( signature );
 }
