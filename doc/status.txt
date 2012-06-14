@@ -1,5 +1,9 @@
+2012-06-12:
+	added MD5 message digest calculation functions.
+	MD5 digest fully documented and tested.
+
 2012-06-11:
-	added optional data deletion function to the stat cache deletions.
+	added optional data self-deletion function to the stat cache deletions.
 	statcache.c documented.
 	loglevel tested, i.e., logger.c: all functions tested.
 

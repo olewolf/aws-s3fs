@@ -1,0 +1,50 @@
+# Copyright (C) 2012 Ole Wolf <wolf@blazingangles.com>
+#
+# This file is part of aws-s3fs.
+# 
+# aws-s3fs is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+AT_BANNER([Digest])
+
+AT_SETUP([MD5DigestBuffer])
+AT_CHECK([test-hash MD5DigestBuffer ../../../README ], [], [stdout])
+AT_CHECK([test "`md5sum ../../../README`" = "`cat stdout`" ], [], [ignore])
+AT_CLEANUP
+
+AT_SETUP([MD5DigestStream])
+AT_CHECK([test-hash MD5DigestStream ../../../src/aws-s3fs ], [], [stdout])
+AT_CHECK([test "`md5sum ../../../src/aws-s3fs`" = "`cat stdout`" ], [], [ignore])
+AT_CLEANUP
+
+AT_SETUP([HMAC-MD5 Signature])
+AT_CHECK([test-hash MD5Signature ../../../README ], [], [stdout])
+AT_CHECK([test "`openssl md5 -hmac TestSecretKey ../../../README`" = "`cat stdout`" ], [], [ignore])
+AT_CLEANUP
+
+AT_SETUP([SHA1DigestBuffer])
+AT_CHECK([test-hash SHA1DigestBuffer ../../../README ], [], [stdout])
+AT_CHECK([test "`sha1sum ../../../README`" = "`cat stdout`" ], [], [ignore])
+AT_CLEANUP
+
+AT_SETUP([SHA1DigestStream])
+AT_CHECK([test-hash SHA1DigestStream ../../../src/aws-s3fs ], [], [stdout])
+AT_CHECK([test "`sha1sum ../../../src/aws-s3fs`" = "`cat stdout`" ], [], [ignore])
+AT_CLEANUP
+
+AT_SETUP([HMAC-SHA1 Signature])
+AT_CHECK([test-hash SHA1Signature ../../../README ], [], [stdout])
+AT_CHECK([test "`openssl sha1 -hmac TestSecretKey ../../../README`" = "`cat stdout`" ], [], [ignore])
+AT_CLEANUP
+

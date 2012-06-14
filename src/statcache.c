@@ -34,6 +34,79 @@
 #endif
 
 
+struct StatCacheEntry
+{
+    const char *filename;
+    void       *data;
+    void       (*dataDeleteFunction)( void* );
+
+    UT_hash_handle hh;
+};
+
+static void DeleteS3FileInfoStructure( void *toDelete );
+
+
+
+
+
+
+static struct S3FileInfo*
+ResolveS3FileStatCacheMiss(
+    const struct ThreadsafeLogging *logger,
+    const char *filename
+			   )
+{
+  return( NULL );
+}
+
+
+
+struct S3FileInfo*
+S3FileStat(
+    const struct ThreadsafeLogging *logger,
+    const char                     *filename
+	   )
+{
+    struct S3FileInfo *toReturn = SearchStatEntry( logger, filename );
+    if( toReturn == NULL )
+    {
+        /* Read the file stat from S3. */
+        toReturn = ResolveS3FileStatCacheMiss( logger, filename );
+
+        /* Add the file stat to the cache. */
+        if( toReturn != NULL )
+        {
+	    InsertCacheElement( logger, filename, toReturn,
+				&DeleteS3FileInfoStructure );
+	}
+    }
+
+    return toReturn;
+}
+
+
+
+
+
+
+/**
+ * Callback function for freeing the memory allocated for an S3FileInfo
+ * structure when an entry is deleted from the cache.
+ * @param toDelete [in/out] Structure that should be deallocated.
+ * @return Nothing.
+ */
+static void DeleteS3FileInfoStructure(
+    void *toDelete
+				      )
+{
+    if( toDelete != NULL )
+    {
+        free( toDelete );
+    }
+}
+
+
+
 static pthread_mutex_t mutex_statCache = PTHREAD_MUTEX_INITIALIZER;
 static struct StatCacheEntry *statCache = NULL;
 
@@ -109,7 +182,7 @@ DeleteStatEntry(
 	free( (char*) entry->filename );
 	if( entry->dataDeleteFunction != NULL )
 	{
-	    (entry->dataDeleteFunction)( );
+	    (entry->dataDeleteFunction)( entry->data );
 	}
 	free( entry );
 	deleted = true;
@@ -158,7 +231,7 @@ TruncateCache(
 	    free( (char*) entry->filename );
 	    if( entry->dataDeleteFunction != NULL )
 	    {
-		(entry->dataDeleteFunction)( );
+		(entry->dataDeleteFunction)( entry->data );
 	    }
 	    free( entry );
 	    numberDeleted++;
@@ -193,7 +266,7 @@ InsertCacheElement(
     const struct ThreadsafeLogging *logger,
     const char                     *filename,
     void                           *data,
-    void                           (*deleteFun)(void)
+    void                           (*deleteFun)(void *)
 		   )
 {
     struct StatCacheEntry *entry;

@@ -6,16 +6,15 @@ etc. To create a Debian package, install the debhelper tools and execute:
 
     debuild
 
-in this folder. The script: "script/build-source-tarball.sh" creates the
+in this folder. The script: "script/build-source-tarball.sh" creates a
 aws-s3fs_(version).orig.tar.xz tarball with the current source which is
 required by the debhelper tools.
 
 The autoconf tool should install the files properly, too, using the standard
-./configure; make; make install procedure. However, this is mostly untested
-as the debhelper scripts are more than adequate for the task. If you elect to
-attempt the vanilla autoconf installation procedure, you'll need to run:
+./configure; make; make install procedure. If you elect to attempt the vanilla
+autoconf installation procedure, you'll first need to run:
 
-     autoreconf --install
+    ./autoreconf -i
 
 in the root directory of the package in order to create the necessary files
 for building and installing with autoconf.
@@ -27,12 +26,36 @@ The code is lint clean, with intentional overrides included in the source code
 where appropriate. Most of these overrides are related to intentional NULL
 pointers.
 
-The code is documented with Doxygen comments. Type "make doxygen" to generate
-the Doxygen documentation, which is created in doc/doxygen. Doxygen uses
-GraphViz to produce call graphs, so you may want to install that, too.
+The code is documented with Doxygen comments. The documentation is built in
+doc/doxygenwhen "make" is run. Doxygen uses GraphViz to produce call graphs,
+so you may want to install that, too.
 
-A special thanks goes to Timothy Kay <http://timkay.com/> for providing the
-aws script, which serves as the backbone for aws-s3fs.
+I am aware of the s3fs code from Randy Rizun <rrizun@gmail.com>. However, this
+code relies on OpenSSL, which conflicts with the GPL, and it seems to have
+problems supporting buckets that are not stored on the Standard US server.
+My impression of the quality of the code made me decide to implement aws-s3fs
+from scratch.
+
+The build requirements include the OpenSSL executable; this is not strictly
+a requirement for the build itself, but the cryptographic tests use OpenSSL
+for verification during "make check". There is no OpenSSL code in the aws-s3fs
+source or executable, however, as the GPL requirements would violate the
+OpenSSL license.
+
+
+Thanks to:
+
+* Timothy Kay <http://timkay.com/> for providing the aws script, which served
+  as inspiration and gave name to the package.
+
+* Ulrich Drepper <drepper@gnu.ai.mit.edu> for releasing MD5 message digest
+  functions under a GPL license.
+
+* Paul E. Jones <paulej@packetizer.com> for releasing SHA1 message digest
+  functions under a freeware license.
+
+* Joseph J. Pfeiffer <pfeiffer@cs.nmsu.edu> for creating a FUSE tutorial with
+  accompanying code.
 
 Report bugs to: Ole Wolf <wolf@blazingangles.com>.
 

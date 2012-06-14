@@ -56,7 +56,7 @@ sysdirs.h : sysdirs.h.src
 
 override_dh_auto_configure:
 	autoreconf --install --force
-	dh_auto_configure --
+	dh_auto_configure --disable-doc --disable-openssltest --
 
 # Tell the automake Makefile not to create the aws-s3fs cache directory
 # during install as this is handled by postinst.
@@ -64,7 +64,6 @@ override_dh_auto_build:
 	OMITCACHECREATION=1 dh_auto_build --
 
 override_dh_auto_clean:
-	rm -f src/sysconffile.h src/sysconffile.generate-h
 	rm -rf doc/doxygen
 	dh_auto_clean --
 
