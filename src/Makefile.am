@@ -16,12 +16,14 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 AM_LIBS = pthread
+AM_CFLAGS = -D_GNU_SOURCE
 
 bin_PROGRAMS = aws-s3fs
 aws_s3fs_SOURCES = aws-s3fs.h sysdirs.h aws-s3fs.c \
 	decodecmdline.c configfile.c common.c fix-i386-cc.c config.c \
-	base64.c base64.h digest.c digest.h logger.c daemon.c 
-#statcache.c
+	base64.c base64.h digest.c digest.h logger.c daemon.c \
+	fuseif.c
+#statcache.c s3request.c
 
 BUILT_SOURCES = sysdirs.h
 CLEANFILES = sysdirs.h

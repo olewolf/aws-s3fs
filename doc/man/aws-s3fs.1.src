@@ -48,6 +48,8 @@ To unmount the S3 drive, use the
 .B fusermount
 \-u command.
 
+Note: aws-s3fs makes use of the S3 meta-data attributes to set file and directory attributes such as user and group ownership. These attributes are not set when files are accessed on the S3 bucket using other means than aws-s3fs. If you require a file system that mimics a local filesystem as closely as possible, you may have to avoid accessing the S3 files via the Amazon web interface or other software than aws-s3fs.
+
 
 .SH OPTIONS
 
