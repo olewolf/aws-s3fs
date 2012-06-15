@@ -53,19 +53,22 @@ AC_PATH_PROGS(DOXYGEN, doxygen)
 AC_C_CONST
 AC_C_INLINE
 
-# Check for modules.
-PKG_CHECK_MODULES([DEPS], [fuse >= 2.8 libconfig >= 1.3 libcurl >= 7.20],,
-    AC_MSG_ERROR([*** libfuse, libconfig, or curl source not found **]))
-
 # Check for libraries.
 AC_CHECK_LIB([config], [config_init],,
-    AC_MSG_ERROR([*** config_init function not found **]))
+    AC_MSG_ERROR([*** config library not found **]))
 AC_CHECK_LIB([fuse], [fuse_main],,
-    AC_MSG_ERROR([*** config_init function not found **]))
+    AC_MSG_ERROR([*** fuse library not found **]))
 AC_CHECK_LIB([pthread], [pthread_mutex_lock],,
-    AC_MSG_ERROR([*** pthread_mutex_lock function not found **]))
+    AC_MSG_ERROR([*** pthread library function not found **]))
 AC_CHECK_LIB([curl], [curl_easy_init],,
-    AC_MSG_ERROR([*** curl_easy_init function not found **]))
+    AC_MSG_ERROR([*** curl library not found **]))
+AC_CHECK_LIB([rest-0.7], [rest_param_get_name],,
+    AC_MSG_ERROR([*** rest library not found **]))
+
+# Check for modules.
+PKG_CHECK_MODULES([DEPS], [fuse >= 2.8 libconfig >= 1.3 libcurl >= 7.20 \
+                  rest-0.7 >= 0.7],,
+    AC_MSG_ERROR([*** libfuse, libconfig, librest, or curl source not found **]))
 
 # Check for header files.
 AC_CHECK_HEADERS([stdio.h],,
@@ -106,6 +109,8 @@ AC_CHECK_HEADERS([pthread.h],,
     AC_MSG_ERROR([*** pthread.h not found **]))
 AC_CHECK_HEADERS([curl/curl.h],,
     AC_MSG_ERROR([*** curl.h not found **]))
+#AC_CHECK_HEADERS([rest-param.h],,
+#    AC_MSG_ERROR([*** rest-param.h not found **]))
 
 # Check for typedefs, structures, and compiler characteristics.
 # Check for library functions.
@@ -145,7 +150,9 @@ AC_CHECK_FUNCS([fuse_main],,
 
 AC_CHECK_FUNCS([curl_easy_init curl_easy_setopt curl_easy_perform \
 	       curl_easy_cleanup],,
-AC_MSG_ERROR([*** libcurl functions not found. **]))
+AC_MSG_ERROR([*** CURL functions not found. **]))
+AC_CHECK_FUNCS([rest_xml_parser_new],,
+    AC_MSG_ERROR([*** REST functions not found. **]))
 
 # Large file support.
 AC_SYS_LARGEFILE
