@@ -36,6 +36,7 @@
 #include <fuse/fuse.h>
 /*#include <linux/major.h>*/
 #include "aws-s3fs.h"
+#include "s3if.h"
 
 
 #define MAX_S3_FILE_DESCRIPTORS ( ( MAX_FILE_DESCRIPTORS ) + 100 )
@@ -149,78 +150,8 @@ struct fuse_operations s3fsOperations =
 
 
 
-struct OpenFlags
-{
-    bool of_RDONLY    : 1;
-    bool of_WRONLY    : 1;
-    bool of_RDWR      : 1;
-    bool of_CREAT     : 1;
-    bool of_APPEND    : 1;
-    bool of_EXCL      : 1;
-    bool of_DIRECT    : 1;
-    bool of_DIRECTORY : 1;
-    bool of_LARGEFILE : 1;
-    bool of_NOATIME   : 1;
-    bool of_NONBLOCK  : 1;
-    bool of_NDELAY    : 1;
-    bool of_SYNC      : 1;
-    bool of_TRUNC     : 1;
-    bool of_NOCTTY    : 1;
-    bool of_ASYNC     : 1;
-    bool of_NOFOLLOW  : 1;
-};
-
-
-struct S3FileInfo
-{
-    uid_t            uid;
-    gid_t            gid;
-    unsigned int     permissions;
-    char             fileType;
-    bool             exeUid : 1;
-    bool             exeGid : 1;
-    bool             sticky : 1;
-    off_t            size;
-    time_t           atime;
-    time_t           mtime;
-    time_t           ctime;
-};
-
-
 pthread_mutex_t fileDescriptorsMutex = PTHREAD_MUTEX_INITIALIZER;
 struct S3FileInfo *fileDescriptors[ MAX_S3_FILE_DESCRIPTORS ];
-
-
-struct S3FileInfo *S3FileStat( const char *path, int *status )
-{
-    /* Stub */
-    return NULL;
-}
-
-int S3ReadDir( struct S3FileInfo *fi, const char *dir,
-	       char **nameArray[ ], int *nFiles )
-{
-    /* Stub */
-    return 0;
-}
-
-int S3ReadFile( const char *path, char *buf, size_t size, off_t offset )
-{
-    /* Stub */
-    return 0;
-}
-
-int S3FlushBuffers( const char *path )
-{
-    /* Stub */
-    return 0;
-}
-
-int S3FileClose( const char *path )
-{
-    /* Stub */
-    return 0;
-}
 
 
 
@@ -515,7 +446,7 @@ VerifyPathSearchPermissions(
 		strcat( accumulatedPath, "/" );
 		strcat( accumulatedPath, pathComponent );
 		/* Examine the path at its current depth. */
-		fileInfo = S3FileStat( accumulatedPath, &status );
+		status = S3FileStat( accumulatedPath, &fileInfo );
 		if( status == 0 )
 		{
 		    /* If any component of the path prefix is not a
@@ -617,7 +548,7 @@ s3fs_getattr(
     status = VerifyPathSearchPermissions( path );
 
     /* Examine the full path where the file itself may have any permission. */
-    fileInfo = S3FileStat( path, &status );
+    status = S3FileStat( path, &fileInfo );
     if( status == 0 )
     {
         /* Update the stat structure with file information. */
@@ -661,7 +592,7 @@ s3fs_open(
         status = -EACCES;
 
 	/* The file stat cache provides information about the file. */
-	fileInfo = S3FileStat( path, &status );
+	status = S3FileStat( path, &fileInfo );
 	if( status != 0 )
 	{
 	    status = -EACCES;
@@ -746,8 +677,8 @@ s3fs_opendir(
     int               dh;
 
     /* Get information on the directory. */
-    fileInfo = S3FileStat( dir, &status );
-    if( fileInfo != NULL )
+    status = S3FileStat( dir, &fileInfo );
+    if( status != 0 )
     {
         /* Determine if the user may open the directory. */
         if( IsExecutable( fileInfo ) )
@@ -906,7 +837,7 @@ s3fs_access(
     if( status == 0 )
     {
         /* Examine the file. */
-        fileInfo = S3FileStat( path, &status );
+        status = S3FileStat( path, &fileInfo );
 	if( status == 0 )
 	{
 	    /* F_OK means just check that the file exists. */

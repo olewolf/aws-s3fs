@@ -2,6 +2,11 @@
  * \file logger.c
  * \brief Log messages via the system log or to a file.
  *
+ * Any thread may reinitialize the log or change its settings. This means that
+ * other threads may not assume that their messages will necessarily be logged
+ * as intended. However, mutexes are applied to ensure that the log settings
+ * do not change mid-flight while a thread is logging a message.
+ *
  * Copyright (C) 2012 Ole Wolf <wolf@blazingangles.com>
  *
  * This file is part of aws-s3fs.
@@ -39,7 +44,8 @@
 #define MAX_LOG_ENTRY_LENGTH 1024
 
 
-struct ThreadsafeLogging
+pthread_mutex_t logger_mutex = PTHREAD_MUTEX_INITIALIZER;
+static struct
 {
     bool           loggingEnabled;
     bool           logToSyslog;
@@ -48,11 +54,7 @@ struct ThreadsafeLogging
     const char     *logFilename;
     enum LogLevels logLevel;
     bool           stdoutDisabled;
-};
-
-
-pthread_mutex_t logger_mutex = PTHREAD_MUTEX_INITIALIZER;
-static struct ThreadsafeLogging logger;
+} logger;
 
 
 
@@ -137,6 +139,7 @@ InitLog(
     char hostnameBuf[ HOST_NAME_MAX + 1 ];
 
     pthread_mutex_lock( &logger_mutex );
+
     if( logger.loggingEnabled != true )
     {
         logger.logToSyslog = false;
@@ -184,6 +187,7 @@ InitLog(
 	    }
 	}
     }
+
     pthread_mutex_unlock( &logger_mutex );
 }
 
@@ -205,7 +209,7 @@ CloseLog(
     else if( ( logger.logFilename ) &&
 	     ( strcmp( LogFilename( ), "syslog" ) == 0 ) )
     {
-        closelog( ); /* Is this thread-safe? */
+        closelog( );
     }
     if( logger.logFilename != NULL )
     {
@@ -216,7 +220,8 @@ CloseLog(
 
 
 /**
- * Commit a parsed message string to the log.
+ * Commit a parsed message string to the log. This function must be called
+ * from a mutex'ed function.
  * @param logFh [in] File handle of the log file, or NULL if there's no
  *        log file.
  * @param loggingEnabled [in] State whether logging is enabled at all.

@@ -34,6 +34,10 @@
 #endif
 
 
+pthread_mutex_t mutex_statCache = PTHREAD_MUTEX_INITIALIZER;
+static struct StatCacheEntry *statCache = NULL;
+
+
 struct StatCacheEntry
 {
     const char *filename;
@@ -42,71 +46,6 @@ struct StatCacheEntry
 
     UT_hash_handle hh;
 };
-
-static void DeleteS3FileInfoStructure( void *toDelete );
-
-
-
-
-
-
-static struct S3FileInfo*
-ResolveS3FileStatCacheMiss(
-    const char *filename
-			   )
-{
-  return( NULL );
-}
-
-
-
-struct S3FileInfo*
-S3FileStat(
-    const char                     *filename
-	   )
-{
-    struct S3FileInfo *toReturn = SearchStatEntry( filename );
-    if( toReturn == NULL )
-    {
-        /* Read the file stat from S3. */
-        toReturn = ResolveS3FileStatCacheMiss( filename );
-
-        /* Add the file stat to the cache. */
-        if( toReturn != NULL )
-        {
-	    InsertCacheElement( filename, toReturn,
-				&DeleteS3FileInfoStructure );
-	}
-    }
-
-    return toReturn;
-}
-
-
-
-
-
-
-/**
- * Callback function for freeing the memory allocated for an S3FileInfo
- * structure when an entry is deleted from the cache.
- * @param toDelete [in/out] Structure that should be deallocated.
- * @return Nothing.
- */
-static void DeleteS3FileInfoStructure(
-    void *toDelete
-				      )
-{
-    if( toDelete != NULL )
-    {
-        free( toDelete );
-    }
-}
-
-
-
-static pthread_mutex_t mutex_statCache = PTHREAD_MUTEX_INITIALIZER;
-static struct StatCacheEntry *statCache = NULL;
 
 
 
@@ -117,14 +56,13 @@ static struct StatCacheEntry *statCache = NULL;
  */
 void*
 SearchStatEntry(
-    const        char              *filename
+    const char *filename
 		)
 {
     struct StatCacheEntry *entry;
     void                  *toReturn = NULL;
 
     pthread_mutex_lock( &mutex_statCache );
-
     HASH_FIND_STR( statCache, filename, entry );
     if( entry != NULL )
     {
@@ -135,7 +73,6 @@ SearchStatEntry(
 			 entry->filename, strlen( entry->filename ), entry );
 	toReturn = entry->data;
     }
-
     pthread_mutex_unlock( &mutex_statCache );
 
     if( toReturn != NULL )
@@ -260,6 +197,7 @@ InsertCacheElement(
 		   )
 {
     struct StatCacheEntry *entry;
+    struct StatCacheEntry *toFind;
 
     entry = malloc( sizeof( struct StatCacheEntry ) );
     assert( entry != NULL );
@@ -268,9 +206,16 @@ InsertCacheElement(
     entry->data = data;
     entry->dataDeleteFunction = deleteFun;
 
+    /* Ensure that the cache element has not already been inserted by some
+       other thread while, e.g., the entry contents were built by the caller. */
     pthread_mutex_lock( &mutex_statCache );
-    HASH_ADD_KEYPTR( hh, statCache, 
-		     entry->filename, strlen( entry->filename ), entry );
+    HASH_FIND_STR( statCache, filename, toFind );
+    if( toFind == NULL )
+    {
+        /* Insert the element. */
+        HASH_ADD_KEYPTR( hh, statCache, 
+			 entry->filename, strlen( entry->filename ), entry );
+    }
     pthread_mutex_unlock( &mutex_statCache );
     Syslog( log_DEBUG, "Entry added to stat cache\n" );
 

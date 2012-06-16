@@ -24,30 +24,6 @@
 #define __STAT_CACHE_H
 
 
-#include <time.h>
-#include <sys/stat.h>
-#include "aws-s3fs.h"
-
-
-struct S3FileInfo
-{
-    char           fileType;    /* 'd': directory, 'f': file,
-				   'l': symbolic link. */
-    off_t          fileSize;    /* File size in bytes. */
-    unsigned short permissions; /* World/group/user rwxrwxrwx. */
-    time_t         atime;       /* Time of last access (meta-data). */
-    time_t         mtime;       /* Time of last modification. */
-    time_t         ctime;       /* Time of last status change (meta-data). */
-    nlink_t        hardLinks;   /* Number of hard links. */
-    int            uid;         /* uid (meta-data).*/
-    int            gid;         /* gid (meta-data).*/
-};
-
-
-struct S3FileInfo *S3FileStat( const char *filename );
-
-
-
 void*
 SearchStatEntry( const char *filename );
 
