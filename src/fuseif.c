@@ -38,6 +38,9 @@
 #include "aws-s3fs.h"
 
 
+#define MAX_S3_FILE_DESCRIPTORS ( ( MAX_FILE_DESCRIPTORS ) + 100 )
+
+
 /* Stub */
 struct ThreadsafeLogging *logger = NULL;
 
@@ -45,6 +48,18 @@ struct ThreadsafeLogging *logger = NULL;
 
 static int s3fs_getattr( const char  *path, struct stat *stat );
 static int s3fs_open( const char *, struct fuse_file_info* );
+static int s3fs_opendir(const char *, struct fuse_file_info *);
+static int s3fs_readdir(const char *, void *, fuse_fill_dir_t, off_t, struct fuse_file_info *);
+static int s3fs_releasedir(const char *, struct fuse_file_info *);
+
+/* cd to dir: */
+static int s3fs_access(const char *, int);
+/* cat a file: */
+static int s3fs_read(const char *, char *, size_t, off_t, struct fuse_file_info *);
+static int s3fs_fgetattr(const char *, struct stat *, struct fuse_file_info *);
+static int s3fs_flush(const char *, struct fuse_file_info *);
+static int s3fs_release(const char *, struct fuse_file_info *);
+
 
 /*
 int s3fs_readlink(const char *, char *, size_t);
@@ -60,26 +75,18 @@ int s3fs_chmod(const char *, mode_t);
 int s3fs_chown(const char *, uid_t, gid_t);
 int s3fs_truncate(const char *, off_t);
 int s3fs_utime(const char *, struct utimbuf *);
-int s3fs_read(const char *, char *, size_t, off_t, struct fuse_file_info *);
 int s3fs_write(const char *, const char *, size_t, off_t, struct fuse_file_info *);
 int s3fs_statfs(const char *, struct statvfs *);
-int s3fs_flush(const char *, struct fuse_file_info *);
-int s3fs_release(const char *, struct fuse_file_info *);
 int s3fs_fsync(const char *, int, struct fuse_file_info *);
 int s3fs_setxattr(const char *, const char *, const char *, size_t, int);
 int s3fs_getxattr(const char *, const char *, char *, size_t);
 int s3fs_listxattr(const char *, char *, size_t);
 int s3fs_removexattr(const char *, const char *);
-int s3fs_opendir(const char *, struct fuse_file_info *);
-int s3fs_readdir(const char *, void *, fuse_fill_dir_t, off_t, struct fuse_file_info *);
-int s3fs_releasedir(const char *, struct fuse_file_info *);
 int s3fs_fsyncdir(const char *, int, struct fuse_file_info *);
 void *s3fs_init(struct fuse_conn_info *conn);
 void s3fs_destroy(void *);
-int s3fs_access(const char *, int);
 int s3fs_create(const char *, mode_t, struct fuse_file_info *);
 int s3fs_ftruncate(const char *, off_t, struct fuse_file_info *);
-int s3fs_fgetattr(const char *, struct stat *, struct fuse_file_info *);
 int s3fs_lock(const char *, struct fuse_file_info *, int cmd, struct flock *);
 int s3fs_utimens(const char *, const struct timespec tv[2]);
 int s3fs_bmap(const char *, size_t blocksize, uint64_t *idx);
@@ -105,27 +112,35 @@ struct fuse_operations s3fsOperations =
     .utime       = s3fs_utime,
     */
     .open        = s3fs_open,
-    /*
     .read        = s3fs_read,
+    /*
     .write       = s3fs_write,
     .statfs      = s3fs_statfs,
+    */
     .flush       = s3fs_flush,
     .release     = s3fs_release,
+    /*
     .fsync       = s3fs_fsync,
     .setxattr    = s3fs_setxattr,
     .getxattr    = s3fs_getxattr,
     .listxattr   = s3fs_listxattr,
     .removexattr = s3fs_removexattr,
+    */
     .opendir     = s3fs_opendir,
     .readdir     = s3fs_readdir,
     .releasedir  = s3fs_releasedir,
+    /*
     .fsyncdir    = s3fs_syncdir,
     .init        = s3fs_init,
     .destroy     = s3fs_destroy,
+    */
     .access      = s3fs_access,
+    /*
     .create      = s3fs_create,
     .ftruncate   = s3fs_ftruncate,
+    */
     .fgetattr    = s3fs_fgetattr,
+    /*
     .lock        = s3fs_lock,
     .utimens     = s3fs_utimens,
     .bmap        = s3fs_bmap,
@@ -160,7 +175,7 @@ struct OpenFlags
 };
 
 
-struct s3FileInfo
+struct S3FileInfo
 {
     uid_t            uid;
     gid_t            gid;
@@ -177,15 +192,64 @@ struct s3FileInfo
 
 
 pthread_mutex_t fileDescriptorsMutex = PTHREAD_MUTEX_INITIALIZER;
-struct s3FileInfo *fileDescriptors[ MAX_FILE_DESCRIPTORS ];
+struct S3FileInfo *fileDescriptors[ MAX_S3_FILE_DESCRIPTORS ];
 
 
-struct s3FileInfo *S3FileStat( const char *path, int *status )
+struct S3FileInfo *S3FileStat( const char *path, int *status )
 {
     /* Stub */
     return NULL;
 }
 
+int S3ReadDir( struct S3FileInfo *fi, const char *dir,
+	       char **nameArray[ ], int *nFiles )
+{
+    /* Stub */
+    return 0;
+}
+
+int S3ReadFile( const char *path, char *buf, size_t size, off_t offset )
+{
+    /* Stub */
+    return 0;
+}
+
+int S3FlushBuffers( const char *path )
+{
+    /* Stub */
+    return 0;
+}
+
+int S3FileClose( const char *path )
+{
+    /* Stub */
+    return 0;
+}
+
+
+
+/**
+ * Allocate an unused file descriptor.
+ * @return Allocated file descriptor, or -1 if all file descriptors are in use.
+ */
+static int AllocateFileDescriptor( )
+{
+    int fd;
+    int foundFd = -1;
+
+    pthread_mutex_lock( &fileDescriptorsMutex );
+    for( fd = 0; fd < MAX_S3_FILE_DESCRIPTORS; fd++ )
+    {
+        if( fileDescriptors[ fd ] == NULL )
+	{
+	    foundFd = fd;
+	    break;
+	}
+    }
+    pthread_mutex_unlock( &fileDescriptorsMutex );
+
+    return( foundFd );
+}
 
 
 
@@ -199,7 +263,7 @@ struct s3FileInfo *S3FileStat( const char *path, int *status )
  */
 bool
 IsUserAccessible(
-    const struct s3FileInfo *fi,
+    const struct S3FileInfo *fi,
     unsigned int            permissionFlag
 		 )
 {
@@ -242,10 +306,24 @@ IsUserAccessible(
  * @param fi [in] FileInfo for the file.
  * @return \a true if the user has read access, \a false otherwise.
  */
-bool
-IsReadable( const struct s3FileInfo *fi )
+static bool
+IsReadable( const struct S3FileInfo *fi )
 {
     return( IsUserAccessible( fi, 04 ) );
+}
+
+
+
+/**
+ * Determine whether the current user has execute/search access to the file
+ * or directory with the specified FileInfo.
+ * @param fi [in] FileInfo for the file/directory.
+ * @return \a true if the user has execute/search access, \a false otherwise.
+ */
+static bool
+IsExecutable( const struct S3FileInfo *fi )
+{
+    return( IsUserAccessible( fi, 01 ) );
 }
 
 
@@ -256,8 +334,8 @@ IsReadable( const struct s3FileInfo *fi )
  * @param fi [in] FileInfo for the file.
  * @return \a true if the user has write access, \a false otherwise.
  */
-bool
-IsWriteable( const struct s3FileInfo *fi )
+static bool
+IsWriteable( const struct S3FileInfo *fi )
 {
     return( IsUserAccessible( fi, 02 ) );
 }
@@ -396,34 +474,25 @@ GetPathPrefix(
 
 
 /**
- * Get file attributes; similar to stat( ). The 'std_dev' and 'st_blksize'
- * fields are ignored. The 'st_ino' field is ignored unless the 'use_ino'
- * mount option is given.
- * @param path [in] The file whose attributes should be read.
- * @param stat [out] Stat structure to be filled with the file attributes.
- * @return 0 on success, or -errno otherwise.
+ * Verify path components search access. All of a file's parent directories
+ * must be searchable (+x) in order to stat the file. Scan through the
+ * directories one at a time.
+ * @param path [in] Path of the file.
+ * @return 0 on success, or \a -errno on failure.
  */
 static int
-s3fs_getattr(
-    const char  *path,
-    struct stat *stat
+VerifyPathSearchPermissions(
+    const char *path
 		 )
 {
-    char *pathPrefix;
-    char *pathComponent;
-    int  position;
-    char *accumulatedPath;
-    int  status = 0;
-    struct s3FileInfo *fileInfo;
+    char              *pathPrefix;
+    char              *pathComponent;
+    int               position;
+    char              *accumulatedPath;
+    struct S3FileInfo *fileInfo;
+    int               status;
 
-    if( ( path == NULL ) || ( strcmp( path, "" ) == 0 ) )
-    {
-        status = -ENOENT;
-	return( status );
-    }
-
-    /* All of the file's parent directories must be searchable (+x) in order
-       to stat the file. Scan through the directories one at a time. */
+    status = 0;
     pathPrefix = GetPathPrefix( path );
     if( pathPrefix != NULL )
     {
@@ -464,7 +533,7 @@ s3fs_getattr(
 		       by the user's gid and uid.  */
 		    if( ! IsUserAccessible( fileInfo, 01 ) )
 		    {
-		        status = -ENOTDIR;
+		        status = -EACCES;
 			break;
 		    }
 		}
@@ -472,7 +541,7 @@ s3fs_getattr(
 		{
 		    /* If any component of the path does not exist, the error
 		       is ENOENT. */
-		    status = -ENOTDIR;
+		    status = -ENOENT;
 		    break;
 		}
 	    }
@@ -490,25 +559,73 @@ s3fs_getattr(
 	}
     }
 
+    return( status );
+}
+
+
+
+/**
+ * Copy an S3FileInfo structure to a file stat structure.
+ * @param fileInfo [in] S3 file information structure.
+ * @param stat [out] File stat structure.
+ * @return Nothing.
+ */
+void
+CopyFileInfoToFileStat(
+    const struct S3FileInfo *fileInfo,
+    struct stat             *stat
+		       )
+{
+    memset( stat, 0, sizeof( struct stat ) );
+    stat->st_mode |= ( fileInfo->fileType == 'd' ? S_IFDIR : 0 );
+    stat->st_mode |= ( fileInfo->fileType == 'f' ? S_IFREG : 0 );
+    stat->st_mode |= ( fileInfo->fileType == 'l' ? S_IFLNK : 0 );
+    stat->st_mode |= fileInfo->permissions;
+    stat->st_uid  =  fileInfo->uid;
+    stat->st_gid  =  fileInfo->gid;
+    stat->st_size =  fileInfo->size;
+    stat->st_mode |= ( fileInfo->exeGid ? S_ISGID : 0 );
+    stat->st_mode |= ( fileInfo->exeUid ? S_ISUID : 0 );
+    stat->st_mode |= ( fileInfo->sticky ? S_ISVTX : 0 );
+    memcpy( &stat->st_atime, &fileInfo->atime, sizeof( time_t ) );
+    memcpy( &stat->st_mtime, &fileInfo->mtime, sizeof( time_t ) );
+    memcpy( &stat->st_ctime, &fileInfo->ctime, sizeof( time_t ) );
+}
+
+
+
+/**
+ * Get file attributes; similar to stat( ). The 'std_dev' and 'st_blksize'
+ * fields are ignored. The 'st_ino' field is ignored unless the 'use_ino'
+ * mount option is given.
+ * @param path [in] The file whose attributes should be read.
+ * @param stat [out] Stat structure to be filled with the file attributes.
+ * @return 0 on success, or -errno otherwise.
+ */
+static int
+s3fs_getattr(
+    const char  *path,
+    struct stat *stat
+	     )
+{
+    int               status = 0;
+    struct S3FileInfo *fileInfo;
+
+    if( ( path == NULL ) || ( strcmp( path, "" ) == 0 ) )
+    {
+        status = -ENOENT;
+	return( status );
+    }
+
+    /* Verify that the full path has search permissions. */
+    status = VerifyPathSearchPermissions( path );
+
     /* Examine the full path where the file itself may have any permission. */
     fileInfo = S3FileStat( path, &status );
     if( status == 0 )
     {
         /* Update the stat structure with file information. */
-        memset( stat, 0, sizeof( struct stat ) );
-	stat->st_mode |= ( fileInfo->fileType == 'd' ? S_IFDIR : 0 );
-	stat->st_mode |= ( fileInfo->fileType == 'f' ? S_IFREG : 0 );
-	stat->st_mode |= ( fileInfo->fileType == 'l' ? S_IFLNK : 0 );
-	stat->st_mode |= fileInfo->permissions;
-	stat->st_uid  =  fileInfo->uid;
-	stat->st_gid  =  fileInfo->gid;
-	stat->st_size =  fileInfo->size;
-	stat->st_mode |= ( fileInfo->exeGid ? S_ISGID : 0 );
-	stat->st_mode |= ( fileInfo->exeUid ? S_ISUID : 0 );
-	stat->st_mode |= ( fileInfo->sticky ? S_ISVTX : 0 );
-	memcpy( &stat->st_atime, &fileInfo->atime, sizeof( time_t ) );
-	memcpy( &stat->st_mtime, &fileInfo->mtime, sizeof( time_t ) );
-	memcpy( &stat->st_ctime, &fileInfo->ctime, sizeof( time_t ) );
+        CopyFileInfoToFileStat( fileInfo, stat );
     }
 
     return( status );
@@ -532,7 +649,7 @@ s3fs_open(
 {
     int               status    = 0;
     int               fh        = 0;
-    struct s3FileInfo *fileInfo;
+    struct S3FileInfo *fileInfo;
     struct OpenFlags  openFlags;
 
     /* If no filename is provided, return immediately. */
@@ -542,79 +659,70 @@ s3fs_open(
     }
 
     /* Allocate a file handle. */
-    do
+    fh = AllocateFileDescriptor( );
+    if( fh != -1 )
     {
-        /* A NULL entry indicates an empty slot, which can be allocated. */
-        pthread_mutex_lock( &fileDescriptorsMutex );
-        if( fileDescriptors[ fh ] == NULL )
+        status = -EACCES;
+
+	/* The file stat cache provides information about the file. */
+	fileInfo = S3FileStat( path, &status );
+	if( status != 0 )
 	{
 	    status = -EACCES;
-
-	    /* The file stat cache provides information about the file. */
-	    fileInfo = S3FileStat( path, &status );
-	    if( status != 0 )
-	    {
-	        status = -EACCES;
-	    }
-	    else
-	    {
-	        fileDescriptors[ fh ] = fileInfo;
-		Syslog( logger, log_DEBUG, "File handle %d allocated\n", fh );
+	}
+	else
+	{
+	    fileDescriptors[ fh ] = fileInfo;
+	    Syslog( logger, log_DEBUG, "File handle %d allocated\n", fh );
 	    /* http://sourceforge.net/apps/mediawiki/fuse/index.php?title=Fuse_file_info */
-		SetOpenFlags( &openFlags, fi->flags );
+	    SetOpenFlags( &openFlags, fi->flags );
 
-		/* O_WRONLY is allowed if the file exists and has write
-		   permissions. (If the file doesn't exist, the O_CREAT flag
-		   must also be set. However, this flag isn't passed to this
-		   function.)
-		   See if the file exists and has write permissions. */
-		if( openFlags.of_WRONLY )
+	    /* O_WRONLY is allowed if the file exists and has write
+	       permissions. (If the file doesn't exist, the O_CREAT flag
+	       must also be set. However, this flag isn't passed to this
+	       function.)
+	       See if the file exists and has write permissions. */
+	    if( openFlags.of_WRONLY )
+	    {
+		if( IsWriteable( fileInfo ) )
 		{
-		    if( IsWriteable( fileInfo ) )
-		    {
-			status = 0;
-		    }
+		    status = 0;
 		}
-		/* For O_RDONLY, the file must have read permissions. For
-		   O_RDWR and O_APPEND, the file must have both read and write
-		   permissions. */
-		else if( openFlags.of_WRONLY || openFlags.of_RDWR
-			 || openFlags.of_APPEND )
+	    }
+	    /* For O_RDONLY, the file must have read permissions. For
+	       O_RDWR and O_APPEND, the file must have both read and write
+	       permissions. */
+	    else if( openFlags.of_WRONLY || openFlags.of_RDWR
+		     || openFlags.of_APPEND )
+	    {
+		/* Todo: if O_RDWR and O_TRUNC are set, the file will be
+		   created if necessary. But if O_TRUNC is not passed to
+		   this function, how do we determine whether the file may
+		   be opened? (This question is answered in FUSE v.26.) */
+	        if( IsReadable( fileInfo ) )
 		{
-		    /* Todo: if O_RDWR and O_TRUNC are set, the file will be
-		       created if necessary. But if O_TRUNC is not passed to
-		       this function, how do we determine whether the file may
-		       be opened? (This question is answered in FUSE v.26.) */
-		    if( IsReadable( fileInfo ) )
-		    {
-		        status = 0;
-		    }
-		    if( ( openFlags.of_RDWR || openFlags.of_APPEND )
-			&& ( ! IsWriteable( fileInfo ) ) )
-		    {
-		        status = -EACCES;
-		    }
+		    status = 0;
 		}
-
+		if( ( openFlags.of_RDWR || openFlags.of_APPEND )
+		    && ( ! IsWriteable( fileInfo ) ) )
+	        {
+		    status = -EACCES;
+		}
 	    }
 
 	    if( status != 0 )
 	    {
-	         /* The file info structure is released when it expires from
-		 the stat cache. */
+	        /* The file info structure is released when it expires from
+		the stat cache. */
 		fileDescriptors[ fh ] = NULL;
 		fh = -1;
 	    }
-
-	    pthread_mutex_unlock( &fileDescriptorsMutex );
-	    break;
 	}
-    } while ( ++fh < MAX_FILE_DESCRIPTORS );
+    }
 
     /* All file descriptors in use. */
-    if( fh == MAX_FILE_DESCRIPTORS )
+    else
     {
-	fh = -1;
         status = -ENFILE;
 	Syslog( logger, log_INFO, "All file handles in use\n" );
     }
@@ -625,29 +733,327 @@ s3fs_open(
 
 
 
-
-
-
-
-
-
-
-
-
-#if 0
-int OpenFileForWriting( int fh, const char *path, struct OpenFlags *openFlags )
+/**
+ * Determine whether the user may open the specified directory.
+ * @param path [in] Relative file path.
+ * @param fi [out] FUSE file info structure.
+ * @return 0 on success, or \a -errno on failure.
+ */
+static int
+s3fs_opendir(
+    const char            *dir,
+    struct fuse_file_info *fi
+	     )
 {
-    /* File may be opened for writing if it exists on S3 and has write
-       permissions (ownership and access permissions apply). */
+    struct S3FileInfo *fileInfo;
+    int               status = 0;
+    int               dh;
 
+    /* Get information on the directory. */
+    fileInfo = S3FileStat( dir, &status );
+    if( fileInfo != NULL )
+    {
+        /* Determine if the user may open the directory. */
+        if( IsExecutable( fileInfo ) )
+	{
+	    /* If allowed, allocate a file descriptor and return. */
+	    dh = AllocateFileDescriptor( );
+	    if( dh != -1 )
+	    {
+	        fileDescriptors[ dh ] = fileInfo;
+		fi->fh = dh;
+	    }
+	    else
+	    {
+		status = -ENFILE;
+	    }
+	}
+	else
+	{
+	    status = -EACCES;
+	}
+    }
+
+    return( status );
 }
 
 
 
-int OpenFileForReading( int fh, const char *path, struct OpenFlags *openFlags )
+/**
+ * Read directory based on a directory handle.
+ *
+ * The filesystem may choose between two modes of operation:
+ *
+ * 1) The readdir implementation ignores the offset parameter, and
+ * passes zero to the filler function's offset.  The filler
+ * function will not return '1' (unless an error happens), so the
+ * whole directory is read in a single readdir operation.  This
+ * works just like the old getdir() method.
+ *
+ * 2) The readdir implementation keeps track of the offsets of the
+ * directory entries.  It uses the offset parameter and always
+ * passes non-zero offset to the filler function.  When the buffer
+ * is full (or an error happens) the filler function will return '1'.
+ *
+ * @param dir [in] Name of the directory to read.
+ * @param buffer [out] Used by the FUSE filesystem for directory contents.
+ * @param filler [in/out] Call-back function that is used to fill the buffer.
+ * @param offset [in] Offset of the directory entries.
+ * @param fi [in] FUSE file info structure.
+ * @return 0 if the directory was read, \a -errno otherwise.
+ */
+static int
+s3fs_readdir(
+    const char            *dir,
+    void                  *buffer,
+    fuse_fill_dir_t       filler,
+    off_t                 offset,
+    struct fuse_file_info *fi
+	     )
 {
-    /* File may be opened for reading if exists on S3 and has read permissions
-       (ownership and access permissions apply). */
+    int  dh;
+    int  status;
+    char **s3Directory = NULL;
+    int  nFiles        = 0;
+    char *dirEntry;
+    int  i;
 
+    /* Get directory handle. */
+    dh = fi->fh;
+    if( fileDescriptors[ dh ] == NULL )
+    {
+        status = -ESTALE;
+	/* Or EBADF? */
+    }
+    else
+    {
+        /* Read the directory from the S3 storage. */
+        status = S3ReadDir( fileDescriptors[ dh ], dir, &s3Directory, &nFiles );
+	if( status == 0 )
+	{
+	    /* Copy the entire directory to into the buffer. */
+	    for( i = 0; i < nFiles; i++ )
+	    {
+	        dirEntry = s3Directory[ i ];
+	        /* Call the filler with names unless an error has occurred. */
+		if( status == 0 )
+		{
+		    status = filler( buffer, dirEntry, NULL, 0 );
+		}
+		free( dirEntry );
+	    }
+	    free( s3Directory );
+	}
+    }
+
+    return( status );
 }
-#endif
+
+
+
+/**
+ * Release the directory handle.
+ * @param dir [in] Name of the directory (unused).
+ * @param fi [in] FUSE file info structure.
+ * @return 0 if the directory was released, \a -errno otherwise.
+ */
+static int
+s3fs_releasedir(
+    const char            *dir,
+    struct fuse_file_info *fi
+		)
+{
+    int status;
+    int dh = fi->fh;
+
+    if( fileDescriptors[ dh ] == NULL )
+    {
+        status = -ESTALE;
+	/* Or EBADF? */
+    }
+    else
+    {
+        /* Clear the file descriptor. */
+        fileDescriptors[ dh ] = NULL;
+	/* The file info structure will be deleted from memory when it
+	   expires from the stat cache. */
+	status = 0;
+    }
+
+    return( status );
+}
+
+
+
+/**
+ * Check file access permissions
+ *
+ * This will be called for the access() system call.  If the
+ * 'default_permissions' mount option is given, this method is not
+ * called.
+ * @param path [in] File path for the file to check permissions on.
+ * @param mask [in] Access mask bits.
+ * @param 
+ */ 
+static int
+s3fs_access(
+    const char *path,
+    int        mask
+	    )
+{
+    int               status;
+    struct S3FileInfo *fileInfo;
+    int               permissions = 0;
+
+    /* Verify that the path has search permissions throughout. */
+    status = VerifyPathSearchPermissions( path );
+    if( status == 0 )
+    {
+        /* Examine the file. */
+        fileInfo = S3FileStat( path, &status );
+	if( status == 0 )
+	{
+	    /* F_OK means just check that the file exists. */
+	    if( mask != F_OK )
+	    {
+	        if( IsReadable( fileInfo ) )
+		{
+		    permissions |= R_OK;
+		}
+		if( IsWriteable( fileInfo ) )
+		{
+		    permissions |= W_OK;
+		}
+		if( IsExecutable( fileInfo ) )
+		{
+		    permissions |= X_OK;
+		}
+		if( permissions != mask )
+		{
+		    status = -EACCES;
+		}
+	    }
+
+	}
+    }
+
+    return( status );
+}
+
+
+
+/** Read data from an open file
+ *
+ * According to the FUSE documentation:
+ *
+ * "Read should return exactly the number of bytes requested except
+ * on EOF or error, otherwise the rest of the data will be
+ * substituted with zeroes.  An exception to this is when the
+ * 'direct_io' mount option is specified, in which case the return
+ * value of the read system call will reflect the return value of
+ * this operation."
+ *
+ * However, a usual read operation returns the number of bytes actually
+ * read, which may not be the number requested. This function aims to return
+ * the number of bytes read rather than the number requested.
+ *
+ * @param path [in] Full file path.
+ * @param buf [in] Destination buffer for the file contents.
+ * @param size [in] Number of octets to read.
+ * @param offset [in] Offset from the beginning of the file.
+ * @param fi [in] FUSE file information.
+ * @return Number of bytes read, or \a -errno on failure.
+ */
+static int
+s3fs_read(
+    const char            *path,
+    char                  *buf,
+    size_t                size,
+    off_t                 offset,
+    struct fuse_file_info *fi
+	  )
+{
+    int status;
+
+    status = S3ReadFile( path, buf, size, offset );
+
+    return( status );
+}
+
+
+
+/**
+ * Get attributes from a file whose file information is available. Similar to
+ * \a getattr, but the information is already known.
+ * @param path [in] Path and filename of the file.
+ * @param stat [out] File stat structure.
+ * @param fi [in] FUSE file info.
+ * @return 0 on success, or \a -errno on failure.
+ */
+static int
+s3fs_fgetattr(
+    const char            *path,
+    struct stat           *stat,
+    struct fuse_file_info *fi
+            )
+{
+    struct S3FileInfo *fileInfo;
+    int               status;
+
+    /* Stat the file. */
+    fileInfo = fileDescriptors[ fi->fh ];
+    status = 0;
+
+    /* Update the stat structure with file information. */
+    CopyFileInfoToFileStat( fileInfo, stat );
+
+    return( status );
+}
+
+
+
+/**
+ * Commit any read/write buffers associated with the file.
+ * @param path [in] File path.
+ * @param fi [in] FUSE file info.
+ * @return 0 on success, or \a -errno on failure.
+ */
+static int
+s3fs_flush(
+    const char            *path,
+    struct fuse_file_info *fi
+	   )
+{
+    int status;
+
+    status = S3FlushBuffers( path );
+
+    return( status );
+}
+
+
+
+/**
+ * Indicate that a file's file descriptors should be closed and that all
+ * memory mappings for the file are unmapped.
+ * @param path [in] File path.
+ * @param fi [in] FUSE file info.
+ * @return 0 on success, or \a -errno on failure.
+ */
+static int
+s3fs_release(
+    const char            *path,
+    struct fuse_file_info *fi
+	     )
+{
+    int status;
+
+    status = S3FileClose( path );
+
+    /* Deallocate the file handle. */
+    fileDescriptors[ fi->fh ] = NULL;
+
+    return( status );
+}
+
+
