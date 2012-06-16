@@ -32,163 +32,186 @@
 #include <unistd.h>
 #include <limits.h>
 #include <time.h>
+#include <pthread.h>
 #include "aws-s3fs.h"
 
 
 #define MAX_LOG_ENTRY_LENGTH 1024
 
 
+struct ThreadsafeLogging
+{
+    bool           loggingEnabled;
+    bool           logToSyslog;
+    FILE           *logFh;
+    const char     *hostname;
+    const char     *logFilename;
+    enum LogLevels logLevel;
+    bool           stdoutDisabled;
+};
+
+
+pthread_mutex_t logger_mutex = PTHREAD_MUTEX_INITIALIZER;
+static struct ThreadsafeLogging logger;
+
+
 
 /**
  * Initialize the process context for the logging module.
- * @param logging [out] Context for the logging module.
  * @return Nothing.
  */
-void InitializeLoggingModule(
-    struct ThreadsafeLogging *logging
-			     )
+void InitializeLoggingModule( )
 {
-    logging->loggingEnabled = true;
-    logging->logToSyslog    = false;
-    logging->logFh          = NULL;
-    logging->hostname       = NULL;
-    logging->logFilename    = NULL;
-    logging->logLevel       = LOG_WARNING;
-    logging->stdoutDisabled = false;
+    pthread_mutex_lock( &logger_mutex );
+
+    logger.loggingEnabled = true;
+    logger.logToSyslog    = false;
+    logger.logFh          = NULL;
+    logger.hostname       = NULL;
+    logger.logFilename    = NULL;
+    logger.logLevel       = LOG_WARNING;
+    logger.stdoutDisabled = false;
+
+    pthread_mutex_unlock( &logger_mutex );
 }
 
 
 
 /**
  * Disable logging of any messages.
- * @param logging [out] Thread state.
  * @return Nothing.
  */
 void
 DisableLogging(
-    struct ThreadsafeLogging *logging
 	       )
 {
-    logging->loggingEnabled = false;
+    logger.loggingEnabled = false;
 }
 
 
 /**
  * Enable logging of all messages.
- * @param logging [out] Thread state.
  * @return Nothing.
  */
 void
 EnableLogging(
-    struct ThreadsafeLogging *logging
 	      )
 {
-    logging->loggingEnabled = true;
+    logger.loggingEnabled = true;
 }
 
 
 /**
  * Return the filename of the log.
- * @param logging [in] Thread state.
  * @return Name of the log file.
  */
 const char *LogFilename(
-    const struct ThreadsafeLogging *logging
 			)
 {
-    return logging->logFilename;
+    return logger.logFilename;
+}
+
+
+/**
+ * Return the current log level.
+ * @return Log level.
+ */
+enum LogLevels LogLevel(
+			)
+{
+    return logger.logLevel;
 }
 
 
 /**
  * Initialize the logging to use syslog, a specified filename, or stdout.
- * @param logging [in/out] Thread state.
  * @param logfile [in] The name of the logfile: syslog, a filename, or NULL.
  * @return Nothing.
  */
 void
 InitLog(
-    struct ThreadsafeLogging *logging,
     const char               *logfile,
     enum LogLevels           loglevel
 	)
 {
     char hostnameBuf[ HOST_NAME_MAX + 1 ];
 
-    if( logging->loggingEnabled != true )
+    pthread_mutex_lock( &logger_mutex );
+    if( logger.loggingEnabled != true )
     {
-        logging->logToSyslog = false;
-	logging->logFh = NULL;
+        logger.logToSyslog = false;
+	logger.logFh = NULL;
         return;
     }
 
     if( logfile != NULL )
     {
-        if( logging->logFilename != NULL )
+        if( logger.logFilename != NULL )
 	{
-	    free( (char*) logging->logFilename );
+	    free( (char*) logger.logFilename );
 	}
-        logging->logFilename = strdup( logfile );
-	assert( logging->logFilename != NULL );
+        logger.logFilename = strdup( logfile );
+	assert( logger.logFilename != NULL );
     }
     else
     {
-        logging->logFilename = NULL;
+        logger.logFilename = NULL;
     }
-    logging->logLevel = loglevel;
+    logger.logLevel = loglevel;
 
     /* Get the hostname. */
     gethostname( hostnameBuf, HOST_NAME_MAX );
     hostnameBuf[ HOST_NAME_MAX ] = '\0';
-    logging->hostname = strdup( hostnameBuf );
-    assert( logging->hostname != NULL );
+    logger.hostname = strdup( hostnameBuf );
+    assert( logger.hostname != NULL );
 
     /* Open the log file. */
     if( logfile != NULL )
     {
 	if( strcmp( logfile, "syslog" ) == 0 )
         {
-	    logging->logToSyslog = true;
+	    logger.logToSyslog = true;
 	    openlog( "aws-s3fs", LOG_CONS, LOG_DAEMON );
 	}
 	else
 	{
-	    logging->logToSyslog = false;
-	    logging->logFh = fopen( logfile, "a" );
-	    if( logging->logFh == NULL )
+	    logger.logToSyslog = false;
+	    logger.logFh = fopen( logfile, "a" );
+	    if( logger.logFh == NULL )
 	    {
-	        Syslog( logging, LOG_ERR,
+	        Syslog( LOG_ERR,
 			"Cannot open %s logfile for writing\n", logfile );
 	    }
 	}
     }
+    pthread_mutex_unlock( &logger_mutex );
 }
 
 
 /**
  * Close the log file for now.
- * @param logging [in/out] Thread state.
  * @return Nothing.
  */
 void
 CloseLog(
-    struct ThreadsafeLogging *logging
 	 )
 {
-    if( logging->logFh != NULL )
+    pthread_mutex_lock( &logger_mutex );
+    if( logger.logFh != NULL )
     {
-        fclose( logging->logFh );
-	logging->logFh = NULL;
+        fclose( logger.logFh );
+	logger.logFh = NULL;
     }
-    else if( ( logging->logFilename ) &&
-	     ( strcmp( LogFilename( logging ), "syslog" ) == 0 ) )
+    else if( ( logger.logFilename ) &&
+	     ( strcmp( LogFilename( ), "syslog" ) == 0 ) )
     {
         closelog( ); /* Is this thread-safe? */
     }
-    if( logging->logFilename != NULL )
+    if( logger.logFilename != NULL )
     {
-        free( (char*) logging->logFilename );
+        free( (char*) logger.logFilename );
     }
+    pthread_mutex_unlock( &logger_mutex );
 }
 
 
@@ -259,7 +282,6 @@ LogMessage(
 /**
  * Log a message to file, stdout, or syslog, depending on the log
  * initialization.
- * @param logging [in] Thread state.
  * @param priority [in] Whether the message is a LOG_ERR, LOG_WARNING, etc.
  * @param format [in] Formatting string for the message.
  * @param ... [in] Variable number of arguments for the formatting string.
@@ -267,7 +289,6 @@ LogMessage(
  */
 void
 Syslog(
-    const struct ThreadsafeLogging *logging,
     int                            priority,
     const char                     *format,
                                    ...
@@ -328,11 +349,13 @@ Syslog(
 
     va_end( v1 );
 
-    if( priority <= logging->logLevel )
+    pthread_mutex_lock( &logger_mutex );
+    if( priority <= logger.logLevel )
     {
-        LogMessage( logging->logFh, logging->loggingEnabled,
-		    logging->logToSyslog, logging->stdoutDisabled,
-		    priority, logging->hostname, compile );
+        LogMessage( logger.logFh, logger.loggingEnabled,
+		    logger.logToSyslog, logger.stdoutDisabled,
+		    priority, logger.hostname, compile );
     }
+    pthread_mutex_unlock( &logger_mutex );
 }
 

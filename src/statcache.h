@@ -44,23 +44,20 @@ struct S3FileInfo
 };
 
 
-struct S3FileInfo *S3FileStat(
-    const struct ThreadsafeLogging *logger,
-    const char *filename );
+struct S3FileInfo *S3FileStat( const char *filename );
 
 
 
 void*
-SearchStatEntry( const struct ThreadsafeLogging*, const char *filename );
+SearchStatEntry( const char *filename );
 
 void
-DeleteStatEntry( const struct ThreadsafeLogging*, const char *filename );
+DeleteStatEntry( const char *filename );
 
-void TruncateCache( const struct ThreadsafeLogging *logger );
+void TruncateCache( );
 
 void
 InsertCacheElement(
-    const struct ThreadsafeLogging *logger,
     const char                     *filename,
     void                           *fileStat,
     void                           (*dataDeleteFunction)( void *data )

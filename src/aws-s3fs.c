@@ -35,7 +35,7 @@ InitializeThread(
     struct ThreadState *state
 		 )
 {
-    InitializeLoggingModule( &state->logging );
+    InitializeLoggingModule( );
     InitializeThreadConfiguration( &state->configuration );
     state->mountPoint = NULL;
 }
@@ -109,18 +109,18 @@ main( int argc, char **argv )
     }
 
     InitializeThread( &state );
-    InitializeLoggingModule( &state.logging );
+    InitializeLoggingModule( );
 
     Configure( &state.configuration,
 	       &state.mountPoint,
 	       argc, (const char * const *) argv );
 
-    InitLog( &state.logging, state.configuration.logfile,
+    InitLog( state.configuration.logfile,
 	     state.configuration.logLevel );
 
     if( state.configuration.daemonize )
     {
-        Daemonize( &state.logging, &state.configuration );
+        Daemonize( &state.configuration );
     }
 
     while( 1 ) sleep( 10 );

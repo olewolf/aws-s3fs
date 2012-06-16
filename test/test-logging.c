@@ -38,49 +38,46 @@ const struct dispatchTable dispatchTable[ ] =
 };
 
 
-static struct ThreadsafeLogging logging;
-
-
 
 void test_Syslog( const char *parms )
 {
     int testNumber;
     sscanf( parms, "%d", &testNumber );
-    InitializeLoggingModule( &logging );
+    InitializeLoggingModule( );
 
     switch( testNumber )
     {
         case 1:
-	    InitLog( &logging, NULL, log_DEBUG );
-	    EnableLogging( &logging );
-	    Syslog( &logging, log_INFO,
+	    InitLog( NULL, log_DEBUG );
+	    EnableLogging( );
+	    Syslog( log_INFO,
 		    "Message %d: %d %s\n", testNumber, 42, "Test" );
-	    CloseLog( &logging );
+	    CloseLog( );
 	    break;
 
         case 2:
-	    InitLog( &logging, "syslog", log_DEBUG );
-	    EnableLogging( &logging );
-	    Syslog( &logging, log_INFO,
+	    InitLog( "syslog", log_DEBUG );
+	    EnableLogging( );
+	    Syslog( log_INFO,
 		    "Message %d: %d %s\n", testNumber, 42, "Test" );
-	    CloseLog( &logging );
+	    CloseLog( );
 	    break;
 
         case 3:
-	    InitLog( &logging, "test-log.log", log_DEBUG );
-	    EnableLogging( &logging );
-	    Syslog( &logging, log_INFO,
+	    InitLog( "test-log.log", log_DEBUG );
+	    EnableLogging( );
+	    Syslog( log_INFO,
 		    "Message %d: %d %s\n", testNumber, 42, "Test" );
-	    CloseLog( &logging );
+	    CloseLog( );
 	    break;
 
         case 4:
-	    InitLog( &logging, NULL, log_ERR );
-	    EnableLogging( &logging );
+	    InitLog( NULL, log_ERR );
+	    EnableLogging( );
 	    printf( "Empty message: \"" );
-	    Syslog( &logging, log_WARNING,
+	    Syslog( log_WARNING,
 		    "This message should not be shown in the log" );
-	    CloseLog( &logging );
+	    CloseLog( );
 	    printf( "\"\n" );
 	    break;
     }

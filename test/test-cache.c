@@ -34,9 +34,6 @@ static void test_Overfill( const char *parms );
 static void test_DeleteEntry( const char *parms );
 
 
-static struct ThreadsafeLogging logging;
-
-
 const struct dispatchTable dispatchTable[ ] =
 {
     { "AddEntry", test_AddEntry },
@@ -49,9 +46,9 @@ const struct dispatchTable dispatchTable[ ] =
 
 static void InitLogging( void )
 {
-    InitializeLoggingModule( &logging );
-    InitLog( &logging, NULL, log_DEBUG );
-    EnableLogging( &logging );
+    InitializeLoggingModule( );
+    InitLog( NULL, log_DEBUG );
+    EnableLogging( );
 }
 
 
@@ -62,8 +59,8 @@ void test_AddEntry( const char *parms )
     int contents1 = 1;
     const char *filename = "file-1";
 
-    InsertCacheElement( &logging, filename, &contents1, NULL );
-    CloseLog( &logging );
+    InsertCacheElement( filename, &contents1, NULL );
+    CloseLog( );
 }
 
 
@@ -84,29 +81,29 @@ void test_Overfill( const char *parms )
 
     int *found;
 
-    DisableLogging( &logging );
-    InsertCacheElement( &logging, filename1, &contents1, NULL );
-    InsertCacheElement( &logging, filename2, &contents2, NULL );
-    InsertCacheElement( &logging, filename3, &contents3, NULL );
-    InsertCacheElement( &logging, filename4, &contents4, NULL );
-    EnableLogging( &logging );
-    InsertCacheElement( &logging, filename5, &contents5, NULL );
-    found = SearchStatEntry( &logging, filename1 );
+    DisableLogging( );
+    InsertCacheElement( filename1, &contents1, NULL );
+    InsertCacheElement( filename2, &contents2, NULL );
+    InsertCacheElement( filename3, &contents3, NULL );
+    InsertCacheElement( filename4, &contents4, NULL );
+    EnableLogging( );
+    InsertCacheElement( filename5, &contents5, NULL );
+    found = SearchStatEntry( filename1 );
     if( found == NULL ) printf( "Found correct value\n" );
     else printf( "Found incorrect value\n" );
 
-    DisableLogging( &logging );
-    InsertCacheElement( &logging, filename1, &contents1, NULL );
-    InsertCacheElement( &logging, filename2, &contents2, NULL );
-    InsertCacheElement( &logging, filename3, &contents3, NULL );
-    found = SearchStatEntry( &logging, filename1 );
-    InsertCacheElement( &logging, filename4, &contents4, NULL );
-    InsertCacheElement( &logging, filename5, &contents5, NULL );
-    found = SearchStatEntry( &logging, filename1 );
+    DisableLogging( );
+    InsertCacheElement( filename1, &contents1, NULL );
+    InsertCacheElement( filename2, &contents2, NULL );
+    InsertCacheElement( filename3, &contents3, NULL );
+    found = SearchStatEntry( filename1 );
+    InsertCacheElement( filename4, &contents4, NULL );
+    InsertCacheElement( filename5, &contents5, NULL );
+    found = SearchStatEntry( filename1 );
     if( *found == 1 ) printf( "Found correct value\n" );
     else printf( "Found incorrect value\n" );
 
-    CloseLog( &logging );
+    CloseLog( );
 }
 
 
@@ -126,34 +123,34 @@ void test_FindEntry( const char *parms )
 
     int *found;
 
-    DisableLogging( &logging );
-    InsertCacheElement( &logging, filename1, &contents1, NULL );
-    InsertCacheElement( &logging, filename2, &contents2, NULL );
-    InsertCacheElement( &logging, filename3, &contents3, NULL );
-    EnableLogging( &logging );
+    DisableLogging( );
+    InsertCacheElement( filename1, &contents1, NULL );
+    InsertCacheElement( filename2, &contents2, NULL );
+    InsertCacheElement( filename3, &contents3, NULL );
+    EnableLogging( );
 
     sscanf( parms, "%d", &testNumber );
     switch( testNumber )
     {
         case 1:
-            found = SearchStatEntry( &logging, filename2 );
+            found = SearchStatEntry( filename2 );
 	    if( *found == 2 ) printf( "Found correct value\n" );
 	    else printf( "Found incorrect value\n" );
 	    break;
 
         case 2:
-	    found = SearchStatEntry( &logging, filename2 );
+	    found = SearchStatEntry( filename2 );
 	    if( *found == 2 ) printf( "Found correct value\n" );
 	    else printf( "Found incorrect value\n" );
 	    break;
 
         case 3:
-	    found = SearchStatEntry( &logging, "doesn't exist" );
+	    found = SearchStatEntry( "doesn't exist" );
 	    if( found == NULL ) printf( "Found correct value\n" );
 	    else printf( "Found incorrect value\n" );
 	    break;
     }
-    CloseLog( &logging );
+    CloseLog( );
 }
 
 
@@ -179,38 +176,38 @@ void test_DeleteEntry( const char *parms )
 
     int *found;
 
-    DisableLogging( &logging );
-    InsertCacheElement( &logging, filename1, &contents1, NULL );
-    InsertCacheElement( &logging, filename2, &contents2, NULL );
-    InsertCacheElement( &logging, filename3, &contents3, &test_AutoDelete );
-    EnableLogging( &logging );
-    DeleteStatEntry( &logging, filename2 );
+    DisableLogging( );
+    InsertCacheElement( filename1, &contents1, NULL );
+    InsertCacheElement( filename2, &contents2, NULL );
+    InsertCacheElement( filename3, &contents3, &test_AutoDelete );
+    EnableLogging( );
+    DeleteStatEntry( filename2 );
 
     sscanf( parms, "%d", &testNumber );
     switch( testNumber )
     {
         case 1:
-            found = SearchStatEntry( &logging, filename2 );
+            found = SearchStatEntry( filename2 );
 	    if( found == NULL ) printf( "Found correct value\n" );
 	    else printf( "Found incorrect value\n" );
 	    break;
 
         case 2:
-	    found = SearchStatEntry( &logging, filename1 );
+	    found = SearchStatEntry( filename1 );
 	    if( *found == 1 ) printf( "Found correct value\n" );
 	    else printf( "Found incorrect value\n" );
 	    break;
 
         case 3:
-	    found = SearchStatEntry( &logging, filename3 );
+	    found = SearchStatEntry( filename3 );
 	    if( *found == 3 ) printf( "Found correct value\n" );
 	    else printf( "Found incorrect value\n" );
 	    break;
 
         case 4:
-	    DeleteStatEntry( &logging, filename3 );
+	    DeleteStatEntry( filename3 );
 	    break;
     }
-    CloseLog( &logging );
+    CloseLog( );
 }
 

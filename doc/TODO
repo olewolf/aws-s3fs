@@ -1,3 +1,6 @@
+* Change logging to use global state.
+  - this implies thread subcsription to avoid premature closing of the log.
+
 * Recheck thread safety. Some files exit with exit(), but beyond that:
   - logging.c OK
   - statcache.c OK

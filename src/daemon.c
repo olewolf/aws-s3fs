@@ -37,7 +37,6 @@
 #define USE_LOCKFILE
 */
 
-static struct ThreadsafeLogging *logger;
 static struct configuration     *configuration;
 
 #ifdef USE_LOCKFILE
@@ -63,19 +62,19 @@ SignalHandler(
     {
         /* Restart log if a HUP is received. */
         case SIGHUP:
- 	    Syslog( logger, LOG_INFO, "SIGHUP received\n" );
-	    logfile = strdup( LogFilename( logger ) );
-	    CloseLog( logger );
-	    InitLog( logger, logfile, logger->logLevel );
+ 	    Syslog( LOG_INFO, "SIGHUP received\n" );
+	    logfile = strdup( LogFilename( ) );
+	    CloseLog( );
+	    InitLog( logfile, LogLevel( ) );
 	    free( (char*) logfile );
- 	    Syslog( logger, LOG_INFO, "Restarting log\n" );
+ 	    Syslog( LOG_INFO, "Restarting log\n" );
 	    break;
         case SIGTERM:
- 	    Syslog( logger, LOG_INFO, "SIGTERM received, stopping daemon\n" );
+ 	    Syslog( LOG_INFO, "SIGTERM received, stopping daemon\n" );
 #ifdef USE_LOCKFILE
 	    unlink( LOCK_FILE );
 	    close( lockFp );
-	    Syslog( logger, LOG_INFO, "Lock file removed\n" );
+	    Syslog( LOG_INFO, "Lock file removed\n" );
 #endif /* USE_LOCKFILE */
 	    exit( EXIT_SUCCESS );
 	    break;
@@ -96,7 +95,6 @@ SignalHandler(
  */
 void
 Daemonize(
-    struct ThreadsafeLogging *logging,
     struct configuration     *config
 	  )
 {
@@ -121,7 +119,7 @@ Daemonize(
     /* Fork error. */
     if( forkPid < 0 )
     {
-	Syslog( logging, LOG_ERR, "Could not spawn daemon process\n" );
+	Syslog( LOG_ERR, "Could not spawn daemon process\n" );
 	    exit( EXIT_FAILURE );
     }
     /* We're the parent, so now exit. */
@@ -144,13 +142,13 @@ Daemonize(
 	stdIO = open( "/dev/null", O_RDWR );
 	if( dup( stdIO ) < 0 )
 	{
-	    Syslog( logging, LOG_WARNING,
+	    Syslog( LOG_WARNING,
 		    "Cannot redirect stdout to /dev/null\n" );
 	    exit( EXIT_FAILURE );
 	}
 	if( dup( stdIO ) < 0 )
 	{
-	    Syslog( logging, LOG_WARNING,
+	    Syslog( LOG_WARNING,
 		    "Cannot redirect stderr to /dev/null\n" );
 	    exit( EXIT_FAILURE );
 	}
@@ -164,7 +162,7 @@ Daemonize(
 	}
 	if( chdir( runDir ) != 0 )
 	{
-	    Syslog( logging, LOG_WARNING,
+	    Syslog( LOG_WARNING,
 		    "Cannot change to directory %s\n", runDir );
 	}
 
@@ -178,13 +176,13 @@ Daemonize(
 	if( lockFp < 0 )
 	{
 	    /* Cannot create lock file. */
-	    Syslog( logging, LOG_ERR, "Unable to create lock file\n" );
+	    Syslog( LOG_ERR, "Unable to create lock file\n" );
 	    exit( EXIT_FAILURE );
 	}
 	else if( lockf( lockFp, F_TLOCK, 0 ) < 0 )
 	{
 	    /* Cannot create lock. */
-	    Syslog( logging, LOG_ERR, "Unable to create lock file\n" );
+	    Syslog( LOG_ERR, "Unable to create lock file\n" );
 	    exit( EXIT_FAILURE );
 	}
 	else
@@ -194,7 +192,7 @@ Daemonize(
 	    sprintf( &pidStr[ 0 ], "%d\n", getpid( ) );
 	    if( write( lockFp, pidStr, strlen( pidStr ) ) < 0 )
 	    {
-	        Syslog( logging, LOG_ERR, "Unable to write to lock file\n" );
+	        Syslog( LOG_ERR, "Unable to write to lock file\n" );
 		exit( EXIT_FAILURE );
 	    }
 #endif /* USE_LOCKFILE */
@@ -222,13 +220,12 @@ Daemonize(
 	    sigaction( SIGTTOU, &sigAction, NULL );
 	    sigaction( SIGTTIN, &sigAction, NULL );
 
-	    Syslog( logging, LOG_INFO,
+	    Syslog( LOG_INFO,
 		    "Forking into background with PID = %d\n", getpid( ) );
 #ifdef USE_LOCKFILE
 	}
 #endif /* USE_LOCKFILE */
     }
 
-    logger        = logging;
     configuration = config;
 }

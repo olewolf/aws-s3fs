@@ -105,30 +105,17 @@ struct cmdlineConfiguration {
     bool                 loglevelSpecified;
 };
 
-/* For logging. */
-struct ThreadsafeLogging
-{
-    bool           loggingEnabled;
-    bool           logToSyslog;
-    FILE           *logFh;
-    const char     *hostname;
-    const char     *logFilename;
-    enum LogLevels logLevel;
-    bool           stdoutDisabled;
-};
-
-
 #define bool_equal( a, b ) ( (a) ? (b) : !(b) )
 
 /* In logger.c */
-void InitializeLoggingModule( struct ThreadsafeLogging * );
-void Syslog( const struct ThreadsafeLogging *,
-	     int priority, const char *format, ... );
-const char *LogFilename( const struct ThreadsafeLogging * );
-void EnableLogging( struct ThreadsafeLogging * );
-void DisableLogging( struct ThreadsafeLogging * );
-void InitLog( struct ThreadsafeLogging *, const char *logfile, enum LogLevels );
-void CloseLog( struct ThreadsafeLogging * );
+void InitializeLoggingModule( );
+void Syslog( int priority, const char *format, ... );
+const char *LogFilename( );
+enum LogLevels LogLevel( );
+void EnableLogging( );
+void DisableLogging( );
+void InitLog( const char *logfile, enum LogLevels );
+void CloseLog( );
 
 
 /* In common.c */
@@ -203,13 +190,12 @@ DecodeCommandLine(
 
 /* In daemon.c. */
 
-void Daemonize( struct ThreadsafeLogging*, struct configuration* );
+void Daemonize( struct configuration* );
 
 
 
 struct ThreadState
 {
-    struct ThreadsafeLogging logging;
     struct configuration     configuration;
     char                     *mountPoint;
 };

@@ -41,10 +41,6 @@
 #define MAX_S3_FILE_DESCRIPTORS ( ( MAX_FILE_DESCRIPTORS ) + 100 )
 
 
-/* Stub */
-struct ThreadsafeLogging *logger = NULL;
-
-
 
 static int s3fs_getattr( const char  *path, struct stat *stat );
 static int s3fs_open( const char *, struct fuse_file_info* );
@@ -673,7 +669,7 @@ s3fs_open(
 	else
 	{
 	    fileDescriptors[ fh ] = fileInfo;
-	    Syslog( logger, log_DEBUG, "File handle %d allocated\n", fh );
+	    Syslog( log_DEBUG, "File handle %d allocated\n", fh );
 	    /* http://sourceforge.net/apps/mediawiki/fuse/index.php?title=Fuse_file_info */
 	    SetOpenFlags( &openFlags, fi->flags );
 
@@ -724,7 +720,7 @@ s3fs_open(
     else
     {
         status = -ENFILE;
-	Syslog( logger, log_INFO, "All file handles in use\n" );
+	Syslog( log_INFO, "All file handles in use\n" );
     }
 
     fi->fh = fh;

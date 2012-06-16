@@ -52,7 +52,6 @@ static void DeleteS3FileInfoStructure( void *toDelete );
 
 static struct S3FileInfo*
 ResolveS3FileStatCacheMiss(
-    const struct ThreadsafeLogging *logger,
     const char *filename
 			   )
 {
@@ -63,20 +62,19 @@ ResolveS3FileStatCacheMiss(
 
 struct S3FileInfo*
 S3FileStat(
-    const struct ThreadsafeLogging *logger,
     const char                     *filename
 	   )
 {
-    struct S3FileInfo *toReturn = SearchStatEntry( logger, filename );
+    struct S3FileInfo *toReturn = SearchStatEntry( filename );
     if( toReturn == NULL )
     {
         /* Read the file stat from S3. */
-        toReturn = ResolveS3FileStatCacheMiss( logger, filename );
+        toReturn = ResolveS3FileStatCacheMiss( filename );
 
         /* Add the file stat to the cache. */
         if( toReturn != NULL )
         {
-	    InsertCacheElement( logger, filename, toReturn,
+	    InsertCacheElement( filename, toReturn,
 				&DeleteS3FileInfoStructure );
 	}
     }
@@ -114,13 +112,11 @@ static struct StatCacheEntry *statCache = NULL;
 
 /**
  * Search for an entry in the stat cache log based on the filename.
- * @param logger [in] Logging facility.
  * @param filename [in] Name of the file whose stats are to be queried.
  * @return Pointer to the file stat, or NULL if the file stat wasn't found.
  */
 void*
 SearchStatEntry(
-    const struct ThreadsafeLogging *logger,
     const        char              *filename
 		)
 {
@@ -144,11 +140,11 @@ SearchStatEntry(
 
     if( toReturn != NULL )
     {
-	Syslog( logger, LOG_DEBUG, "Stat cache hit, marking entry as LRU\n" );
+	Syslog( log_DEBUG, "Stat cache hit, marking entry as LRU\n" );
     }
     else
     {
-	Syslog( logger, LOG_DEBUG, "Stat cache miss\n" );
+	Syslog( log_DEBUG, "Stat cache miss\n" );
     }
 
     return( toReturn );
@@ -158,7 +154,6 @@ SearchStatEntry(
 
 /**
  * Delete an entry in the file stat cache, specified by its filename.
- * @param logger [in] Logging facility.
  * @param filename [in] Name of the file whose cached information is to be
  *        deleted. If the entry contains a delete function, the entry data
  *        is deleted.
@@ -166,7 +161,6 @@ SearchStatEntry(
  */
 void
 DeleteStatEntry(
-    const struct ThreadsafeLogging *logger,
     const char                     *filename
 		)
 {
@@ -192,11 +186,11 @@ DeleteStatEntry(
 
     if( deleted )
     {
-	Syslog( logger, LOG_DEBUG, "Stat cache entry deleted\n" );
+	Syslog( log_DEBUG, "Stat cache entry deleted\n" );
     }
     else
     {
-	Syslog( logger, LOG_DEBUG, "Stat cache entry deletion failed\n" );
+	Syslog( log_DEBUG, "Stat cache entry deletion failed\n" );
     }
 }
 
@@ -205,12 +199,10 @@ DeleteStatEntry(
 /**
  * Expire the least recently used cache entries until the cache reaches its
  * maximum size.
- * @param logger [in] Logging facility.
  * @return Nothing.
  */
 void
 TruncateCache(
-    const struct ThreadsafeLogging *logger
 	      )
 {
     struct StatCacheEntry *entry;
@@ -243,7 +235,7 @@ TruncateCache(
 
         pthread_mutex_unlock( &mutex_statCache );
 
-	Syslog( logger, LOG_DEBUG, "%d entr%s expired from cache\n",
+	Syslog( log_DEBUG, "%d entr%s expired from cache\n",
 		numberDeleted, numberDeleted == 1 ? "y" : "ies" );
     }
 }
@@ -252,7 +244,6 @@ TruncateCache(
 
 /**
  * Add an element to the cache.
- * @param logger [in] Logging facility.
  * @param filename [in] Name of the file.
  * @param data [in] File stat info for the file. Data is not copied; only
  *        the pointer to the data is recorded.
@@ -263,7 +254,6 @@ TruncateCache(
  */
 void
 InsertCacheElement(
-    const struct ThreadsafeLogging *logger,
     const char                     *filename,
     void                           *data,
     void                           (*deleteFun)(void *)
@@ -282,8 +272,8 @@ InsertCacheElement(
     HASH_ADD_KEYPTR( hh, statCache, 
 		     entry->filename, strlen( entry->filename ), entry );
     pthread_mutex_unlock( &mutex_statCache );
-    Syslog( logger, LOG_DEBUG, "Entry added to stat cache\n" );
+    Syslog( log_DEBUG, "Entry added to stat cache\n" );
 
-    TruncateCache( logger );
+    TruncateCache( );
 }
 
