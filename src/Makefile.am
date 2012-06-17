@@ -23,7 +23,6 @@ aws_s3fs_SOURCES = aws-s3fs.h sysdirs.h aws-s3fs.c \
 	decodecmdline.c configfile.c common.c fix-i386-cc.c config.c \
 	base64.c base64.h digest.c digest.h logger.c daemon.c \
 	fuseif.c fuseif.h s3if.c s3if.h statcache.c statcache.h
-# s3request.c
 
 BUILT_SOURCES = sysdirs.h
 CLEANFILES = sysdirs.h

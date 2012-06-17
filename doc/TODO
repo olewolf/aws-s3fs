@@ -1,5 +1,12 @@
-* Change logging to use global state.
-  - this implies thread subcsription to avoid premature closing of the log.
+* Add BitTorrents support.
+
+* Add a status option indicating cache state and other things.
+
+* Add reduced-reduncancy storage option.
+
+* Add storage encryption option.
+
+* Add file caching system.
 
 * Recheck thread safety. Some files exit with exit(), but beyond that:
   - logging.c OK

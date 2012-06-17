@@ -446,7 +446,7 @@ VerifyPathSearchPermissions(
 		strcat( accumulatedPath, "/" );
 		strcat( accumulatedPath, pathComponent );
 		/* Examine the path at its current depth. */
-		status = S3FileStat( accumulatedPath, &fileInfo );
+		status = S3GetFileStat( accumulatedPath, &fileInfo );
 		if( status == 0 )
 		{
 		    /* If any component of the path prefix is not a
@@ -548,7 +548,7 @@ s3fs_getattr(
     status = VerifyPathSearchPermissions( path );
 
     /* Examine the full path where the file itself may have any permission. */
-    status = S3FileStat( path, &fileInfo );
+    status = S3GetFileStat( path, &fileInfo );
     if( status == 0 )
     {
         /* Update the stat structure with file information. */
@@ -592,7 +592,7 @@ s3fs_open(
         status = -EACCES;
 
 	/* The file stat cache provides information about the file. */
-	status = S3FileStat( path, &fileInfo );
+	status = S3GetFileStat( path, &fileInfo );
 	if( status != 0 )
 	{
 	    status = -EACCES;
@@ -677,7 +677,7 @@ s3fs_opendir(
     int               dh;
 
     /* Get information on the directory. */
-    status = S3FileStat( dir, &fileInfo );
+    status = S3GetFileStat( dir, &fileInfo );
     if( status != 0 )
     {
         /* Determine if the user may open the directory. */
@@ -837,7 +837,7 @@ s3fs_access(
     if( status == 0 )
     {
         /* Examine the file. */
-        status = S3FileStat( path, &fileInfo );
+        status = S3GetFileStat( path, &fileInfo );
 	if( status == 0 )
 	{
 	    /* F_OK means just check that the file exists. */

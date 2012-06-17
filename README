@@ -27,20 +27,28 @@ where appropriate. Most of these overrides are related to intentional NULL
 pointers.
 
 The code is documented with Doxygen comments. The documentation is built in
-doc/doxygenwhen "make" is run. Doxygen uses GraphViz to produce call graphs,
-so you may want to install that, too.
+doc/doxygen when "make" is run and the Makefile has been configured with the
+option:
+
+    ./configure --enable-doc
+
+To generate the documentation, make sure that Doxygen and GraphViz are
+installed.
 
 I am aware of the s3fs code from Randy Rizun <rrizun@gmail.com>. However, this
-code relies on OpenSSL, which conflicts with the GPL, and it seems to have
-problems supporting buckets that are not stored on the Standard US server.
+code relies on OpenSSL whose license conflicts with the GPL, and it seems to
+have problems supporting buckets that are not stored on the Standard US server.
 My impression of the quality of the code made me decide to implement aws-s3fs
-from scratch.
+from scratch rather than attempting to patch Randy Rizun's code.
 
 The build requirements include the OpenSSL executable; this is not strictly
 a requirement for the build itself, but the cryptographic tests use OpenSSL
 for verification during "make check". There is no OpenSSL code in the aws-s3fs
 source or executable, however, as the GPL requirements would violate the
-OpenSSL license.
+OpenSSL license. To skip OpenSSL tests, configure the build with the following
+option:
+
+    ./configure --disable-openssltest
 
 
 Thanks to:
