@@ -1,0 +1,43 @@
+# Copyright (C) 2012 Ole Wolf <wolf@blazingangles.com>
+#
+# This file is part of aws-s3fs.
+# 
+# aws-s3fs is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+AT_BANNER([S3 Interface Tests])
+
+AT_SETUP([BuildGenericHeader])
+AT_CHECK([test-s3if BuildGenericHeader], [], [stdout])
+AT_CHECK([grep '^1: Host: bucket-name.s3.amazonaws.com$' stdout], [], [ignore])
+AT_CHECK([grep '^2: Date: \(Mon\|Tue\|Wed\|Thu\|Fri\|Sat\|Sun\), @<:@0-9@:>@\{1,2\} \(Jan\|Feb\|Mar\|Apr\|May\|Jun\|Jul\|Aug\|Sep\|Oct\|Nov\|Dec\) 2@<:@0-9@:>@\{3\} @<:@0-2@:>@@<:@0-9@:>@:@<:@0-6@:>@@<:@0-9@:>@:@<:@0-6@:>@@<:@0-9@:>@ @<:@+-@:>@@<:@0-9@:>@\{4\}$' stdout], [], [ignore])
+AT_CHECK([grep '^3: User-Agent: curl$' stdout], [], [ignore])
+AT_CLEANUP
+
+AT_SETUP([GetHeaderStringValue])
+AT_CHECK([test-s3if GetHeaderStringValue], [], [stdout])
+AT_CHECK([grep '^value1, value2$' stdout], [], [ignore])
+AT_CLEANUP
+
+AT_SETUP([AddHeaderValueToSignString])
+AT_CHECK([test-s3if AddHeaderValueToSignString], [], [stdout])
+AT_CHECK([grep '^1: 1$' stdout], [], [ignore])
+AT_CHECK([grep '^2: 12 Test line 1__Test line 3_$' stdout], [], [ignore])
+AT_CLEANUP
+
+AT_SETUP([CreateAwsSignature])
+AT_CHECK([test-s3if CreateAwsSignature], [], [stdout])
+AT_CHECK([grep '^6: Authorization: AWS 1234:4K+65IpNCl76PkenKrfuWKcZW7k=$' stdout], [], [ignore])
+AT_CLEANUP
+

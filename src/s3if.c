@@ -36,6 +36,7 @@
 #include "statcache.h"
 
 
+#include <stdlib.h>
 
 /**
  * Callback function for freeing the memory allocated for an S3FileInfo
@@ -60,29 +61,35 @@ static void DeleteS3FileInfoStructure(
  * @param bucket [in] Bucket name.
  * @return Header list.
  */
-static struct curl_slist*
+#ifndef AUTOTEST
+static
+#endif
+struct curl_slist*
 BuildGenericHeader(
-    const char *bucket
+    const char *httpMethod
 		    )
 {
     struct curl_slist *headers       = NULL;
-    char              headbuf[ 256 ];
-    time_t            now            = time( NULL );
-    const struct tm   *tnow          = gmtime( &now );
+    char              headbuf[ 4096 ];
+
+    time_t            now;
+    const struct tm   *tnow;
     char              *locale;
 
-    /* Add user agent. */
-    headers = curl_slist_append( headers, "User-Agent: curl" );
-
     /* Make Host: address a virtual host. */
-    sprintf( headbuf, "Host: %s.s3.amazonaws.com", bucket );
+    sprintf( headbuf, "Host: %s.s3.amazonaws.com", globalConfig.bucketName );
     headers = curl_slist_append( headers, headbuf );
 
     /* Generate time string. */
-    locale = setlocale( LC_TIME, "C" );
+    locale = setlocale( LC_TIME, "en_US.UTF-8" );
+    now    = time( NULL );
+    tnow   = localtime( &now );
     strftime( headbuf, sizeof( headbuf ), "Date: %a, %d %b %Y %T %z", tnow );
     setlocale( LC_TIME, locale );
     headers = curl_slist_append( headers, headbuf );
+
+    /* Add user agent. */
+    headers = curl_slist_append( headers, "User-Agent: curl" );
 
     return( headers );
 }
@@ -94,7 +101,10 @@ BuildGenericHeader(
  * @param headerString [in] Header string with key: value string.
  * @return String with the \a value content.
  */
-static char*
+#ifndef AUTOTEST
+static
+#endif
+char*
 GetHeaderStringValue( const char *headerString )
 {
     char *value = NULL;
@@ -102,7 +112,7 @@ GetHeaderStringValue( const char *headerString )
     char ch;
 
     /* Skip past the key to where the value is. */
-    while( ( ch = headerString[ idx ] ) != '\0' )
+    while( ( ch = headerString[ idx++ ] ) != '\0' )
     {
         /* ':' marks the end of the header key. */
         if( ch == ':' )
@@ -117,7 +127,6 @@ GetHeaderStringValue( const char *headerString )
 	    value = strdup( &headerString[ idx ] );
 	    break;
 	}
-	idx++;
     }
 
     /* Return an empty string if no value was found. */
@@ -140,7 +149,10 @@ GetHeaderStringValue( const char *headerString )
  * @param headerValue [in/out] The string to append to the header text.
  * @return Number of bytes added to the header text.
  */
-static int
+#ifndef AUTOTEST
+static
+#endif
+int
 AddHeaderValueToSignString(
     char *messageToSign,
     char *headerValue
@@ -155,8 +167,8 @@ AddHeaderValueToSignString(
 	strcat( messageToSign, headerValue );
         addedLength += strlen( headerValue );
 	free( headerValue );
-    }  
-    /* Add a trailing LF. */
+    }
+    /* Add a trailing LF regardless of whether the header value was NULL. */
     strcat( messageToSign, "\n" );
     addedLength += strlen( "\n" );
 
@@ -177,16 +189,18 @@ AddHeaderValueToSignString(
  * @param secretKey [in] User's Secret Key.
  * @return Nothing.
  */
-void
+#ifndef AUTOTEST
+static
+#endif
+struct curl_slist*
 CreateAwsSignature(
     const char        *httpMethod,	   
     struct curl_slist *headers,
-    const char        *path,
-    const char        *keyId,
-    const char        *secretKey
+    const char        *path
 		   )
 {
-    char              messageToSign[ 1024 ];
+    char              messageToSign[ 4096 ];
+    char              amzHeaders[ 2048 ];
     char              awsHeader[ 100 ];
     int               messageLength;
     const char        *signature;
@@ -195,10 +209,10 @@ CreateAwsSignature(
     char              ch;
     char              *headerString;
     int               idx;
-    char              *urlPath;
-    char              *contentMd5;
-    char              *contentType;
-    char              *dateString;
+    char              *contentMd5  = NULL;
+    char              *contentType = NULL;
+    char              *dateString  = NULL;
+    bool              convertingHeaderKey;
 
     /* Build HTTP method, content MD5 placeholder, content type, and time. */
     if( httpMethod == NULL )
@@ -210,23 +224,33 @@ CreateAwsSignature(
 
     /* Go through all headers and extract the Content-MD5, Content-type,
        Date, and x-amz-* headers, and add them to the message. */
+    amzHeaders[ 0 ] = '\0';
     currentHeader = headers;
     while( currentHeader != NULL )
     {
         headerString = currentHeader->data;
 
-	/* Get x-amz-* headers. */
+	/* Get x-amz-* headers. NOTE: Must be sorted!!! */
         if( strncasecmp( headerString, "x-amz-", strlen( "x-amz-" ) ) == 0 )
 	{
 	    /* Convert the x-amz- header to lower case. */
 	    idx = 0;
-	    while( ( ch = tolower( headerString[ idx ] ) != ':' )
-		   && ( ch != '\0' ) )
+	    convertingHeaderKey = true;
+	    while( ( ch = headerString[ idx ] ) != '\0' )
 	    {
+	        if( ch == ':' )
+		{
+		    convertingHeaderKey = false;
+		}
+	        else if( convertingHeaderKey )
+	        {
+		    ch = tolower( ch );
+		}
 	        headerString[ idx++ ] = ch;
 	    }
-	    strcat( messageToSign, headerString );
-	    strcat( messageToSign, "\n" );
+	    headerString[ idx ] = '\0';
+	    strcat( amzHeaders, headerString );
+	    strcat( amzHeaders, "\n" );
 	    messageLength += strlen( headerString ) + strlen( "\n" );
 	}
 	/* Get Content-MD5 header. */
@@ -234,68 +258,102 @@ CreateAwsSignature(
 			      "Content-MD5", strlen( "Content-MD5" ) ) == 0 )
 	{
 	    contentMd5 = GetHeaderStringValue( headerString );
-	    messageLength += AddHeaderValueToSignString( messageToSign,
-							 contentMd5 );
 	}
 	/* Get Content-Type header. */
 	else if( strncasecmp( headerString,
 			      "Content-Type", strlen( "Content-Type" ) ) == 0 )
 	{
 	    contentType = GetHeaderStringValue( headerString );
-	    messageLength += AddHeaderValueToSignString( messageToSign,
-							 contentType );
 	}
 	/* Get Date header. */
 	else if( strncasecmp( headerString,
 			      "Date", strlen( "Date" ) ) == 0 )
 	{
 	    dateString = GetHeaderStringValue( headerString );
-	    messageLength += AddHeaderValueToSignString( messageToSign,
-							 dateString );
 	}
 
 	assert( messageLength < sizeof( messageToSign ) - 200 );
 	currentHeader = currentHeader->next;
     }
 
+    messageLength += AddHeaderValueToSignString( messageToSign, contentMd5 );
+    messageLength += AddHeaderValueToSignString( messageToSign, contentType );
+    messageLength += AddHeaderValueToSignString( messageToSign, dateString );
+    strcat( messageToSign, amzHeaders );
+
     /* Add the path. */
     /* Path is already assumed to be in UTF-8. Is this safe? */
     /*/urlPath = utf8Encode( path );*/
-    urlPath = strdup( path );
-    strcat( messageToSign, urlPath );
-    strcat( messageToSign, "\n" );
-    messageLength += strlen( urlPath ) + sizeof( "\n" );
+    sprintf( &messageToSign[ strlen( messageToSign ) ],
+	     "/%s%s", globalConfig.bucketName, path );
+    messageLength = strlen( path );
+
     /* Sign the message and add the Authorization header. */
     signature = HMAC( (const unsigned char*) messageToSign,
-		      strlen( messageToSign ) /* + sizeof( char ) for '\0'? */,
-		      (const char*) secretKey,
+		      strlen( messageToSign ),
+		      (const char*) globalConfig.secretKey,
 		      HASH_SHA1, HASHENC_BASE64 );
-    sprintf( awsHeader, "\nAuthorization: AWS %s:%s\n", keyId, signature );
+    sprintf( awsHeader, "Authorization: AWS %s:%s\n",
+	     globalConfig.keyId, signature );
     headers = curl_slist_append( headers, awsHeader );
+
+    return headers;
 }
 
 
 
-void
-MakeS3Request(
-    const char        *bucket,
-    struct curl_slist *additionalHeaders
-	      )
+static inline int
+qsort_strcmp( const void *a, const void *b )
+{
+    /* Sort in reverse order so that when the elements are inserted at the
+       beginning of the linked list, they will appear in ascending order. */
+    return( -strcmp( (const char*)a, (const char*)b ) );
+}
+
+
+
+struct curl_slist*
+BuildS3Request(
+    const char        *httpMethod,
+    struct curl_slist *additionalHeaders,
+    const char        *filename
+	       )
 {
     struct curl_slist *allHeaders;
     struct curl_slist *currentHeader;
+    char              *extraHeaders[ 100 ];
+    int               count;
+    int               i;
 
     /* Build basic headers. */
-    allHeaders = BuildGenericHeader( bucket );
-    /* Add any additional headers, if any. */
+    allHeaders = BuildGenericHeader( httpMethod );
+
+    /* Add any additional headers, if any, in sorted order. */
     currentHeader = additionalHeaders;
+    count         = 0;
     while( currentHeader != NULL )
     {
-	allHeaders = curl_slist_append( allHeaders, "User-Agent: curl" );
         currentHeader = currentHeader->next;
+	extraHeaders[ count++ ] = currentHeader->data;
+	if( count == sizeof( extraHeaders ) / sizeof( char* ) )
+	{
+	    break;
+	}
     }
+    /* Sort the headers. */
+    qsort( &extraHeaders[ 0 ], count, sizeof( char* ), &qsort_strcmp );
+    /* Add the headers to the main header list and get rid of the extras
+       list. */
+    for( i = 0; i < count; i++ )
+    {
+        allHeaders = curl_slist_append( allHeaders, extraHeaders[ i ] );
+    }
+    curl_slist_free_all( additionalHeaders );
 
+    /* Add a signature header. */
+    allHeaders = CreateAwsSignature( httpMethod, allHeaders, filename );
 
+    return( allHeaders );
 }
 
 
@@ -312,16 +370,19 @@ S3FileStatRequest(
 		  )
 {
     struct curl_slist *headers = NULL;
-    const char        *bucket;
     struct S3FileInfo *newFileInfo;
     int               status = 0;
 
-    /* Add specific file information request headers. */
+    /* Create specific file information request headers. */
     /* (None required.) */
 
-    /* Setup generic S3 REST headers. */
-    bucket = globalConfig.bucketName;
-    MakeS3Request( bucket, headers );
+    /* Setup S3 headers. */
+    BuildS3Request( "HEAD", headers, filename );
+
+    /* Make request via curl and wait for response. */
+
+
+    curl_slist_free_all( headers );
 
     /* Translate file attributes to an S3 File Info structure. */
     newFileInfo = malloc( sizeof (struct S3FileInfo ) );

@@ -16,10 +16,11 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 
-TESTSCRIPTS = commandline.at config.at common.at logging.at cache.at hash.at
+TESTSCRIPTS = commandline.at config.at common.at logging.at cache.at hash.at \
+	s3if.at
 
 noinst_PROGRAMS = test-decodecmdline test-config test-configfile test-common \
-	test-logging test-cache test-hash
+	test-logging test-cache test-hash test-s3if
 
 test_decodecmdline_SOURCES = $(SHAREDTESTSOURCE) test-decodecmdline.c \
 	../src/decodecmdline.c ../src/config.c ../src/configfile.c \
@@ -36,7 +37,10 @@ test_logging_SOURCES = $(SHAREDTESTSOURCE) test-logging.c \
 test_cache_SOURCES= $(SHAREDTESTSOURCE) test-cache.c ../src/statcache.c \
 	../src/logger.c
 test_hash_SOURCES= $(SHAREDTESTSOURCE) test-hash.c ../src/digest.c \
-	../src/base64.c
+	../src/base64.c ../src/base64.h
+test_s3if_SOURCES= $(SHAREDTESTSOURCE) test-s3if.c ../src/s3if.c \
+	../src/digest.c ../src/digest.h ../src/statcache.h ../src/statcache.c \
+	../src/logger.c ../src/base64.c ../src/base64.h
 
 
 SHAREDTESTSOURCE = dispatch.c src/aws-s3fs.h shared.c testfunctions.h
