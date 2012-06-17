@@ -29,7 +29,7 @@
 
 
 
-void PrintConfig( int testNo, const struct cmdlineConfiguration *config, const char *mountPoint, bool verbose )
+void PrintConfig( int testNo, const struct CmdlineConfiguration *config, bool verbose )
 {
     printf( "%d: R %d ", testNo, config->configuration.region );
     printf( "B %s ", config->configuration.bucketName );
@@ -37,15 +37,15 @@ void PrintConfig( int testNo, const struct cmdlineConfiguration *config, const c
     printf( "k %s:%s ", config->configuration.keyId, config->configuration.secretKey );
     printf( "l %s ", config->configuration.logfile );
     printf( "v %d ", verbose );
-    printf( "m %s ", mountPoint );
+    printf( "m %s ", config->configuration.mountPoint );
     printf( "c %s ", config->configFile );
     printf( "d %d\n", config->configuration.daemonize );
 }
 
 
-void ReleaseConfig( struct cmdlineConfiguration *config )
+void ReleaseConfig( struct CmdlineConfiguration *config )
 {
-    struct configuration *conf = &config->configuration;
+    struct Configuration *conf = &config->configuration;
 
     conf->region = US_STANDARD;
     free( conf->bucketName );
