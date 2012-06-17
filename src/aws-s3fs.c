@@ -29,16 +29,8 @@
 
 
 
+struct Configuration globalConfig;
 
-void
-InitializeThread(
-    struct ThreadState *state
-		 )
-{
-    InitializeLoggingModule( );
-    InitializeThreadConfiguration( &state->configuration );
-    state->mountPoint = NULL;
-}
 
 
 
@@ -101,26 +93,22 @@ static bool CheckAppsSupport( void )
 int
 main( int argc, char **argv )
 {
-    struct ThreadState state;
-
     if( CheckAppsSupport( ) != true )
     {
 	exit( EXIT_FAILURE );
     }
 
-    InitializeThread( &state );
+    InitializeConfiguration( &globalConfig );
     InitializeLoggingModule( );
 
-    Configure( &state.configuration,
-	       &state.mountPoint,
-	       argc, (const char * const *) argv );
+    Configure( &globalConfig, argc, (const char * const *) argv );
 
-    InitLog( state.configuration.logfile,
-	     state.configuration.logLevel );
+    InitLog( globalConfig.logfile,
+	     globalConfig.logLevel );
 
-    if( state.configuration.daemonize )
+    if( globalConfig.daemonize )
     {
-        Daemonize( &state.configuration );
+        Daemonize( );
     }
 
     while( 1 ) sleep( 10 );

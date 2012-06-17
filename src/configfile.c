@@ -70,7 +70,7 @@ static
 #endif
 void
 ConfigSetBoolean(
-    struct configurationBoolean *configBoolean,
+    struct ConfigurationBoolean *configBoolean,
     const struct config_t       *config,
     const char                  *key
 		)
@@ -106,7 +106,7 @@ bool
 ReadConfigFile(
     const FILE           *lockFp,
     const char           *configFilename,
-    struct configuration *configuration
+    struct Configuration *configuration
 	      )
 {
     struct config_t config;

@@ -32,23 +32,6 @@
 #define MAX_OUTPUT_STRING 1024
 
 
-void
-InitializeThreadConfiguration(
-    struct configuration *configuration
-			      )
-{
-    configuration->region     = US_STANDARD;
-    configuration->bucketName = NULL;
-    configuration->path       = NULL;
-    configuration->keyId      = NULL;
-    configuration->secretKey  = NULL;
-    configuration->logfile    = NULL;
-    configuration->verbose.value = false;
-    configuration->verbose.isset = false;
-    configuration->daemonize  = true;
-}
-
-
 
 /**
  * Write verbose output if the verbose output option has been specified.

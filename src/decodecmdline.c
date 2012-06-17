@@ -200,8 +200,6 @@ SplitS3MountPath(
  * point.
  * @param cmdlineConfiguration [out] Gets filled with the command line options
  *                                   and the external mount bucket:path
- * @param mountPoint [out] Pointer to where the mount point is written as a
- *                         string.
  * @param argc [in] \a argc from the \a main function.
  * @param argv [in] \a argv from the \a main function.
  * @return \a true if the command line was decoded without errors, or \a false
@@ -209,8 +207,7 @@ SplitS3MountPath(
  */
 bool
 DecodeCommandLine(
-    struct cmdlineConfiguration *cmdlineConfiguration,
-    /*@out@*/ char              **mountPoint,
+    struct CmdlineConfiguration *cmdlineConfiguration,
     int                         argc,
     const char * const          *argv
 )
@@ -418,7 +415,7 @@ DecodeCommandLine(
     localMountPoint = malloc( strlen( argv[ mountArgc ] ) + sizeof( char ) );
     assert( localMountPoint != NULL );
     strcpy( localMountPoint, argv[ mountArgc ] );
-    *mountPoint = localMountPoint;
+    cmdlineConfiguration->configuration.mountPoint = localMountPoint;
 
     return( ! optionError );
 }

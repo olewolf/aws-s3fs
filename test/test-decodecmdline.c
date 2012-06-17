@@ -51,10 +51,11 @@ const struct dispatchTable dispatchTable[ ] =
 
 void test_DecodeCommandLine( const char *parms )
 {
-    struct cmdlineConfiguration cmdlineConfig =
+    struct CmdlineConfiguration cmdlineConfig =
     {
         {
 	    US_STANDARD,
+	    NULL,
 	    NULL,
 	    NULL,
 	    NULL,
@@ -160,7 +161,6 @@ void test_DecodeCommandLine( const char *parms )
     };
 
     int testNumber;
-    char *mountPoint;
     int argcounts[ ] = { 0, 13, 11, 3, 6, 4, 6, 7, 7, 7, 7, 7, 5 };
     int argc;
     int argvbegins;
@@ -173,8 +173,8 @@ void test_DecodeCommandLine( const char *parms )
     {
         argvbegins = argvbegins + argcounts[ i ];
     }
-    DecodeCommandLine( &cmdlineConfig, &mountPoint, argc, &cmdline[ argvbegins ] );
-    PrintConfig( testNumber, &cmdlineConfig, mountPoint, cmdlineConfig.configuration.verbose.value );
+    DecodeCommandLine( &cmdlineConfig, argc, &cmdline[ argvbegins ] );
+    PrintConfig( testNumber, &cmdlineConfig, cmdlineConfig.configuration.verbose.value );
     ReleaseConfig( &cmdlineConfig );
 }
 

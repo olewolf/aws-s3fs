@@ -358,17 +358,15 @@ ConfigSetKey(
  * @param value [in] Input string to be copied.
  * @return Nothing.
  */
-#ifndef AUTOTEST
-static
-#endif
 void
 InitializeConfiguration(
-    struct configuration *configuration
+    struct Configuration *configuration
 			)
 {
     assert( configuration != NULL );
 
     configuration->region = US_STANDARD;
+    configuration->mountPoint = NULL;
     /* All pointers in the configuration are expected to be NULL before
        allocating new contents. */
     /*@-null@*/
@@ -444,20 +442,18 @@ static const char *ShowLogLevel( enum LogLevels logLevel )
  * and command-line options and parameters, and the AWS_S3FS_KEY.
  * @param configuration [out] Pointer to configuration structure that is to
  *        be filled with values.
- * @param mountPoint [out] Pointer to a string where the mount path is stored.
  * @param argc [in] The \a argc from the \a main function.
  * @param argv [in] The \a argv from the \a main function.
  * @return Nothing.
  */
 void
 Configure(
-    struct configuration *configuration,
-    char                 **mountPoint,
+    struct Configuration *configuration,
     int                  argc,
     const char * const   *argv
 	  )
 {
-    struct cmdlineConfiguration cmdlineConfiguration =
+    struct CmdlineConfiguration cmdlineConfiguration =
     {
 	.configuration =
 	{
@@ -497,7 +493,7 @@ Configure(
     /* Decode the command line options, which may include an override of
        the configuration file. */
     InitializeConfiguration( &cmdlineConfiguration.configuration );
-    optionSuccess = DecodeCommandLine( &cmdlineConfiguration, mountPoint, argc, argv );
+    optionSuccess = DecodeCommandLine( &cmdlineConfiguration, argc, argv );
     if( ! optionSuccess )
     {
 	fprintf( stderr, "Invalid command line options.\n" );
@@ -642,6 +638,7 @@ Configure(
 	configuration->verbose.value = cmdlineConfiguration.configuration.verbose.value;
     }
     configuration->daemonize = cmdlineConfiguration.configuration.daemonize;
+    configuration->mountPoint = cmdlineConfiguration.configuration.mountPoint;
 
     /* Destroy the temporary configuration structure holding the command-line
        options. */
@@ -660,5 +657,5 @@ Configure(
 		   ShowStringValue( configuration->path ),
 		   ShowStringValue( configuration->logfile ),
 		   ShowLogLevel( configuration->logLevel ),
-		   ShowStringValue( *mountPoint ) );
+		   ShowStringValue( configuration->mountPoint ) );
 }

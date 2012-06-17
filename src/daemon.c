@@ -37,7 +37,7 @@
 #define USE_LOCKFILE
 */
 
-static struct configuration     *configuration;
+
 
 #ifdef USE_LOCKFILE
 static int                      lockFp;
@@ -90,12 +90,10 @@ SignalHandler(
  * Fork the process into the background and prepare signal responses. If the
  * \a parameter daemonize is false, the process stays in the foreground.
  * @param logging [in] Logging facility.
- * @param config [in] Configuration.
  * @return Nothing.
  */
 void
 Daemonize(
-    struct configuration     *config
 	  )
 {
     int        fileDesc;
@@ -226,6 +224,4 @@ Daemonize(
 	}
 #endif /* USE_LOCKFILE */
     }
-
-    configuration = config;
 }

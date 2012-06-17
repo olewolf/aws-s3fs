@@ -31,10 +31,10 @@
 
 
 extern const char *LookupConfigString( const struct config_t *, const char * );
-extern void ConfigSetBoolean( struct configurationBoolean *,
+extern void ConfigSetBoolean( struct ConfigurationBoolean *,
 			      const struct config_t *, const char * );
 extern bool ReadConfigFile( const FILE *, const char *,
-			    struct configuration * );
+			    struct Configuration * );
 
 void test_LookupConfigString( const char * );
 

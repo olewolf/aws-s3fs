@@ -29,12 +29,10 @@
 
 
 
-extern void InitializeConfiguration( struct configuration * );
 extern void ConfigSetRegion( enum bucketRegions *, const char *, bool * );
 extern void ConfigSetPath( char **, const char * );
 extern void ConfigSetKey( char **, char **, const char *, bool * );
 extern int ExtractKey( char **, int, const char * );
-extern void Configure( struct configuration *, char **, int, const char * const * );
 extern void CopyDefaultString( char **, const char * );
 
 void test_InitializeConfiguration( const char * );
@@ -48,7 +46,7 @@ void test_Configure( const char * );
 void DoNotDaemonize( void ) { }
 
 
-struct configuration configuration;
+struct Configuration configuration;
 
 
 const struct dispatchTable dispatchTable[ ] =
@@ -67,10 +65,11 @@ const struct dispatchTable dispatchTable[ ] =
 
 void test_InitializeConfiguration( const char *parms )
 {
-    struct configuration config =
+    struct Configuration config =
     {
         TOKYO,        /* region */
 	NULL,         /* bucketName */
+	NULL,         /* mountPoint */
 	NULL,         /* path */
 	NULL,         /* keyId */
 	NULL,         /* secretKey */
@@ -195,10 +194,11 @@ void test_CopyDefaultString( const char *parms )
 
 void test_Configure( const char *parms )
 {
-    struct cmdlineConfiguration cmdlineConfig =
+    struct CmdlineConfiguration cmdlineConfig =
     {
-        {
+        .configuration = {
 	    US_STANDARD,
+	    NULL,
 	    NULL,
 	    NULL,
 	    NULL,
@@ -207,12 +207,20 @@ void test_Configure( const char *parms )
 	    {
 	        false,
 		false
-	    }
+	    },
+	    log_DEBUG,
+	    false,
 	},
-	NULL,
-	true
+	.configFile = NULL,
+	.regionSpecified = false,
+	false,
+	false,
+	false,
+	false,
+	false,
+	false
     };
-    struct configuration *config = &cmdlineConfig.configuration;
+    struct Configuration *config = &cmdlineConfig.configuration;
     const char *const cmdline[ ] =
     {
         /* argc = 12 */
@@ -241,7 +249,6 @@ void test_Configure( const char *parms )
     };
 
     int testNumber;
-    char *mountPoint = NULL;
     int argcounts[ ] = { 0, 12, 3, 3, 3 };
     int argc;
     int argvbegins;
@@ -254,7 +261,7 @@ void test_Configure( const char *parms )
     {
         argvbegins = argvbegins + argcounts[ i ];
     }
-    Configure( config, &mountPoint, argc, &cmdline[ argvbegins ] );
-    PrintConfig( testNumber, &cmdlineConfig, mountPoint, configuration.verbose.value );
+    Configure( config, argc, &cmdline[ argvbegins ] );
+    PrintConfig( testNumber, &cmdlineConfig, configuration.verbose.value );
     ReleaseConfig( &cmdlineConfig );
 }

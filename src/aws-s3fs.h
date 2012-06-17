@@ -37,7 +37,6 @@
 #define MAX_FILE_DESCRIPTORS 16
 
 
-
 /* Make room for 50,000 files in the stat cache. */
 #define MAX_STAT_CACHE_SIZE 50000l
 
@@ -67,7 +66,7 @@ enum bucketRegions {
 };
 
 
-struct configurationBoolean {
+struct ConfigurationBoolean {
     bool value;
     bool isset;
 };
@@ -81,20 +80,21 @@ enum LogLevels {
 };
 
 
-struct configuration {
+struct Configuration {
     enum bucketRegions          region;
+    /*@null@*/ char             *mountPoint;
     /*@null@*/ char             *bucketName;
     /*@null@*/ char             *path;
     /*@null@*/ char             *keyId;
     /*@null@*/ char             *secretKey;
     /*@null@*/ char             *logfile;
-    struct configurationBoolean verbose;
+    struct ConfigurationBoolean verbose;
     enum LogLevels              logLevel;
     bool                        daemonize;
 };
 
-struct cmdlineConfiguration {
-    struct configuration configuration;
+struct CmdlineConfiguration {
+    struct Configuration configuration;
     /*@null@*/ char      *configFile;
     bool                 regionSpecified;
     bool                 bucketNameSpecified;
@@ -117,27 +117,28 @@ void DisableLogging( );
 void InitLog( const char *logfile, enum LogLevels );
 void CloseLog( );
 
+/* In config.c */
+void InitializeConfiguration( struct Configuration* );
 
 /* In common.c */
 void VerboseOutput( bool, const char *format, ... );
 
 /* In aws-s3fs.c. */
+extern struct Configuration globalConfig;
+
 void
 Configure(
-    struct configuration *configuration,
-    char                 **mountPoint,
+    struct Configuration *configuration,
     int                  argc,
     const char * const   *argv
 );
 
 
-void InitializeThreadConfiguration( struct configuration * );
-
 bool
 ReadConfigFile(
     const FILE           *fp,
     const char           *configFilename,
-    struct configuration *configuration
+    struct Configuration *configuration
 );
 
 void
@@ -180,8 +181,7 @@ TestFileReadable(
 /* In decodecmdline.c. */
 bool
 DecodeCommandLine(
-    struct cmdlineConfiguration *cmdlineConfiguration,
-    /*@out@*/ char              **mountPoint,
+    struct CmdlineConfiguration *cmdlineConfiguration,
     int                         argc,
     const char * const          *argv
 );
@@ -190,15 +190,7 @@ DecodeCommandLine(
 
 /* In daemon.c. */
 
-void Daemonize( struct configuration* );
-
-
-
-struct ThreadState
-{
-    struct configuration     configuration;
-    char                     *mountPoint;
-};
+void Daemonize( void );
 
 
 #endif /* __AWS_S3FS_H */

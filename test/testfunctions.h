@@ -34,11 +34,11 @@ struct dispatchTable
     void (*function)( const char *parameters );
 };
 
-struct cmdlineConfiguration;
+struct CmdlineConfiguration;
 
-void PrintConfig( int testNo, const struct cmdlineConfiguration *config, const char *mountPoint, bool verbose );
+void PrintConfig( int testNo, const struct CmdlineConfiguration *config, bool verbose );
 
-void ReleaseConfig( struct cmdlineConfiguration *config );
+void ReleaseConfig( struct CmdlineConfiguration *config );
 
 
 #endif /* __TESTFUNCTIONS_H */
