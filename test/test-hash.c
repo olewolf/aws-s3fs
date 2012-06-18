@@ -53,6 +53,7 @@ static void SkipTest( const char *parms ) { exit( 77 ); }
 #endif
 
 
+unsigned char filebuf[ 16384 ];
 
 
 const struct dispatchTable dispatchTable[ ] =
@@ -74,11 +75,10 @@ static void test_MD5DigestBuffer( const char *parms )
     char md5sum[ 33 ];
     FILE* fh;
     int nBytes;
-    unsigned char filebuf[ 8192 ];
 
     fh = fopen( parms, "r" );
     if( fh == NULL ) exit( EXIT_FAILURE );
-    nBytes = fread( &filebuf, 1, 4096, fh );
+    nBytes = fread( &filebuf, 1, sizeof( filebuf ), fh );
     fclose( fh );
     if( nBytes == 0 ) exit( EXIT_FAILURE );
     DigestBuffer( &filebuf[ 0 ], nBytes, &md5sum[ 0 ], HASH_MD5, HASHENC_HEX );
@@ -110,11 +110,10 @@ static void test_SHA1DigestBuffer( const char *parms )
     char sha1sum[ 41 ];
     FILE* fh;
     int nBytes;
-    unsigned char filebuf[ 8192 ];
 
     fh = fopen( parms, "r" );
     if( fh == NULL ) exit( EXIT_FAILURE );
-    nBytes = fread( &filebuf, 1, 4096, fh );
+    nBytes = fread( &filebuf, 1, sizeof( filebuf ), fh );
     fclose( fh );
     if( nBytes == 0 ) exit( EXIT_FAILURE );
     DigestBuffer( &filebuf[ 0 ], nBytes, &sha1sum[ 0 ], HASH_SHA1, HASHENC_HEX );
@@ -146,12 +145,11 @@ static void test_SHA1Signature( const char *parms )
 {
     FILE* fh;
     int nBytes;
-    unsigned char filebuf[ 8192 ];
     const char *signature;
 
     fh = fopen( parms, "r" );
     if( fh == NULL ) exit( EXIT_FAILURE );
-    nBytes = fread( &filebuf, 1, 4096, fh );
+    nBytes = fread( &filebuf, 1, sizeof( filebuf ), fh );
     fclose( fh );
     if( nBytes == 0 ) exit( EXIT_FAILURE );
     signature = HMAC( filebuf, nBytes, "TestSecretKey", HASH_SHA1, HASHENC_HEX );
@@ -168,12 +166,11 @@ static void test_MD5Signature( const char *parms )
 {
     FILE* fh;
     int nBytes;
-    unsigned char filebuf[ 8192 ];
     const char *signature;
 
     fh = fopen( parms, "r" );
     if( fh == NULL ) exit( EXIT_FAILURE );
-    nBytes = fread( &filebuf, 1, 4096, fh );
+    nBytes = fread( &filebuf, 1, sizeof( filebuf ), fh );
     fclose( fh );
     if( nBytes == 0 ) exit( EXIT_FAILURE );
     signature = HMAC( filebuf, nBytes, "TestSecretKey", HASH_MD5, HASHENC_HEX );

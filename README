@@ -1,4 +1,17 @@
-Notes for packagers:
+This README contains notes for packagers
+----------------------------------------
+
+I am aware of the s3fs code from Randy Rizun <rrizun@gmail.com>. However, this
+code relies on OpenSSL whose license conflicts with the GPL, and it seems to
+have problems supporting buckets that are not stored on the Standard US server.
+My impression of the quality of the code made me decide to implement aws-s3fs
+from scratch rather than attempting to patch Randy Rizun's code. aws-s3fs
+honors the s3fs metaheaders on the S3 drive, however, so permissions and other
+file attributes should remain identical regardless of your choice of s3fs or
+aws-s3fs.
+
+
+== Installing ==
 
 The package is intended to be installed via the Debian packaging system,
 which takes care of installing configuration files, log rotation scripts,
@@ -6,40 +19,58 @@ etc. To create a Debian package, install the debhelper tools and execute:
 
     debuild
 
-in this folder. The script: "script/build-source-tarball.sh" creates a
-aws-s3fs_(version).orig.tar.xz tarball with the current source which is
-required by the debhelper tools.
+in the top directory (i.e., the folder with the README file).
 
 The autoconf tool should install the files properly, too, using the standard
 ./configure; make; make install procedure. If you elect to attempt the vanilla
 autoconf installation procedure, you'll first need to run:
 
-    ./autoreconf -i
+    $ ./autoreconf -i
 
 in the root directory of the package in order to create the necessary files
 for building and installing with autoconf.
 
+If you downloaded aws-s3fs from the git source, then there already is a
+./debian directory with properly configured files; however, the original
+source code tarball is not included. You may build the tarball yourself via
+the debhelper tools, or you can execute the script:
+
+    $ sh script/build-source-tarball.sh
+
+which creates an aws-s3fs_(version).orig.tar.xz tarball with the current
+source. This is not recommended, but I used the script during development
+to avoid repeatedly patching the source with "dpkg-source --commit".
+
 I have no idea how to package the code for other systems, but feel free to
 provide patches that will enable other build systems.
 
-The code is lint clean, with intentional overrides included in the source code
-where appropriate. Most of these overrides are related to intentional NULL
-pointers.
 
-The code is documented with Doxygen comments. The documentation is built in
-doc/doxygen when "make" is run and the Makefile has been configured with the
-option:
+== Source Code Documentation ==
 
-    ./configure --enable-doc
+The code is documented with Doxygen comments. The documentation is built
+automatically in doc/doxygen if "make" is run and the build has been configured
+with the option:
 
-To generate the documentation, make sure that Doxygen and GraphViz are
-installed.
+    $ ./configure --enable-doc
 
-I am aware of the s3fs code from Randy Rizun <rrizun@gmail.com>. However, this
-code relies on OpenSSL whose license conflicts with the GPL, and it seems to
-have problems supporting buckets that are not stored on the Standard US server.
-My impression of the quality of the code made me decide to implement aws-s3fs
-from scratch rather than attempting to patch Randy Rizun's code.
+Otherwise you may build the documentation manually by issuing the command:
+
+    $ make doxygen
+
+in the top directory.
+
+The documentation generation requires Doxygen and GraphViz, so make sure they
+are installed. Navigate to doc/doxygen/index.html with your browser to view the
+documentation.
+
+
+== Test Issues ==
+
+To run the autotest suite, type:
+
+    $ make check
+
+in the top directory.
 
 The build requirements include the OpenSSL executable; this is not strictly
 a requirement for the build itself, but the cryptographic tests use OpenSSL
@@ -48,22 +79,33 @@ source or executable, however, as the GPL requirements would violate the
 OpenSSL license. To skip OpenSSL tests, configure the build with the following
 option:
 
-    ./configure --disable-openssltest
+    $ ./configure --disable-openssltest
+
+The code will eventually be released as lint clean, with intentional overrides
+included in the source code where appropriate. Most of these overrides are
+currently related to intentional NULL pointers.
+
+I intend to also check the code with rats, flawfinder, and pscan prior to
+a formal release. There currently are issues related to buffer overrun risks,
+but they are fairly easy to spot and in many cases are contained within the
+aws-s3fs code (that is, a location with a theoretical buffer overrun issue
+will receive input only from functions that are known to produce string output
+that is within the buffer size limits).
 
 
 Thanks to:
 
-* Timothy Kay <http://timkay.com/> for providing the aws script, which served
-  as inspiration and gave name to the package.
+ * Timothy Kay <http://timkay.com/> for providing the aws script, which served
+   as inspiration and gave name to the package.
 
-* Ulrich Drepper <drepper@gnu.ai.mit.edu> for releasing MD5 message digest
-  functions under a GPL license.
+ * Ulrich Drepper <drepper@gnu.ai.mit.edu> for releasing MD5 message digest
+   functions under a GPL license.
 
-* Paul E. Jones <paulej@packetizer.com> for releasing SHA1 message digest
-  functions under a freeware license.
+ * Paul E. Jones <paulej@packetizer.com> for releasing SHA1 message digest
+   functions under a freeware license.
 
-* Joseph J. Pfeiffer <pfeiffer@cs.nmsu.edu> for creating a FUSE tutorial with
-  accompanying code.
+ * Joseph J. Pfeiffer <pfeiffer@cs.nmsu.edu> for creating a FUSE tutorial with
+   accompanying code.
 
 Report bugs to: Ole Wolf <wolf@blazingangles.com>.
 

@@ -7,14 +7,14 @@ clean:
 	rm -rf doxygen
 
 if MAKE_DOXYGEN
+targets = doxygen
+endif
+
 doxygen: Doxyfile main.doc
 	if [ "z$(DOXYGEN)" != "z" ]; then \
 	    @DOXYGEN@; \
 	fi
 
 .PHONY: doxygen
-
-targets = doxygen
-endif
 
 all-local: $(targets)

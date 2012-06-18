@@ -61,10 +61,12 @@ static void test_BuildGenericHeader( const char *parms );
 static void test_GetHeaderStringValue( const char *parms );
 static void test_AddHeaderValueToSignString( const char *parms );
 static void test_CreateAwsSignature( const char *param );
+static void test_BuildS3Request( const char *param );
 
 
 const struct dispatchTable dispatchTable[ ] =
 {
+    { "BuildS3Request", test_BuildS3Request },
     { "CreateAwsSignature", test_CreateAwsSignature },
     { "AddHeaderValueToSignString", test_AddHeaderValueToSignString },
     { "GetHeaderStringValue", test_GetHeaderStringValue },
@@ -152,25 +154,26 @@ static void test_CreateAwsSignature( const char *param )
 }
 
 
-#if 0
+
 static void test_BuildS3Request( const char *param )
 {
     struct curl_slist *headers = NULL;
     struct curl_slist *currentHeader;
     int               i = 0;
 
-    const char        *method = "HEAD";
-    const char        *path = "http://the.web.address/with.html?some=parameter";
-    const char        *keyId     = "aboguskeyid";
-    const char        *secretKey = "somebogussecret";
+    char *method = "HEAD";
+    char *path = "/with.html?some=parameter";
+    char *keyId     = "aboguskeyid";
+    char *secretKey = "somebogussecret";
+
+    globalConfig.keyId = keyId;
+    globalConfig.secretKey = secretKey;
 
     headers = curl_slist_append( headers, "Content-MD5: kahaKUW/a80945+a553" );
     headers = curl_slist_append( headers, "Content-Type: image/jpeg" );
-    headers = curl_slist_append( headers, "x-awz-metavariable: something" );
-    headers = curl_slist_append( headers, "Date: Sun, Jun 17 2012 17:58:24 +0200" );
-    headers = curl_slist_append( headers, "x-awz-also-metavariable: something else" );
-    headers = BuildS3Request( method, "bucketname", headers,
-			      "/bucketname/", keyId, secretKey );
+    headers = curl_slist_append( headers, "x-amz-metavariable: something" );
+    headers = curl_slist_append( headers, "x-amz-also-metavariable: something else" );
+    headers = BuildS3Request( method, headers, path );
 
     currentHeader= headers;
     while( currentHeader != NULL )
@@ -179,6 +182,6 @@ static void test_BuildS3Request( const char *param )
         currentHeader = currentHeader->next;
     }
 }
-#endif
+
 
 

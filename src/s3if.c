@@ -38,6 +38,22 @@
 
 #include <stdlib.h>
 
+
+/* Amazon host names for various regions, ordered according to the enumeration
+   "bucketRegions". */
+static const char *amazonHost[ ] =
+{
+    "s3-us-east-1",      /* US_STANDARD */
+    "s3-us-west-2",      /* OREGON */
+    "s3-us-west-1",      /* NORTHERN_CALIFORNIA */
+    "s3-eu-west-1",      /* IRELAND */
+    "s3-ap-southeast-1", /* SINGAPORE */
+    "s3-ap-northeast-1", /* TOKYO */
+    "s3-sa-east-1"       /* SAO_PAULO */
+};
+
+
+
 /**
  * Callback function for freeing the memory allocated for an S3FileInfo
  * structure when an entry is deleted from the cache.
@@ -58,7 +74,7 @@ static void DeleteS3FileInfoStructure(
 
 /**
  * Create a generic S3 request header which is used in all requests.
- * @param bucket [in] Bucket name.
+ * @param httpMethod [in] HTTP verb (GET, HEAD, etc.) for the request.
  * @return Header list.
  */
 #ifndef AUTOTEST
@@ -77,7 +93,8 @@ BuildGenericHeader(
     char              *locale;
 
     /* Make Host: address a virtual host. */
-    sprintf( headbuf, "Host: %s.s3.amazonaws.com", globalConfig.bucketName );
+    sprintf( headbuf, "Host: %s.%s.amazonaws.com",
+	     globalConfig.bucketName, amazonHost[ globalConfig.region ] );
     headers = curl_slist_append( headers, headbuf );
 
     /* Generate time string. */
@@ -302,16 +319,34 @@ CreateAwsSignature(
 
 
 
+/**
+ * Helper function for the qsort function in \a BuildS3Request. The helper
+ * functions ensures that strings are sorted in descending order, because
+ * the \a BuildS3Request reinserts them in a linked list in reverse order;
+ * this will cause the strings to eventually be sorted in ascending order.
+ * @param a [in] First string in the qsort comparison.
+ * @param b [in] Second string in the qsort comparison.
+ * @return 0 if \a a = \a b, -1 if \a a > \a b, or 1 if \a a < \a b.
+ */
 static inline int
 qsort_strcmp( const void *a, const void *b )
 {
-    /* Sort in reverse order so that when the elements are inserted at the
-       beginning of the linked list, they will appear in ascending order. */
     return( -strcmp( (const char*)a, (const char*)b ) );
 }
 
 
 
+/**
+ * Create an S3 request that is ready to be submitted via CURL.
+ * @param httpMethod [in] The HTTP verb for the request type.
+ * @param additionalHeaders[ in ] Any additional HTTP headers that should be
+ *        included in the request.
+ * @param filename [in] The full path of the file that is accessed.
+ * @return Complete HTTP header list, including an AWS signature.
+ */
+#ifndef AUTOTEST
+static
+#endif
 struct curl_slist*
 BuildS3Request(
     const char        *httpMethod,
@@ -333,8 +368,8 @@ BuildS3Request(
     count         = 0;
     while( currentHeader != NULL )
     {
-        currentHeader = currentHeader->next;
 	extraHeaders[ count++ ] = currentHeader->data;
+        currentHeader = currentHeader->next;
 	if( count == sizeof( extraHeaders ) / sizeof( char* ) )
 	{
 	    break;
@@ -361,7 +396,8 @@ BuildS3Request(
 /**
  * Retrieve information on a specific file in an S3 path.
  * @param filename [in] Full path of the file, relative to the bucket.
- * @return S3 FileInfo structure.
+ * @param fileInfo [out] S3 FileInfo structure.
+ * @return 0 on success, or \a -errno on failure.
  */
 int
 S3FileStatRequest(
