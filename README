@@ -81,6 +81,23 @@ option:
 
     $ ./configure --disable-openssltest
 
+The tests include live tests that communicate with the Amazon S3 bucket host.
+These tests require a configuration file with authentication data and the
+following setup:
+
+    * Copy the README file to the top folder under your S3 bucket.
+
+    Your file structure on the S3 drive should look like this:
+
+       your-bucket-name/README
+
+The live tests will be performed if a configuration file named "livetest.ini"
+is found in test/testdata. Copy the file livetest.ini.example to livetest.ini
+and edit the latter to match your own S3 settings.
+
+
+== Lint ==
+
 The code will eventually be released as lint clean, with intentional overrides
 included in the source code where appropriate. Most of these overrides are
 currently related to intentional NULL pointers.

@@ -34,24 +34,31 @@ AC_ARG_ENABLE([openssltest],
     AS_HELP_STRING([--disable-openssltest], [Skip OpenSSL tests]),
 	[ac_enable_openssltest=$enableval], [ac_enable_openssltest=auto])
 
+AC_CANONICAL_HOST
+
 # Check for programs.
 AC_PROG_CC
 AC_PROG_CC_STDC
 AM_PROG_CC_C_O
 AC_PROG_INSTALL
 AC_PROG_MAKE_SET
+AC_PROG_GREP
 AC_CHECK_PROG(HAVE_DOXYGEN, doxygen, true, false)
 AC_CHECK_PROG(HAVE_GRAPHVIZ, dot, true, false)
 AC_CHECK_PROG(HAVE_OPENSSL, openssl, true, false)
 AC_PATH_PROGS(DOXYGEN, doxygen)
-#AC_PATH_PROGS(SPLINT, splint)
-#AC_PATH_PROGS(FLAWFINDER, flawfinder)
-#AC_PATH_PROGS(RATS, rats)
-#AC_PATH_PROGS(PSCAN, pscan)
-#AC_PATH_PROGS(GRAPHVIZ, dot)
 
+# Check for typedefs, structures, and compiler characteristics.
+AC_HEADER_STDC
 AC_C_CONST
 AC_C_INLINE
+AC_FUNC_MALLOC
+AC_FUNC_REALLOC
+AC_FUNC_FORK
+AC_TYPE_SIZE_T
+
+# Large file support.
+AC_SYS_LARGEFILE
 
 # Check for libraries.
 AC_CHECK_LIB([config], [config_init],,
@@ -62,59 +69,65 @@ AC_CHECK_LIB([pthread], [pthread_mutex_lock],,
     AC_MSG_ERROR([*** pthread library function not found **]))
 AC_CHECK_LIB([curl], [curl_easy_init],,
     AC_MSG_ERROR([*** curl library not found **]))
-AC_CHECK_LIB([rest-0.7], [rest_param_get_name],,
-    AC_MSG_ERROR([*** rest library not found **]))
+AC_CHECK_LIB([xml2], [xmlReadMemory],,
+    AC_MSG_ERROR([*** libxml2 library not found **]))
 
 # Check for modules.
-PKG_CHECK_MODULES([DEPS], [fuse >= 2.8 libconfig >= 1.3 libcurl >= 7.20 \
-                  rest-0.7 >= 0.7],,
-    AC_MSG_ERROR([*** libfuse, libconfig, librest, or curl source not found **]))
+PKG_CHECK_MODULES([DEPS], [fuse >= 2.8 libxml-2.0 >= 2.7.0 libconfig >= 1.3 libcurl >= 7.20],,
+    AC_MSG_ERROR([*** libfuse, libconfig, libxml2, or curl source not found **]))
 
 # Check for header files.
 AC_CHECK_HEADERS([stdio.h],,
     AC_MSG_ERROR([*** stdio.h missing **]))
-AC_CHECK_HEADERS([string.h],,
+AC_CHECK_HEADER([string.h],,
     AC_MSG_ERROR([*** string.h missing **]))
-AC_CHECK_HEADERS([stdlib.h],,
+AC_CHECK_HEADER([stdlib.h],,
     AC_MSG_ERROR([*** stdlib.h not found **]))
-AC_CHECK_HEADERS([stdbool.h],,
-    AC_MSG_ERROR([*** stdbool.h not found **]))
-AC_CHECK_HEADERS([libconfig.h],,
+AC_HEADER_STDBOOL
+#AC_CHECK_HEADER([stdbool.h],,
+#    AC_MSG_ERROR([*** stdbool.h not found **]))
+AC_CHECK_HEADER([libconfig.h],,
     AC_MSG_ERROR([*** libconfig.h not found **]))
-AC_CHECK_HEADERS([getopt.h],,
+AC_CHECK_HEADER([getopt.h],,
     AC_MSG_ERROR([*** getopt.h not found **]))
-AC_CHECK_HEADERS([assert.h],,
+AC_HEADER_ASSERT
+AC_CHECK_HEADER([assert.h],,
     AC_MSG_ERROR([*** assert.h not found **]))
-AC_CHECK_HEADERS([ctype.h],,
+AC_CHECK_HEADER([ctype.h],,
     AC_MSG_ERROR([*** ctype.h not found **]))
-AC_CHECK_HEADERS([syslog.h],,
+AC_CHECK_HEADER([syslog.h],,
     AC_MSG_ERROR([*** syslog.h not found **]))
-AC_CHECK_HEADERS([signal.h],,
+AC_CHECK_HEADER([signal.h],,
     AC_MSG_ERROR([*** signal.h not found **]))
-AC_CHECK_HEADERS([unistd.h],,
+AC_CHECK_HEADER([unistd.h],,
     AC_MSG_ERROR([*** unistd.h not found **]))
-AC_CHECK_HEADERS([limits.h],,
+AC_CHECK_HEADER([limits.h],,
     AC_MSG_ERROR([*** limits.h not found **]))
-AC_CHECK_HEADERS([time.h],,
-    AC_MSG_ERROR([*** time.h not found **]))
-AC_CHECK_HEADERS([fcntl.h],,
+AC_HEADER_TIME
+#AC_CHECK_HEADER([time.h],,
+#    AC_MSG_ERROR([*** time.h not found **]))
+AC_CHECK_HEADER([fcntl.h],,
     AC_MSG_ERROR([*** fcntl.h not found **]))
-AC_CHECK_HEADERS([sys/stat.h],,
+AC_CHECK_HEADER([sys/stat.h],,
     AC_MSG_ERROR([*** sys/stat.h not found **]))
-AC_CHECK_HEADERS([sys/signal.h],,
+AC_CHECK_HEADER([sys/signal.h],,
     AC_MSG_ERROR([*** sys/stat.h not found **]))
-AC_CHECK_HEADERS([uthash.h],,
+AC_CHECK_HEADER([uthash.h],,
     AC_MSG_ERROR([*** uthash.h not found **]))
-AC_CHECK_HEADERS([pthread.h],,
+AC_CHECK_HEADER([pthread.h],,
     AC_MSG_ERROR([*** pthread.h not found **]))
-AC_CHECK_HEADERS([curl/curl.h],,
+AC_CHECK_HEADER([curl/curl.h],,
     AC_MSG_ERROR([*** curl.h not found **]))
-#AC_CHECK_HEADERS([rest-param.h],,
-#    AC_MSG_ERROR([*** rest-param.h not found **]))
+CFLAGS_SAVE="$CFLAGS"
+CFLAGS="$CFLAGS -Wall -Werror $DEPS_CFLAGS"
+AC_CHECK_HEADER([libxml/tree.h], [], 
+AC_MSG_ERROR([*** libxml/tree.h not found **]),
+[
+AC_INCLUDES_DEFAULT
+])
+CFLAGS="$CFLAGS_SAVE"
 
-# Check for typedefs, structures, and compiler characteristics.
 # Check for library functions.
-AC_FUNC_MALLOC
 AC_CHECK_FUNCS([getopt_long],,
     AC_MSG_ERROR([*** Getopt functions not found. **]))
 AC_CHECK_FUNCS([strcasecmp strlen strcat strcpy strncpy isspace],,
@@ -131,34 +144,15 @@ AC_CHECK_FUNCS([time localtime],,
 AC_CHECK_FUNCS([sigaction fork setsid exit perror pthread_mutex_lock \
 	       pthread_mutex_unlock],,
     AC_MSG_ERROR([*** Process functions not found. **]))
-# The following functions are not checked:
-#
-#   config_error_line
-#   config_error_text
-#
-# If the configure script fails, it may be that the following check isn't
-# required, since the libopt library has already been determined to be
-# available:
 AC_CHECK_FUNCS([config_init config_lookup_bool config_lookup_string \
                config_read_file config_destroy],,
 AC_MSG_ERROR([*** libopt functions not found. **]))
-# If the configure script fails, it may be that the following check isn't
-# required, since the FUSE library has already been determined to be
-# available:
 AC_CHECK_FUNCS([fuse_main],,
     AC_MSG_ERROR([*** FUSE functions not found. **]))
-
 AC_CHECK_FUNCS([curl_easy_init curl_easy_setopt curl_easy_perform \
-	       curl_easy_cleanup],,
+	       curl_easy_cleanup curl_slist_append],,
 AC_MSG_ERROR([*** CURL functions not found. **]))
-AC_CHECK_FUNCS([rest_xml_parser_new],,
-    AC_MSG_ERROR([*** REST functions not found. **]))
 
-# Large file support.
-AC_SYS_LARGEFILE
-
-CFLAGS="$CFLAGS -Wall -Werror $DEPS_CFLAGS"
-LIBS="$DEPS_LIBS $LIBS"
 
 MAKE_DOXYGEN=false
 if @<:@ "x$ac_enable_doc" = "xyes" @:>@; then
@@ -183,6 +177,10 @@ if @<:@ "x$ac_enable_openssltest" != "xno" @:>@; then
     fi
 fi
 AM_CONDITIONAL(MAKE_OPENSSL_TESTS,$MAKE_OPENSSL_TESTS)
+
+
+CFLAGS="$CFLAGS -Wall -Werror $DEPS_CFLAGS"
+LIBS="$DEPS_LIBS $LIBS"
 
 # Output files.
 AC_CONFIG_HEADERS([config.h])

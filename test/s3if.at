@@ -43,7 +43,6 @@ AT_CLEANUP
 
 AT_SETUP([BuildS3Request])
 AT_CHECK([test-s3if BuildS3Request], [], [stdout])
-
 AT_CHECK([grep '^1: Host: bucket-name.s3-\(us\|eu\|ap\|sa\)-\(east\|west\|southeast\|southwest\)-@<:@1-2@:>@\.amazonaws\.com$' stdout], [], [ignore])
 AT_CHECK([grep '^2: Date: \(Mon\|Tue\|Wed\|Thu\|Fri\|Sat\|Sun\), @<:@0-9@:>@\{1,2\} \(Jan\|Feb\|Mar\|Apr\|May\|Jun\|Jul\|Aug\|Sep\|Oct\|Nov\|Dec\) 2@<:@0-9@:>@\{3\} @<:@0-2@:>@@<:@0-9@:>@:@<:@0-6@:>@@<:@0-9@:>@:@<:@0-6@:>@@<:@0-9@:>@ @<:@+-@:>@@<:@0-9@:>@\{4\}$' stdout], [], [ignore])
 AT_CHECK([grep '^3: User-Agent: curl$' stdout], [], [ignore])
@@ -51,5 +50,11 @@ AT_CHECK([grep '^4: Content-Type: image/jpeg$' stdout], [], [ignore])
 AT_CHECK([grep '^6: x-amz-also-metavariable: something else$' stdout], [], [ignore])
 AT_CHECK([grep '^7: x-amz-metavariable: something$' stdout], [], [ignore])
 AT_CHECK([grep '^8: Authorization: AWS @<:@a-zA-Z0-9@:>@\+:@<:@a-zA-Z0-9+/=@:>@\{28\}$' stdout], [], [ignore])
+AT_CLEANUP
+
+AT_SETUP([SubmitS3Request])
+AT_CHECK([test-s3if SubmitS3Request ../../testdata/livetest.ini], [], [stdout])
+AT_CHECK([grep '^HTTP/1\.1 200 OK' stdout], [], [ignore])
+AT_CHECK([MD5SUM="`(md5sum ../../../README | sed -n "s^\(@<:@0-9a-f@:>@\{32\}\).*^\1^p")`"; grep "^ETag: \"$MD5SUM\"" stdout], [], [ignore])
 AT_CLEANUP
 

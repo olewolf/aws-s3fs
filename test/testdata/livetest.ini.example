@@ -1,0 +1,21 @@
+# Note that the test script is rather unforgiving about the syntax in this
+# file. No whitespaces are allowed between the key and the value. Any line
+# with whitespace or a '#' as its first character is regarded as a comment
+# and ignored.
+
+# The key is your access key and your private key separated by ':'. Make sure
+# you keep this file private!
+key:youraccesskey:yourprivatekey
+
+# The name of your Amazon S3 bucket.
+bucket:yourbucketname
+
+# Region number:
+#   0 - US Standard
+#   1 - Oregon
+#   2 - Northern California
+#   3 - Ireland
+#   4 - Singapore
+#   5 - Tokyo
+#   6 - Sao Paulo
+region:3

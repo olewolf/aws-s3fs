@@ -45,3 +45,4 @@ test/test-cache
 test/testsuite
 test/testsuite.log
 test/testsuite.at
+test/testdata/livetest.ini

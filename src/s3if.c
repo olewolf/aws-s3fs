@@ -26,17 +26,27 @@
 #include <stdbool.h>
 #include <malloc.h>
 #include <string.h>
+#include <stdlib.h>
 #include <errno.h>
 #include <curl/curl.h>
 #include <time.h>
 #include <locale.h>
+#include <pthread.h>
 #include "aws-s3fs.h"
 #include "s3if.h"
 #include "digest.h"
 #include "statcache.h"
 
 
-#include <stdlib.h>
+/* Number of concurrent CURL threads. */
+#define CURL_THREADS 5
+
+
+#ifdef AUTOTEST
+#define STATIC
+#else
+#define STATIC static
+#endif
 
 
 /* Amazon host names for various regions, ordered according to the enumeration
@@ -51,6 +61,98 @@ static const char *amazonHost[ ] =
     "s3-ap-northeast-1", /* TOKYO */
     "s3-sa-east-1"       /* SAO_PAULO */
 };
+
+
+/*
+static struct
+{
+    CURL *curl;
+    union
+    {
+        unsigned char *read;
+        unsigned char *write;
+    } buffer;
+} curlThreads[ CURL_THREADS ];
+*/
+
+pthread_mutex_t curl_mutex = PTHREAD_MUTEX_INITIALIZER;
+static CURL *curl = NULL;
+/* Buffers for the read/write CURL callback functions. */
+STATIC unsigned char *curlWriteBuffer;
+STATIC size_t        curlWriteBufferLength;
+/*
+static unsigned char *curlReadBuffer;
+static size_t        curlReadBufferLength;
+*/
+
+
+
+/**
+ * Callback function for CURL write. The function keeps track of a dynamic
+ * buffer that may be filled by multiple callbacks. The function is called
+ * from an already mutex locked CURL function.
+ * @param ptr [in] Source of the data from CURL.
+ * @param size [in] The size of each data block.
+ * @param nmemb [in] Number of data blocks.
+ * @param userdata [in] Unused.
+ * @return Number of bytes copied from \a ptr.
+ */
+static size_t
+CurlWrite(
+    char   *ptr,
+    size_t size,
+    size_t nmemb,
+    void   *userdata
+	  )
+{
+    size_t        toCopy = size * nmemb;
+    unsigned char *destBuffer;
+    int           i;
+
+    /* Allocate or expand the buffer to receive the new data. */
+    if( curlWriteBuffer == NULL )
+    {
+	curlWriteBufferLength = 0;
+        curlWriteBuffer = malloc( toCopy );
+	destBuffer = curlWriteBuffer;
+    }
+    else
+    {
+        curlWriteBuffer = realloc( curlWriteBuffer,
+				   curlWriteBufferLength + toCopy );
+	destBuffer = &curlWriteBuffer[ curlWriteBufferLength ];
+    }
+
+    /* Receive data. */
+    for( i = 0; i < toCopy; i++ )
+    {
+	*destBuffer++ = *ptr++;
+    }
+    curlWriteBufferLength = curlWriteBufferLength + toCopy;
+
+    return( toCopy );
+}
+
+
+
+/**
+ * Initialize the S3 Interface module.
+ * @return Nothing.
+ */
+void
+InitializeS3If(
+    void
+	       )
+{
+    pthread_mutex_lock( &curl_mutex );
+    if( curl == NULL )
+    {
+	curl = curl_easy_init( );
+	curlWriteBuffer = NULL;
+	/*	curlReadBuffer  = NULL;*/
+    }
+    pthread_mutex_unlock( &curl_mutex );
+}
 
 
 
@@ -77,10 +179,7 @@ static void DeleteS3FileInfoStructure(
  * @param httpMethod [in] HTTP verb (GET, HEAD, etc.) for the request.
  * @return Header list.
  */
-#ifndef AUTOTEST
-static
-#endif
-struct curl_slist*
+STATIC struct curl_slist*
 BuildGenericHeader(
     const char *httpMethod
 		    )
@@ -118,10 +217,7 @@ BuildGenericHeader(
  * @param headerString [in] Header string with key: value string.
  * @return String with the \a value content.
  */
-#ifndef AUTOTEST
-static
-#endif
-char*
+STATIC char*
 GetHeaderStringValue( const char *headerString )
 {
     char *value = NULL;
@@ -166,10 +262,7 @@ GetHeaderStringValue( const char *headerString )
  * @param headerValue [in/out] The string to append to the header text.
  * @return Number of bytes added to the header text.
  */
-#ifndef AUTOTEST
-static
-#endif
-int
+STATIC int
 AddHeaderValueToSignString(
     char *messageToSign,
     char *headerValue
@@ -206,10 +299,7 @@ AddHeaderValueToSignString(
  * @param secretKey [in] User's Secret Key.
  * @return Nothing.
  */
-#ifndef AUTOTEST
-static
-#endif
-struct curl_slist*
+STATIC struct curl_slist*
 CreateAwsSignature(
     const char        *httpMethod,	   
     struct curl_slist *headers,
@@ -344,10 +434,7 @@ qsort_strcmp( const void *a, const void *b )
  * @param filename [in] The full path of the file that is accessed.
  * @return Complete HTTP header list, including an AWS signature.
  */
-#ifndef AUTOTEST
-static
-#endif
-struct curl_slist*
+STATIC struct curl_slist*
 BuildS3Request(
     const char        *httpMethod,
     struct curl_slist *additionalHeaders,
@@ -393,6 +480,84 @@ BuildS3Request(
 
 
 
+STATIC int
+SubmitS3Request(
+    const char        *httpVerb,
+    struct curl_slist *headers,
+    const char        *filename
+	      )
+{
+    char *url;
+    int  urlLength;
+    int  status = 0;
+
+    /* Determine the length of the URL. */
+    urlLength = strlen( "https://..amazonaws.com" )
+                + strlen( globalConfig.bucketName )
+                + strlen( amazonHost[ globalConfig.region ] )
+                + strlen( filename )
+                + sizeof( char )
+                + sizeof( char );
+    /* Build the full URL, adding a '/' to the host if the filename does not
+       include it as its leading character. */
+    url = malloc( urlLength );
+    sprintf( url, "https://%s.%s.amazonaws.com%s%s",
+	     globalConfig.bucketName, amazonHost[ globalConfig.region ],
+	     filename[ 0 ] == '/' ? "" : "/", filename );
+
+    /* Submit request via CURL and wait for the response. */
+    pthread_mutex_lock( &curl_mutex );
+    if( strcmp( httpVerb, "HEAD" ) == 0 )
+    {
+        curl_easy_setopt( curl, CURLOPT_NOBODY, 1 );
+        curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, CurlWrite );
+    }
+    else
+    {
+        curl_easy_setopt( curl, CURLOPT_WRITEFUNCTION, CurlWrite );
+    }
+    curl_easy_setopt( curl, CURLOPT_HTTPHEADER, headers );
+    curl_easy_setopt( curl, CURLOPT_URL, url );
+    status = curl_easy_perform( curl );
+    pthread_mutex_unlock( &curl_mutex );
+
+    return( status );
+}
+
+
+
+
+#if 0
+static int
+AllocateCurlBuffer( 
+    unsigned char **buffer,
+    int           maxBuffers
+		    )
+{
+    int allocatedBuffer;
+
+    do
+    {
+        allocatedBuffer = 0;
+        while( ( allocatedBuffer < maxBuffers )
+	       && ( writeBuffer[ allocated ] != NULL ) )
+	{
+	    allocated++;
+	}
+
+	/* Wait for a thread to end before attempting another allocation. */
+	if( allocated == maxBuffers )
+	{
+	}
+
+    } while( allocated == maxBuffers );
+
+}
+#endif
+
+
+
+
 /**
  * Retrieve information on a specific file in an S3 path.
  * @param filename [in] Full path of the file, relative to the bucket.
@@ -416,8 +581,7 @@ S3FileStatRequest(
     BuildS3Request( "HEAD", headers, filename );
 
     /* Make request via curl and wait for response. */
-
-
+    status = SubmitS3Request( "HEAD", headers, filename );
     curl_slist_free_all( headers );
 
     /* Translate file attributes to an S3 File Info structure. */

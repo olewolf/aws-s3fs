@@ -68,6 +68,8 @@ struct S3FileInfo
 };
 
 
+void InitializeS3If( void );
+
 int S3GetFileStat( const char *path, struct S3FileInfo ** );
 
 int S3ReadDir( struct S3FileInfo *fi, const char *dir,
