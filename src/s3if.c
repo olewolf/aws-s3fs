@@ -32,6 +32,7 @@
 #include <time.h>
 #include <locale.h>
 #include <pthread.h>
+#include <libxml/parser.h>
 #include "aws-s3fs.h"
 #include "s3if.h"
 #include "digest.h"
@@ -39,8 +40,9 @@
 
 
 /* Number of concurrent CURL threads. */
+/*
 #define CURL_THREADS 5
-
+*/
 
 #ifdef AUTOTEST
 #define STATIC
@@ -77,20 +79,28 @@ static struct
 
 pthread_mutex_t curl_mutex = PTHREAD_MUTEX_INITIALIZER;
 static CURL *curl = NULL;
-/* Buffers for the read/write CURL callback functions. */
-STATIC unsigned char *curlWriteBuffer;
-STATIC size_t        curlWriteBufferLength;
+/* Buffers for the read/write CURL callback functions. The buffer lengths
+   indicate either the number of body data bytes, or the number of headers. */
+static void   *curlWriteBuffer;
+static size_t curlWriteBufferLength;
 /*
 static unsigned char *curlReadBuffer;
 static size_t        curlReadBufferLength;
 */
 
 
+struct HttpHeaders
+{
+    const char *headerName;
+    char       *content;
+};
+
+
 
 /**
- * Callback function for CURL write. The function keeps track of a dynamic
- * buffer that may be filled by multiple callbacks. The function is called
- * from an already mutex locked CURL function.
+ * Callback function for CURL write where header data is expected. The function
+ * adds headers to an expanding array organized as {header-name, header-value}
+ * pairs.
  * @param ptr [in] Source of the data from CURL.
  * @param size [in] The size of each data block.
  * @param nmemb [in] Number of data blocks.
@@ -98,7 +108,114 @@ static size_t        curlReadBufferLength;
  * @return Number of bytes copied from \a ptr.
  */
 static size_t
-CurlWrite(
+CurlWriteHeader(
+    char   *ptr,
+    size_t size,
+    size_t nmemb,
+    void   *userdata
+		)
+{
+    int    i;
+    int    bufIdx;
+    int    dataEndIdx;
+    size_t toCopy = size * nmemb;
+    size_t newSize;
+    char   *header;
+    char   *data = NULL;
+
+    /* Allocate room for 10 headers at a time. */
+    static const int HEADER_ALLOC_AMOUNT = 10;
+
+    /* Extract header key, which is everything up to ':'. That is, unless
+       the header key takes up the entire line, in which case it isn't a useful
+       header. ("HTTP/1.1 200 OK" is returned, but it isn't a key:value
+       header.) */
+    for( i = 0; ( i < toCopy ) && ( ptr[ i ] != ':' ); i++ );
+    header = malloc( ( i + 1 ) * sizeof( char ) );
+    memcpy( header, ptr, i );
+    header[ i ] = '\0';
+
+    /* Extract the value for the header key. */
+    if( i != toCopy )
+    {
+        /* Extract data. Skip ':[[:space:]]*' */
+        while( i < toCopy )
+	{
+	    if( ( ptr[ i ] == ':' ) || isspace( ptr[ i ] ) )
+	    {
+	        i++;
+	    }
+	    else
+	    {
+		break;
+	    }
+	}
+	if( i != toCopy )
+	{
+	    /* Extract header value. If the header value ends with a newline,
+	       terminate it prematurely. */
+	    dataEndIdx = i;
+	    while( dataEndIdx < toCopy )
+	    {
+	        if( ( ptr[ dataEndIdx ] == '\0' ) ||
+		    ( ptr[ dataEndIdx ] == '\n' ) )
+	        {
+		    break;
+		}
+		dataEndIdx++;
+	    }
+	    data = malloc( ( dataEndIdx - i + 1 ) * sizeof( char ) );
+	    memcpy( data, &ptr[ i ], dataEndIdx - i );
+	    data[ dataEndIdx - i ] = '\0';
+	}
+
+        /* Allocate or expand the buffer to receive the new data. */
+	if( curlWriteBuffer == NULL )
+	{
+	    curlWriteBufferLength = 0;
+	    curlWriteBuffer = malloc( HEADER_ALLOC_AMOUNT *
+				      2 * sizeof( char* ) );
+	}
+	else
+	{
+	    /* Increase pair count. */
+	    curlWriteBufferLength = curlWriteBufferLength + 1;
+	    /* Expand the buffer by HEADER_ALLOC_AMOUNT items if necessary. */
+	    if( ( curlWriteBufferLength % HEADER_ALLOC_AMOUNT ) == 0 )
+	    {
+		newSize = ( curlWriteBufferLength + 1 ) * HEADER_ALLOC_AMOUNT;
+		curlWriteBuffer = realloc( curlWriteBuffer,
+					   newSize * 2 * sizeof( char* ) );
+		bufIdx = curlWriteBufferLength * 2;
+		for( i = 0; i < HEADER_ALLOC_AMOUNT; i++ )
+		{
+		    ( (char**)curlWriteBuffer )[ bufIdx + i * 2 ] = NULL;
+		}
+	    }
+	}
+	/* Write the key and the value into the buffer. */
+	bufIdx = curlWriteBufferLength * 2;
+	( (char**)curlWriteBuffer )[ bufIdx     ] = header;
+	( (char**)curlWriteBuffer )[ bufIdx + 1 ] = data;
+    }
+
+    return( toCopy );
+}
+
+
+
+/**
+ * Callback function for CURL write where body data is expected. The function
+ * keeps track of a dynamically expanding buffer that may be filled by multiple
+ * callbacks. The function is called from an already mutex-locked CURL function.
+ * @param ptr [in] Source of the data from CURL.
+ * @param size [in] The size of each data block.
+ * @param nmemb [in] Number of data blocks.
+ * @param userdata [in] Unused.
+ * @return Number of bytes copied from \a ptr.
+ */
+static size_t
+CurlWriteData(
     char   *ptr,
     size_t size,
     size_t nmemb,
@@ -120,7 +237,7 @@ CurlWrite(
     {
         curlWriteBuffer = realloc( curlWriteBuffer,
 				   curlWriteBufferLength + toCopy );
-	destBuffer = &curlWriteBuffer[ curlWriteBufferLength ];
+	destBuffer = &( (unsigned char*)curlWriteBuffer )[ curlWriteBufferLength ];
     }
 
     /* Receive data. */
@@ -144,6 +261,9 @@ InitializeS3If(
     void
 	       )
 {
+    /* Initialize libxml. */
+    LIBXML_TEST_VERSION
+
     pthread_mutex_lock( &curl_mutex );
     if( curl == NULL )
     {
@@ -394,7 +514,6 @@ CreateAwsSignature(
     sprintf( &messageToSign[ strlen( messageToSign ) ],
 	     "/%s%s", globalConfig.bucketName, path );
     messageLength = strlen( path );
-
     /* Sign the message and add the Authorization header. */
     signature = HMAC( (const unsigned char*) messageToSign,
 		      strlen( messageToSign ),
@@ -480,11 +599,23 @@ BuildS3Request(
 
 
 
+/**
+ * Submit a sequence of headers containing an S3 request and receive the
+ * output in the local write buffer. The headers list is deallocated.
+ * @param httpVerb [in] HTTP method (GET, HEAD, etc.).
+ * @param headers [in/out] The CURL list of headers with the S3 request.
+ * @param filename [in] Full path name of the file that is accessed.
+ * @param response [out] Pointer to the response data.
+ * @param responseLength [out] Pointer to the response length.
+ * @return 0 on success, or CURL error number on failure.
+ */
 STATIC int
 SubmitS3Request(
     const char        *httpVerb,
     struct curl_slist *headers,
-    const char        *filename
+    const char        *filename,
+    void              **response,
+    int               *responseLength
 	      )
 {
     char *url;
@@ -510,20 +641,27 @@ SubmitS3Request(
     if( strcmp( httpVerb, "HEAD" ) == 0 )
     {
         curl_easy_setopt( curl, CURLOPT_NOBODY, 1 );
-        curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, CurlWrite );
+        curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, CurlWriteHeader );
     }
     else
     {
-        curl_easy_setopt( curl, CURLOPT_WRITEFUNCTION, CurlWrite );
+        curl_easy_setopt( curl, CURLOPT_WRITEFUNCTION, CurlWriteData );
     }
     curl_easy_setopt( curl, CURLOPT_HTTPHEADER, headers );
     curl_easy_setopt( curl, CURLOPT_URL, url );
     status = curl_easy_perform( curl );
+    /* Move the response to a safe place and prepare the CURL write buffer
+       for new data. */
+    *response       = curlWriteBuffer;
+    *responseLength = curlWriteBufferLength;
+    curlWriteBuffer       = NULL;
+    curlWriteBufferLength = 0;
     pthread_mutex_unlock( &curl_mutex );
+
+    curl_slist_free_all( headers );
 
     return( status );
 }
-
 
 
 
@@ -557,7 +695,6 @@ AllocateCurlBuffer(
 
 
 
-
 /**
  * Retrieve information on a specific file in an S3 path.
  * @param filename [in] Full path of the file, relative to the bucket.
@@ -573,6 +710,50 @@ S3FileStatRequest(
     struct curl_slist *headers = NULL;
     struct S3FileInfo *newFileInfo;
     int               status = 0;
+    char              *response;
+    int               length;
+
+    /*
+    struct HttpHeaders statHeaders[ ] =
+    {
+        {
+            .headerName = "Last-Modified: ",
+	    .content    = NULL
+	},
+	{
+	    .headerName = "x-amz-meta-uid: ",
+	    .content    = NULL
+	},
+	{
+	    .headerName = "x-amz-meta-gid: ",
+	    .content    = NULL
+	},
+	{
+	    .headerName = "x-amz-meta-mode: ",
+	    .content    = NULL
+	},
+	{
+	    .headerName = "Content-Length: ",
+	    .content    = NULL
+	},
+	{
+	  .headerName = "Content-Type: ",
+	    .content    = NULL
+	},
+	{
+	    .headerName = "x-amz-meta-mtime: ",
+	    .content    = NULL
+	},
+	{
+	    .headerName = "x-amz-meta-atime: ",
+	    .content    = NULL
+	},
+	{
+	    .headerName = "x-amz-meta-ctime: ",
+	    .content    = NULL
+	}
+    };
+    */
 
     /* Create specific file information request headers. */
     /* (None required.) */
@@ -581,22 +762,29 @@ S3FileStatRequest(
     BuildS3Request( "HEAD", headers, filename );
 
     /* Make request via curl and wait for response. */
-    status = SubmitS3Request( "HEAD", headers, filename );
-    curl_slist_free_all( headers );
+    status = SubmitS3Request( "HEAD", headers, filename, (void**)&response, &length );
+
+    /* Separate headers into headers array. */
+    /*
+    SeparateHeaders( response, length, &statHeaders,
+		     sizeof( statHeaders ) / sizeof( struct HttpHeaders ) );
+    */
 
     /* Translate file attributes to an S3 File Info structure. */
+
+
     newFileInfo = malloc( sizeof (struct S3FileInfo ) );
     assert( newFileInfo != NULL );
     /*
-    newFileInfo->uid         = ;
-    newFileInfo->gid         = ;
-    newFileInfo->permissions = ;
-    newFileInfo->fileType    = ;
+    newFileInfo->uid         = GetHeaderInt( "x-amz-meta-uid" );
+    newFileInfo->gid         = GetHeaderInt( "x-amz-meta-gid" );
+    newFileInfo->permissions = GetHeaderInt( "x-amz-meta-mode" );
+    newFileInfo->fileType    = Content-Type: "x-directory" or regular;
     newFileInfo->exeUid      = ;
     newFileInfo->exeGid      = ;
-    newFileInfo->size        = ;
+    newFileInfo->size        = GetHeaderInt( "Content-Length" );
     newFileInfo->atime       = ;
-    newFileInfo->mtime       = ;
+    newFileInfo->mtime       = GetHeaderTime( "x-amz-meta-mtime" ); bzzt! Last-Modified instead!
     newFileInfo->ctime       = ;
     */
 
@@ -707,3 +895,34 @@ int S3FileClose( const char *path )
 }
 
 
+    /*
+    xmlDocPtr  xmlResponse;
+    xmlNodePtr currentNode;
+
+    xmlResponse = xmlReadMemory( response, length, "s3.xml", NULL, 0 );
+    if( xmlResponse == NULL )
+    {
+        status = -EIO;
+    }
+    else
+    {
+	 currentNode = xmlDocGetRootElement( xmlResponse );
+	 if( currentNode == NULL )
+	 {
+	      status = -EIO;
+	      xmlFreeDoc( xmlResponse );
+	 }
+	 else
+	 {
+	     if( xmlStrcmp( currentNode->name, (const xmlChar*) "story") )
+	     {
+	         status = -EIO;
+		 xmlFreeDoc( xmlResponse );
+	     }
+	     else
+	     {
+	       
+	     }
+	 }
+    }
+    */

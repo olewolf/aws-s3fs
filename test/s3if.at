@@ -52,9 +52,8 @@ AT_CHECK([grep '^7: x-amz-metavariable: something$' stdout], [], [ignore])
 AT_CHECK([grep '^8: Authorization: AWS @<:@a-zA-Z0-9@:>@\+:@<:@a-zA-Z0-9+/=@:>@\{28\}$' stdout], [], [ignore])
 AT_CLEANUP
 
-AT_SETUP([SubmitS3Request])
-AT_CHECK([test-s3if SubmitS3Request ../../testdata/livetest.ini], [], [stdout])
-AT_CHECK([grep '^HTTP/1\.1 200 OK' stdout], [], [ignore])
+AT_SETUP([SubmitS3Request (Live Test)])
+AT_CHECK([test-s3if SubmitS3RequestHead ../../testdata/livetest.ini], [], [stdout])
 AT_CHECK([MD5SUM="`(md5sum ../../../README | sed -n "s^\(@<:@0-9a-f@:>@\{32\}\).*^\1^p")`"; grep "^ETag: \"$MD5SUM\"" stdout], [], [ignore])
 AT_CLEANUP
 

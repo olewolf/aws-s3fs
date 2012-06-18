@@ -60,21 +60,21 @@ extern struct curl_slist *CreateAwsSignature( const char *httpMethod,
 extern struct curl_slist *BuildS3Request( const char *httpMethod,
     struct curl_slist *additionalHeaders, const char *filename );
 extern int SubmitS3Request( const char *httpVerb, struct curl_slist *headers,
-    const char *filename );
-extern unsigned char *curlWriteBuffer;
-extern size_t curlWriteBufferLength;
+    const char *filename, void **out, int *len );
 
 static void test_BuildGenericHeader( const char *parms );
 static void test_GetHeaderStringValue( const char *parms );
 static void test_AddHeaderValueToSignString( const char *parms );
 static void test_CreateAwsSignature( const char *param );
 static void test_BuildS3Request( const char *param );
-static void test_SubmitS3Request( const char *param );
+static void test_SubmitS3RequestHead( const char *param );
+static void test_SubmitS3RequestData( const char *param );
 
 
 const struct dispatchTable dispatchTable[ ] =
 {
-    { "SubmitS3Request", test_SubmitS3Request },
+    { "SubmitS3RequestHead", test_SubmitS3RequestHead },
+    { "SubmitS3RequestData", test_SubmitS3RequestData },
     { "BuildS3Request", test_BuildS3Request },
     { "CreateAwsSignature", test_CreateAwsSignature },
     { "AddHeaderValueToSignString", test_AddHeaderValueToSignString },
@@ -82,6 +82,88 @@ const struct dispatchTable dispatchTable[ ] =
     { "BuildGenericHeader", test_BuildGenericHeader },
     { NULL, NULL }
 };
+
+
+
+static void ReadLiveConfig( const char *param )
+{
+    FILE               *conf;
+    char               buf[ 100 ];
+    int                i;
+    char               *configKey   = NULL;
+    char               *configValue = NULL;
+
+    globalConfig.bucketName = NULL;
+    globalConfig.keyId      = NULL;
+    globalConfig.secretKey  = NULL;
+
+    if( param == NULL )
+    {
+        printf( "Config file with authentication data required for live tests.\n" );
+	exit( 77 );
+    }
+
+    /* Read the test config file. */
+    conf = fopen( param, "r" );
+    if( ! conf )
+    {
+        printf( "Cannot open config file \"%s\".\n", param );
+	exit( 77 );
+    }
+    while( ! feof( conf ) )
+    {
+        if( fgets( buf, sizeof( buf ), conf ) != NULL )
+	{
+	    if( ( buf[ 0 ] != '#' ) && ( ! isspace( buf[ 0 ] ) ) )
+	    {
+		configKey = &buf[ 0 ];
+		configValue = NULL;
+		for( i = 0; ( buf[ i ] != '\0' ) && ( buf[ i ] != '\n' ); i++ )
+		{
+		    if( buf[ i ] == ':' )
+		    {
+		        configValue = &buf[ i + 1 ];
+			break;
+		    }
+		}
+		if( configValue != NULL )
+		{
+		    while( configValue[ i ] != '\0' )
+		    {
+		        if( configValue[ i ] == '\n' )
+			{
+			    configValue[ i ] = '\0';
+			}
+			i++;
+		    }
+		}
+		if( strncmp( configKey, "key", 3 ) == 0 )
+	        {
+		    i = 0;
+		    while( configValue[ i ] != ':' ) i++;
+		    globalConfig.keyId = malloc( i + 1 );
+		    strncpy( globalConfig.keyId, configValue, i );
+		    i++;
+		    globalConfig.secretKey = malloc( strlen( &configValue[ i ] ) + 1 );
+		    strcpy( globalConfig.secretKey, &configValue[ i ] );
+		}
+		else if( strncmp( configKey, "bucket", 6 ) == 0 )
+		{
+		    globalConfig.bucketName = strdup( configValue );
+		}
+		else if( strncmp( configKey, "region", 6 ) == 0 )
+	        {
+		    globalConfig.region = atoi( configValue );
+		}
+		else
+		{
+		    printf( "Config key not recognized.\n" );
+		}
+	    }
+	}
+    }
+}
+
 
 
 static void test_BuildGenericHeader( const char *parms )
@@ -194,92 +276,69 @@ static void test_BuildS3Request( const char *param )
 
 
 
-static void test_SubmitS3Request( const char *param )
+static void test_SubmitS3RequestHead( const char *param )
 {
-    FILE               *conf;
-    char               buf[ 100 ];
-    int                i;
-    char               *configKey   = NULL;
-    char               *configValue = NULL;
-
+    int               i;
     struct curl_slist *headers = NULL;
-    char *curlOut;
+    char              **curlOut = NULL;
+    int               outLength = 0;
 
-    globalConfig.bucketName = NULL;
-    globalConfig.keyId      = NULL;
-    globalConfig.secretKey  = NULL;
-
-    if( param == NULL )
-    {
-        printf( "Config file with authentication data required for live tests.\n" );
-	exit( 77 );
-    }
-
-    /* Read the test config file. */
-    conf = fopen( param, "r" );
-    if( ! conf )
-    {
-        printf( "Cannot open config file \"%s\".\n", param );
-	exit( 77 );
-    }
-    while( ! feof( conf ) )
-    {
-        if( fgets( buf, sizeof( buf ), conf ) != NULL )
-	{
-	    if( ( buf[ 0 ] != '#' ) && ( ! isspace( buf[ 0 ] ) ) )
-	    {
-		configKey = &buf[ 0 ];
-		configValue = NULL;
-		for( i = 0; ( buf[ i ] != '\0' ) && ( buf[ i ] != '\n' ); i++ )
-		{
-		    if( buf[ i ] == ':' )
-		    {
-		        configValue = &buf[ i + 1 ];
-			break;
-		    }
-		}
-		if( configValue != NULL )
-		{
-		    while( configValue[ i ] != '\0' )
-		    {
-		        if( configValue[ i ] == '\n' )
-			{
-			    configValue[ i ] = '\0';
-			}
-			i++;
-		    }
-		}
-		if( strncmp( configKey, "key", 3 ) == 0 )
-	        {
-		    i = 0;
-		    while( configValue[ i ] != ':' ) i++;
-		    globalConfig.keyId = malloc( i + 1 );
-		    strncpy( globalConfig.keyId, configValue, i );
-		    i++;
-		    globalConfig.secretKey = malloc( strlen( &configValue[ i ] ) + 1 );
-		    strcpy( globalConfig.secretKey, &configValue[ i ] );
-		}
-		else if( strncmp( configKey, "bucket", 6 ) == 0 )
-		{
-		    globalConfig.bucketName = strdup( configValue );
-		}
-		else if( strncmp( configKey, "region", 6 ) == 0 )
-	        {
-		    globalConfig.region = atoi( configValue );
-		}
-		else
-		{
-		    printf( "Config key not recognized.\n" );
-		}
-	    }
-	}
-    }
+    ReadLiveConfig( param );
 
     InitializeS3If( );
 
     headers = BuildS3Request( "HEAD", NULL, "/README" );
+    i = SubmitS3Request( "HEAD", headers, "/README", (void**)&curlOut, &outLength );
+    /*
+    headers = BuildS3Request( "GET", NULL, "/" );
+    i = SubmitS3Request( "GET", headers, "/?prefix=musik/&delimiter=/", (void**)&curlOut, &outLength );
+    */
 
-    i = SubmitS3Request( "HEAD", headers, "/README" );
+    free( globalConfig.keyId );
+    free( globalConfig.secretKey );
+    free( globalConfig.bucketName );
+
+    if( i == 0 )
+    /* For request data.
+    {
+        outPrint = malloc( outLength + sizeof (char ) );
+	strncpy( outPrint, curlOut, outLength );
+	free( curlOut );
+        outPrint[ outLength ] = '\0';
+	printf( "%s\n", outPrint );
+	free( outPrint );
+    }
+    */
+    {
+        for( i = 0; i < outLength; i++ )
+	{
+	  printf( "%s: %s\n", curlOut[ i * 2], curlOut[ i * 2 + 1] );
+	}
+    }
+
+    else
+    {
+	printf( "CURL error\n" );
+    }
+
+}
+
+
+
+static void test_SubmitS3RequestData( const char *param )
+{
+    struct curl_slist *headers = NULL;
+    char **curlOut  = NULL;
+    int  outLength = 0;
+    int                i;
+    char *outPrint;
+
+    ReadLiveConfig( param );
+
+    InitializeS3If( );
+
+    headers = BuildS3Request( "GET", NULL, "/" );
+    i = SubmitS3Request( "GET", headers, "/?prefix=musik/&delimiter=/", (void**)&curlOut, &outLength );
 
     free( globalConfig.keyId );
     free( globalConfig.secretKey );
@@ -287,13 +346,12 @@ static void test_SubmitS3Request( const char *param )
 
     if( i == 0 )
     {
-        printf( "Received %d bytes\n", (int)curlWriteBufferLength );
-        curlOut = malloc( curlWriteBufferLength + sizeof (char ) );
-	strncpy( curlOut, (const char*)curlWriteBuffer, curlWriteBufferLength );
-	free( curlWriteBuffer );
-        curlOut[ curlWriteBufferLength ] = '\0';
-	printf( "%s\n", curlOut );
+        outPrint = malloc( outLength + sizeof (char ) );
+	strncpy( outPrint, (char*)curlOut, outLength );
 	free( curlOut );
+        outPrint[ outLength ] = '\0';
+	printf( "%s\n", outPrint );
+	free( outPrint );
     }
     else
     {
