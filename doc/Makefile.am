@@ -11,7 +11,7 @@ targets = doxygen
 endif
 
 doxygen: Doxyfile main.doc
-	if [ "z$(DOXYGEN)" != "z" ]; then \
+	@if [ "z$(DOXYGEN)" != "z" ]; then \
 	    @DOXYGEN@; \
 	fi
 

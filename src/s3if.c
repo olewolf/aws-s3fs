@@ -22,6 +22,7 @@
 
 
 #include <config.h>
+#include <unistd.h>
 #include <ctype.h>
 #include <stdbool.h>
 #include <malloc.h>
@@ -128,8 +129,8 @@ CurlWriteHeader(
 
     /* Extract header key, which is everything up to ':'. That is, unless
        the header key takes up the entire line, in which case it isn't a useful
-       header. ("HTTP/1.1 200 OK" is returned, but it isn't a key:value
-       header.) */
+       header. For example, ("HTTP/1.1 200 OK" is returned, but it isn't a
+       key:value header.) */
     for( i = 0; ( i < toCopy ) && ( ptr[ i ] != ':' ); i++ );
     header = malloc( ( i + 1 ) * sizeof( char ) );
     memcpy( header, ptr, i );
@@ -696,97 +697,197 @@ AllocateCurlBuffer(
 
 
 /**
+ * Convert a string from a header to an integer value.
+ * @param string [in] Header value (string).
+ * @param value [out] Integer value.
+ * @return 0 on success, or \a -errno on failure.
+ */
+STATIC long long
+GetHeaderInt(
+    const char *string,
+    long long  *value
+	     )
+{
+    int success = 0;
+
+    /* Convert the value. Possible errors are EILSEQ or ERANGE. */
+    if( sscanf( string, "%Ld", value ) == EOF )
+    {
+	success = -errno;
+    }
+    return( success );
+}
+
+
+
+/**
+ * Convert a string from a header to a time_t value.
+ * @param string [in] Header value (string).
+ * @param value [out] time_t value.
+ * @return 0 on success, or \a -errno on failure.
+ */
+STATIC time_t
+GetHeaderTime(
+    const char *string,
+    time_t     *value
+	     )
+{
+    static const char *amazonTimeFormat = "%a, %e %b %Y %T %Z";
+    char      *lastChar;
+    struct tm tm;
+    int       success = 0;
+
+    /* Convert the value. Possible errors are EILSEQ or ERANGE. */
+    memset( &tm, 0, sizeof( struct tm ) );
+    lastChar = strptime( string, amazonTimeFormat, &tm );
+    if( ( lastChar == NULL ) || ( *lastChar != '\0' ) )
+    {
+        success = -EILSEQ;
+	*value  = 0l;
+    }
+    else
+    {
+        *value = mktime( &tm );
+    }
+    return success;
+}
+
+
+
+/**
  * Retrieve information on a specific file in an S3 path.
  * @param filename [in] Full path of the file, relative to the bucket.
  * @param fileInfo [out] S3 FileInfo structure.
  * @return 0 on success, or \a -errno on failure.
  */
-int
+STATIC int
 S3FileStatRequest(
     const char        *filename,
     struct S3FileInfo **fileInfo
 		  )
 {
     struct curl_slist *headers = NULL;
-    struct S3FileInfo *newFileInfo;
+    struct S3FileInfo *newFileInfo = NULL;
     int               status = 0;
-    char              *response;
+    char              **response;
     int               length;
-
-    /*
-    struct HttpHeaders statHeaders[ ] =
-    {
-        {
-            .headerName = "Last-Modified: ",
-	    .content    = NULL
-	},
-	{
-	    .headerName = "x-amz-meta-uid: ",
-	    .content    = NULL
-	},
-	{
-	    .headerName = "x-amz-meta-gid: ",
-	    .content    = NULL
-	},
-	{
-	    .headerName = "x-amz-meta-mode: ",
-	    .content    = NULL
-	},
-	{
-	    .headerName = "Content-Length: ",
-	    .content    = NULL
-	},
-	{
-	  .headerName = "Content-Type: ",
-	    .content    = NULL
-	},
-	{
-	    .headerName = "x-amz-meta-mtime: ",
-	    .content    = NULL
-	},
-	{
-	    .headerName = "x-amz-meta-atime: ",
-	    .content    = NULL
-	},
-	{
-	    .headerName = "x-amz-meta-ctime: ",
-	    .content    = NULL
-	}
-    };
-    */
+    int               headerIdx;
+    const char        *headerKey;
+    const char        *headerValue;
+    int               mode;
+    long long int     tempValue;
 
     /* Create specific file information request headers. */
     /* (None required.) */
 
     /* Setup S3 headers. */
     BuildS3Request( "HEAD", headers, filename );
-
     /* Make request via curl and wait for response. */
-    status = SubmitS3Request( "HEAD", headers, filename, (void**)&response, &length );
-
-    /* Separate headers into headers array. */
-    /*
-    SeparateHeaders( response, length, &statHeaders,
-		     sizeof( statHeaders ) / sizeof( struct HttpHeaders ) );
-    */
-
-    /* Translate file attributes to an S3 File Info structure. */
-
-
-    newFileInfo = malloc( sizeof (struct S3FileInfo ) );
-    assert( newFileInfo != NULL );
-    /*
-    newFileInfo->uid         = GetHeaderInt( "x-amz-meta-uid" );
-    newFileInfo->gid         = GetHeaderInt( "x-amz-meta-gid" );
-    newFileInfo->permissions = GetHeaderInt( "x-amz-meta-mode" );
-    newFileInfo->fileType    = Content-Type: "x-directory" or regular;
-    newFileInfo->exeUid      = ;
-    newFileInfo->exeGid      = ;
-    newFileInfo->size        = GetHeaderInt( "Content-Length" );
-    newFileInfo->atime       = ;
-    newFileInfo->mtime       = GetHeaderTime( "x-amz-meta-mtime" ); bzzt! Last-Modified instead!
-    newFileInfo->ctime       = ;
-    */
+    status = SubmitS3Request( "HEAD", headers, filename,
+			      (void**)&response, &length );
+    if( status == 0 )
+    {
+        /* Prepare an S3 File Info structure. */
+        newFileInfo = malloc( sizeof (struct S3FileInfo ) );
+	assert( newFileInfo != NULL );
+	/* Set default values. */
+	memset( newFileInfo, 0, sizeof( struct S3FileInfo ) );
+	newFileInfo->fileType    = 'f';
+	newFileInfo->permissions = 0644;
+	newFileInfo->uid         = getuid( );
+	newFileInfo->gid         = getgid( );
+	/* Translate header values to S3 File Info values. */
+	for( headerIdx = 0; headerIdx < length; headerIdx++ )
+	{
+	    headerKey   = response[ headerIdx * 2     ];
+	    headerValue = response[ headerIdx * 2 + 1 ];
+	    if( strcmp( headerKey, "x-amz-meta-uid" ) == 0 )
+	    {
+	        if( ( status = GetHeaderInt( headerValue, &tempValue ) ) != 0 )
+		{
+		    break;
+		}
+		newFileInfo->uid = tempValue;
+	    }
+	    else if( strcmp( headerKey, "x-amz-meta-gid" ) == 0 )
+	    {
+	        if( ( status = GetHeaderInt( headerValue, &tempValue ) ) != 0 )
+		{
+		    break;
+		}
+		newFileInfo->gid = tempValue;
+	    }
+	    else if( strcmp( headerKey, "x-amz-meta-mode" ) == 0 )
+	    {
+	        if( ( status = GetHeaderInt( headerValue, &tempValue ) ) != 0 )
+		{
+		    break;
+		}
+		mode = tempValue;
+		newFileInfo->permissions = mode & 0777;
+		newFileInfo->exeUid      = ( mode & S_ISUID ) ? true : false;
+		newFileInfo->exeGid      = ( mode & S_ISGID ) ? true : false;
+		newFileInfo->sticky      = ( mode & S_ISVTX ) ? true : false;
+	    }
+	    else if( strcmp( headerKey, "Content-Type" ) == 0 )
+	    {
+		if( strcasecmp( headerValue, "x-directory" ) == 0 )
+		{
+		    newFileInfo->fileType = 'd';
+		}
+	    }
+	    else if( strcmp( headerKey, "Content-Length" ) == 0 )
+	    {
+	        if( ( status = GetHeaderInt( headerValue, &tempValue ) ) != 0 )
+		{
+		    break;
+		}
+		newFileInfo->size = tempValue;
+	    }
+	    else if( strcmp( headerKey, "x-amz-meta-atime" ) == 0 )
+	    {
+  	        if( ( status =
+		      GetHeaderTime( headerValue, &newFileInfo->atime ) ) != 0 )
+		{
+		    break;
+		}
+	    }
+	    else if( strcmp( headerKey, "x-amz-meta-ctime" ) == 0 )
+	    {
+  	        if( ( status =
+		      GetHeaderTime( headerValue, &newFileInfo->ctime ) ) != 0 )
+		{
+		    break;
+		}
+	    }
+	    /* For s3fs compatibility. However, there is already a
+	       "Last-Modified" header, which contains this data. Use that
+	       instead if possible. */
+	    else if( strcmp( headerKey, "x-amz-meta-mtime" ) == 0 )
+	    {
+	        /* Do not override the Last-Modified header. */
+	        if( newFileInfo->mtime != 0l )
+		{
+		      if( ( status =
+			    GetHeaderTime( headerValue, &newFileInfo->mtime ) )
+			  != 0 )
+		      {
+			  break;
+		      }
+		}
+	    }
+	    else if( strcmp( headerKey, "Last-Modified" ) == 0 )
+	    {
+	        /* Last-Modified overrides the x-amz-meta-mtime header. */
+	        if( ( status =
+		      GetHeaderTime( headerValue, &newFileInfo->mtime ) ) != 0 )
+		{
+		    break;
+		}
+	    }
+	}
+	free( response );
+    }
 
     *fileInfo = newFileInfo;
     return( status );

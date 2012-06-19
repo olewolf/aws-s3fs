@@ -16,7 +16,6 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 AM_LIBS = pthread
-AM_CFLAGS = -D_GNU_SOURCE
 
 bin_PROGRAMS = aws-s3fs
 aws_s3fs_SOURCES = aws-s3fs.h sysdirs.h aws-s3fs.c \
@@ -54,8 +53,8 @@ sysdirs.h : sysdirs.h.src
 	for REPLACE in prefix exec_prefix bindir sbindir libexecdir sharedstatedir includedir datarootdir infodir htmldir dvidir pdfdir psdir sysconfdir localstatedir datadir localedir mandir docdir libdir; do \
 	    REPLACESTR="$$""{$$REPLACE}"; \
 	    ACTUALDIR=`eval echo "$$""{$$REPLACE}"`; \
-	    echo "Debug: $$REPLACESTR -> $$ACTUALDIR"; \
 	    sed "s^$$REPLACESTR^$$ACTUALDIR^" >$$TMPFILE2 $$TMPFILE1; \
 	    cp $$TMPFILE2 $$TMPFILE1; \
 	done; \
 	cp $$TMPFILE2 $@
+

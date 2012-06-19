@@ -32,4 +32,36 @@ uninstall-hook:
 	rmdir --ignore-fail-on-non-empty $(docdir)
 
 doxygen:
-	cd doc; make doxygen
+	@if [ "$(HAVE_DOXYGEN)" = "true" -a "$(HAVE_GRAPHVIZ)" = "true" ]; then \
+	    cd doc; make doxygen; \
+	else \
+	    echo "You need Doxygen and GraphViz in order to generate source code documentation."; \
+	fi
+
+splint:
+	@if [ "$(HAVE_SPLINT)" = "true" ]; then \
+	    @SPLINT@ src/*.h src/*.c; \
+	else \
+	    echo "You need splint in order to perform a link check."; \
+	fi
+
+rats:
+	@if [ "$(HAVE_RATS)" = "true" ]; then \
+	    @RATS@ src/*.h src/*.c; \
+	else \
+	    echo "You need rats in order to perform a rats check."; \
+	fi
+
+flawfinder:
+	@if [ "$(HAVE_FLAWFINDER)" = "true" ]; then \
+	    @FLAWFINDER@ src/*.h src/*.c; \
+	else \
+	    echo "You need flawfinder in order to perform a flawfinder check."; \
+	fi
+
+pscan:
+	@if [ "$(HAVE_PSCAN)" = "true" ]; then \
+	    @PSCAN@ -v src/*.h src/*.c; \
+	else \
+	    echo "You need pscan in order to perform a pscan check."; \
+	fi

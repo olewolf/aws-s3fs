@@ -46,9 +46,18 @@ AC_PROG_GREP
 AC_CHECK_PROG(HAVE_DOXYGEN, doxygen, true, false)
 AC_CHECK_PROG(HAVE_GRAPHVIZ, dot, true, false)
 AC_CHECK_PROG(HAVE_OPENSSL, openssl, true, false)
+AC_CHECK_PROG(HAVE_SPLINT, splint, true, false)
+AC_CHECK_PROG(HAVE_FLAWFINDER, flawfinder, true, false)
+AC_CHECK_PROG(HAVE_RATS, rats, true, false)
+AC_CHECK_PROG(HAVE_PSCAN, pscan, true, false)
 AC_PATH_PROGS(DOXYGEN, doxygen)
+AC_PATH_PROGS(SPLINT, splint)
+AC_PATH_PROGS(FLAWFINDER, flawfinder)
+AC_PATH_PROGS(RATS, rats)
+AC_PATH_PROGS(PSCAN, pscan)
 
 # Check for typedefs, structures, and compiler characteristics.
+AC_DEFINE([_GNU_SOURCE], [], [Use GNU extensions])
 AC_HEADER_STDC
 AC_C_CONST
 AC_C_INLINE

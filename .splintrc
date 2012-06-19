@@ -1,2 +1,4 @@
 -I.
 -I/usr/share/splint/lib
+-I/usr/include/libxml2
++posix-lib
