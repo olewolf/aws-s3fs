@@ -52,20 +52,6 @@
 #endif
 
 
-/* Amazon host names for various regions, ordered according to the enumeration
-   "bucketRegions". */
-static const char *amazonHost[ ] =
-{
-    "s3-us-east-1",      /* US_STANDARD */
-    "s3-us-west-2",      /* OREGON */
-    "s3-us-west-1",      /* NORTHERN_CALIFORNIA */
-    "s3-eu-west-1",      /* IRELAND */
-    "s3-ap-southeast-1", /* SINGAPORE */
-    "s3-ap-northeast-1", /* TOKYO */
-    "s3-sa-east-1"       /* SAO_PAULO */
-};
-
-
 /*
 static struct
 {
@@ -278,6 +264,36 @@ CurlWriteData(
 
 
 /**
+ * Delete all entries in a headers array, as well as the array itself, which
+ * were filled by the CURL callback function.
+ * @param table [in/out] Pointer to the headers array.
+ * @param nEntries [in] Number of headers in the array.
+ * @return Nothing.
+ */
+STATIC void
+DeleteHeaderPairsTable(
+    char** table,
+    int    nEntries
+    		       )
+{
+    int i;
+
+    if( table != NULL )
+    {
+        for( i = 0; i < nEntries * 2; i++ )
+	{
+	    if( table[ i ] != NULL )
+	    {
+		free( table[ i ] );
+	    }
+	}
+	free( table );
+    }
+}
+
+
+
+/**
  * Deallocate the write-back buffers if they are non-empty and prepare the
  * buffers to be filled with either headers or body data.
  * @param prepareForHeaders [in] If \a true, indicate that the buffer will
@@ -290,24 +306,14 @@ PrepareCurlBuffers(
     bool prepareForHeaders
 		)
 {
-    int i;
-
     if( curlWriteBufferLength != 0 )
     {
         /* If the write buffer contains pointers to headers, then the headers
 	   must each be deleted before the write buffer is deleted. */
         if( curlWriteBufferIsHeaders )
 	{
-	    for( i = 0; i < curlWriteBufferLength * 2; i++ )
-	    {
-	        if( ( (char**)curlWriteBuffer )[ i ] != NULL )
-		{
-		    free( ( (char**)curlWriteBuffer )[ i ] );
-		}
-	    }
+	    DeleteHeaderPairsTable( curlWriteBuffer, curlWriteBufferLength );
 	}
-	/* Delete the write buffer. */
-	free( curlWriteBuffer );
     }
 
     /* Indicate the type of the next fill. */
@@ -370,6 +376,59 @@ static void DeleteS3FileInfoStructure(
 
 
 /**
+ * Return a string with the S3 host name corresponding to the region where the
+ * specified bucket is located.
+ * @param region [in] The region of the bucket.
+ * @param bucket [in] Name of the bucket, which is used to create a virtual
+ *        host name.
+ * @return An allocated buffer with the S3 host name.
+ */
+STATIC char*
+GetS3HostNameByRegion(
+    enum bucketRegions region,
+    const char         *bucket
+		      )
+{
+    /* Amazon host names for various regions, ordered according to the
+       enumeration "bucketRegions". */
+    static const char *amazonHost[ ] =
+    {
+        "s3",                /* US_STANDARD */
+	"s3-us-west-2",      /* OREGON */
+	"s3-us-west-1",      /* NORTHERN_CALIFORNIA */
+	"s3-eu-west-1",      /* IRELAND */
+	"s3-ap-southeast-1", /* SINGAPORE */
+	"s3-ap-northeast-1", /* TOKYO */
+	"s3-sa-east-1"       /* SAO_PAULO */
+    };
+    char *hostname;
+    int  toAlloc;
+
+    assert( ( 0 <= region ) && ( region <= SAO_PAULO ) );
+
+    toAlloc = strlen( "s3-ap-southeast-1" ) +
+              strlen( "..amazonaws.com" ) +
+              strlen( bucket ) +
+              sizeof( char );
+    hostname = malloc( toAlloc );
+    assert( hostname != NULL );
+
+    if( globalConfig.region != US_STANDARD )
+    {
+        sprintf( hostname, "%s.%s.amazonaws.com",
+		 bucket, amazonHost[ region ] );
+    }
+    else
+    {
+        /* US Standard does not have a virtual host name. */
+        sprintf( hostname, "s3.amazonaws.com" );
+    }
+    return( hostname );
+}
+
+
+
+/**
  * Create a generic S3 request header which is used in all requests.
  * @param httpMethod [in] HTTP verb (GET, HEAD, etc.) for the request.
  * @return Header list.
@@ -380,7 +439,8 @@ BuildGenericHeader(
 		    )
 {
     struct curl_slist *headers       = NULL;
-    char              headbuf[ 4096 ];
+    char              headbuf[ 512 ];
+    char              *hostName;
 
     time_t            now;
     struct tm         tnow;
@@ -389,12 +449,14 @@ BuildGenericHeader(
     /* Make Host: address a virtual host. */
     if( globalConfig.region != US_STANDARD )
     {
-        sprintf( headbuf, "Host: %s.%s.amazonaws.com",
-		 globalConfig.bucketName, amazonHost[ globalConfig.region ] );
+        hostName = GetS3HostNameByRegion( globalConfig.region,
+					  globalConfig.bucketName );
+        sprintf( headbuf, "Host: %s", hostName );
+	free( hostName );
     }
     else
     {
-        /* US Standard does not have an augmented host name. */
+        /* US Standard does not have a virtual host name. */
         sprintf( headbuf, "Host: s3.amazonaws.com" );
     }
     headers = curl_slist_append( headers, headbuf );
@@ -684,6 +746,145 @@ BuildS3Request(
 
 
 /**
+ * Convert an HTTP response code to a meaningful filesystem error number for
+ * FUSE.
+ * @param httpStatus [in] HTTP response code.
+ * @return \a -errno for the HTTP response code.
+ */
+STATIC int
+ConverHttpStatusToErrno(
+    int httpStatus
+			)
+{
+    int status;
+
+    if( httpStatus == 200 )
+    {
+	status = 0;
+    }
+    /* Redirection: consider it a "not found" error. */
+    else if( ( 300 <= httpStatus ) || ( httpStatus <= 399 ) )
+    {
+	status = -ENOENT;
+    }
+    /* File not found. */
+    else if( ( 400 < httpStatus ) && ( httpStatus <= 499 ) )
+    {
+        if( ( httpStatus == 404 ) || ( httpStatus == 410 ) )
+	{
+	    status = -ENOENT;
+	}
+	/* Bad request: bad message. */
+	else if( ( httpStatus == 401 ) || ( httpStatus == 403 ) ||
+		 ( httpStatus == 402 ) ||
+		 ( httpStatus == 407 ) || ( httpStatus == 408 ) )
+	{
+	    status = -EACCES;
+	}
+	else if( ( httpStatus == 400 ) || ( httpStatus == 405 ) ||
+		 ( httpStatus == 406 ) )
+	{
+	    status = -EBADMSG;
+	}
+	else if( httpStatus == 409 )
+	{
+	    status = -EINPROGRESS;
+	}
+	else
+	{
+	    status = -EIO;
+	}
+    }
+    else if( ( 500 <= httpStatus ) && ( httpStatus <= 599 ) )
+    {
+        if( httpStatus == 500 )
+	{
+	    status = -ENETRESET;
+	}
+        else if( ( httpStatus == 501 ) || ( httpStatus == 505 ) )
+	{
+	    status = -ENOTSUP;
+	}
+	else if( ( httpStatus == 502 ) || ( httpStatus == 503 ) )
+	{
+	    status = -ENETUNREACH;
+	}
+	else if ( httpStatus == 504 )
+	{
+	    status = -ETIMEDOUT;
+	}
+	else
+	{
+	    status = -EIO;
+	}
+    }
+    else
+    {
+	status = -EIO;
+    }
+
+    return( status );
+}
+
+
+
+/**
+ * Extract the HTTP status code from the first string in the response header,
+ * and convert it to a meaningful errno.
+ * @param headers [in] Array of {key,value} headers.
+ * @return 0 if no error was encountered, or \a -errno if there was a HTTP
+ *         error code.
+ */
+STATIC int
+GetHttpStatus(
+    const char **headers
+	      )
+{
+    int        httpStatus = 404;
+    const char *httpReply;
+    char       ch;
+    int        i;
+    int        j;
+
+    char       statusBuf[ 10 ];
+    int        toCopy;
+
+    /* Assume that the first entry in the buffer contains the HTTP status
+       reply. */
+    httpReply = headers[ 0 ];
+    if( httpReply != NULL )
+    {
+        /* Find the HTTP status code. */
+        i = strlen( "HTTP/1.1 " );
+	if( strncmp( httpReply, "HTTP/1.1 ", i ) == 0 )
+	{
+	    j = i;
+	    while( ( ( ch = httpReply[ j ] ) != '\0' ) && ( ! isdigit( ch ) ) )
+	    {
+		j++;
+	    }
+	    i = j;
+	    while( isdigit( httpReply[ j ] ) )
+	    {
+		j++;
+	    }
+	    toCopy = j - i;
+	    if( sizeof( statusBuf ) - 1 < toCopy )
+	    {
+		toCopy = sizeof( statusBuf );
+	    }
+	    strncpy( statusBuf, &httpReply[ i ], toCopy );
+	    statusBuf[ toCopy ] = '\n';
+	    sscanf( statusBuf, "%d", &httpStatus );
+	}
+    }
+
+    return( httpStatus );
+}
+
+
+
+/**
  * Submit a sequence of headers containing an S3 request and receive the
  * output in the local write buffer. The headers list is deallocated.
  * @param httpVerb [in] HTTP method (GET, HEAD, etc.).
@@ -700,16 +901,21 @@ SubmitS3Request(
     const char        *filename,
     void              **response,
     int               *responseLength
-	      )
+		)
 {
-    char *url;
-    int  urlLength;
-    int  status = 0;
+    char       *url;
+    char       *hostName;
+    int        urlLength;
+    int        status = 0;
+    int        httpStatus;
 
+    /* Determine the virtual host name. */
+    hostName = GetS3HostNameByRegion( globalConfig.region,
+				      globalConfig.bucketName );
     /* Determine the length of the URL. */
-    urlLength = strlen( "https://..amazonaws.com" )
-                + strlen( globalConfig.bucketName )
-                + strlen( amazonHost[ globalConfig.region ] )
+    urlLength = strlen( hostName )
+                + strlen( "https://" )
+                + strlen( globalConfig.bucketName ) + sizeof( char )
                 + strlen( filename )
                 + sizeof( char )
                 + sizeof( char );
@@ -718,20 +924,22 @@ SubmitS3Request(
     url = malloc( urlLength );
     if( globalConfig.region != US_STANDARD )
     {
-        sprintf( url, "https://%s.%s.amazonaws.com%s%s",
-		 globalConfig.bucketName, amazonHost[ globalConfig.region ],
-		 filename[ 0 ] == '/' ? "" : "/", filename );
+        sprintf( url, "https://%s%s%s", hostName,
+		 filename[ 0 ] == '/' ? "" : "/",
+		 filename );
     }
     else
     {
-        /* US Standard does not have a separate host name. */
-        sprintf( url, "https://s3.amazonaws.com/%s%s%s",
+        sprintf( url, "https://%s/%s%s%s", hostName,
 		 globalConfig.bucketName,
-		 filename[ 0 ] == '/' ? "" : "/", filename );
+		 filename[ 0 ] == '/' ? "" : "/",
+		 filename );
     }
+    free( hostName );
 
     /* Submit request via CURL and wait for the response. */
     pthread_mutex_lock( &curl_mutex );
+    /* Set different callback functions for HEAD and GET requests. */
     if( strcmp( httpVerb, "HEAD" ) == 0 )
     {
         PrepareCurlBuffers( true );
@@ -749,15 +957,35 @@ SubmitS3Request(
       curl_easy_setopt( curl, CURLOPT_VERBOSE, 1 );
     */
     status = curl_easy_perform( curl );
-    /* Move the response to a safe place and prepare the CURL write buffer
-       for new data. */
-    *response       = curlWriteBuffer;
-    *responseLength = curlWriteBufferLength;
-    curlWriteBuffer       = NULL;
-    curlWriteBufferLength = 0;
+    if( status == 0 )
+    {
+        /* Move the response to a safe place and prepare the CURL write buffer
+	for new data. */
+        *response       = curlWriteBuffer;
+	*responseLength = curlWriteBufferLength;
+	curlWriteBuffer       = NULL;
+	curlWriteBufferLength = 0;
+    }
     pthread_mutex_unlock( &curl_mutex );
-
     curl_slist_free_all( headers );
+
+    /* Report errors back if necessary. */
+    if( status != 0 )
+    {
+        status = -EIO;
+	return( status );
+    }
+
+    /* Translate the HTTP request status, if any, to an errno value. */
+    httpStatus = GetHttpStatus( *response );
+    if( httpStatus == 0 )
+    {
+        status = 0;
+    }
+    else
+    {
+	status = ConverHttpStatusToErrno( httpStatus );
+    }
 
     return( status );
 }
@@ -932,18 +1160,11 @@ GetHeaderTime(
 
     /* Decode timezone. */
     /* Don't bother: Amazon AWS apparently always returns GMT (i.e., UTC)
-       regardless of the geographic location of the bucket.
-    DECODE_TIME_FIND_ALPHA( string, idx, ch );
-    strBegin = idx;
-    while( ( ( ch = tolower( string[ idx ] ) ) != '\0' ) && isalpha( ch ) )
-    {
-        idx++;
-    }
-    printf( "Timezone: %s (%d chars)\n", &string[strBegin],idx-strBegin);
-    */
+       regardless of the geographic location of the bucket. */
     tm.tm_gmtoff = 0;
     tm.tm_isdst = -1;
 
+    /* Adjust the reported time for the local time zone. */
     *value = mktime( &tm ) + localTimezone;
 
     return success;
@@ -966,8 +1187,8 @@ S3GetFileStat(
     struct curl_slist *headers = NULL;
     struct S3FileInfo *newFileInfo = NULL;
     int               status = 0;
-    char              **response;
-    int               length;
+    char              **response = NULL;
+    int               length     = 0;
     int               headerIdx;
     const char        *headerKey;
     const char        *headerValue;
@@ -983,7 +1204,6 @@ S3GetFileStat(
     status = SubmitS3Request( "HEAD", headers, filename,
 			      (void**)&response, &length );
 
-    if( status == 0 )
     {
         /* Prepare an S3 File Info structure. */
         newFileInfo = malloc( sizeof (struct S3FileInfo ) );

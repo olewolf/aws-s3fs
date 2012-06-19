@@ -1,3 +1,10 @@
+2012-06-19:
+	MS4: S3 raw function reads S3 file info correctly.
+	Refactored the s3if.c http response and s3if.c host code.
+
+2012-06-18:
+	S3GetFileStat begun; first step towards first-level file system.
+
 2012-06-17:
 	MS3: First contact with Amazon S3 drive objects.
 
