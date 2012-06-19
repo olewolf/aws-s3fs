@@ -22,6 +22,8 @@ AC_CONFIG_AUX_DIR([config])
 AC_CONFIG_MACRO_DIR([m4])
 AM_INIT_AUTOMAKE
 
+DEBUG=1
+
 # Prepare autotest suite.
 AC_CONFIG_TESTDIR([test])
 AC_CONFIG_FILES([test/atlocal])

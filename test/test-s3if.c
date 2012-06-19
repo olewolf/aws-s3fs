@@ -61,8 +61,7 @@ extern struct curl_slist *BuildS3Request( const char *httpMethod,
     struct curl_slist *additionalHeaders, const char *filename );
 extern int SubmitS3Request( const char *httpVerb, struct curl_slist *headers,
     const char *filename, void **out, int *len );
-extern int S3FileStatRequest( const char *filename,
-    struct S3FileInfo **fileInfo );
+extern int S3GetFileStat( const char *filename, struct S3FileInfo **fileInfo );
 
 static void test_BuildGenericHeader( const char *parms );
 static void test_GetHeaderStringValue( const char *parms );
@@ -71,12 +70,12 @@ static void test_CreateAwsSignature( const char *param );
 static void test_BuildS3Request( const char *param );
 static void test_SubmitS3RequestHead( const char *param );
 static void test_SubmitS3RequestData( const char *param );
-static void test_S3FileStatRequest( const char *param );
+static void test_S3GetFileStat( const char *param );
 
 
 const struct dispatchTable dispatchTable[ ] =
 {
-    { "S3FileStatRequest", test_S3FileStatRequest },
+    { "S3GetFileStat", test_S3GetFileStat },
     { "SubmitS3RequestHead", test_SubmitS3RequestHead },
     { "SubmitS3RequestData", test_SubmitS3RequestData },
     { "BuildS3Request", test_BuildS3Request },
@@ -303,16 +302,6 @@ static void test_SubmitS3RequestHead( const char *param )
     free( globalConfig.bucketName );
 
     if( i == 0 )
-    /* For request data.
-    {
-        outPrint = malloc( outLength + sizeof (char ) );
-	strncpy( outPrint, curlOut, outLength );
-	free( curlOut );
-        outPrint[ outLength ] = '\0';
-	printf( "%s\n", outPrint );
-	free( outPrint );
-    }
-    */
     {
         for( i = 0; i < outLength; i++ )
 	{
@@ -338,7 +327,6 @@ static void test_SubmitS3RequestData( const char *param )
     char *outPrint;
 
     ReadLiveConfig( param );
-
     InitializeS3If( );
 
     headers = BuildS3Request( "GET", NULL, "/" );
@@ -366,19 +354,24 @@ static void test_SubmitS3RequestData( const char *param )
 
 
 
-static void test_S3FileStatRequest( const char *param )
+static void test_S3GetFileStat( const char *param )
 {
     struct S3FileInfo *fi;
     int               status;
 
     ReadLiveConfig( param );
+
     InitializeS3If( );
-    status = S3FileStatRequest( "/README", &fi );
+    status = S3GetFileStat( "/README", &fi );
     if( status != 0) exit( 1 );
     if( fi == NULL ) exit( 1 );
-    printf( "ft=%c s=%d p=%3o uid=%d gid=%d a=%s m=%s c=%s sp=%d\n",
+    printf( "t=%c s=%d p=%3o uid=%d gid=%d\na=%s",
 	    fi->fileType, (int)fi->size, fi->permissions, fi->uid, fi->gid,
-	    ctime(&fi->atime), ctime(&fi->mtime), ctime(&fi->ctime),
+	    ctime(&fi->atime) );
+    printf( "m=%s", ctime(&fi->mtime) );
+    printf( "c=%ssp=%d\n", ctime(&fi->ctime),
 	    ( fi->exeUid ? S_ISUID : 0 ) | ( fi->exeGid ? S_ISGID : 0 ) |
 	    ( fi->exeUid ? S_ISVTX : 0 ) );
+
+    /*    free( fi );*/
 }

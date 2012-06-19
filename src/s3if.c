@@ -84,10 +84,13 @@ static CURL *curl = NULL;
    indicate either the number of body data bytes, or the number of headers. */
 static void   *curlWriteBuffer;
 static size_t curlWriteBufferLength;
+static bool   curlWriteBufferIsHeaders;
 /*
 static unsigned char *curlReadBuffer;
 static size_t        curlReadBufferLength;
 */
+
+static long int localTimezone;
 
 
 struct HttpHeaders
@@ -123,21 +126,37 @@ CurlWriteHeader(
     size_t newSize;
     char   *header;
     char   *data = NULL;
+    bool   hasData = true;
 
     /* Allocate room for 10 headers at a time. */
     static const int HEADER_ALLOC_AMOUNT = 10;
 
-    /* Extract header key, which is everything up to ':'. That is, unless
-       the header key takes up the entire line, in which case it isn't a useful
-       header. For example, ("HTTP/1.1 200 OK" is returned, but it isn't a
-       key:value header.) */
-    for( i = 0; ( i < toCopy ) && ( ptr[ i ] != ':' ); i++ );
+    /* Skip all non-alphanumeric characters. */
+    while( ! isalnum( *ptr ) )
+    {
+        ptr++;
+    }
+
+    /* Extract header key, which is everything up to ':', unless the header
+       key takes up the entire line. For example, "HTTP/1.1 200 OK" is
+       returned without value. */
+    for( i = 0;
+	 ( i < toCopy ) && ( ptr[ i ] != ':' ) &&
+	     ( ptr[ i ] != '\n' ) && ( ptr[ i ] != '\r' );
+	 i++ );
     header = malloc( ( i + 1 ) * sizeof( char ) );
     memcpy( header, ptr, i );
     header[ i ] = '\0';
+    /* A newline indicates the end of the header, without data. If a
+       newline is encountered, rewind the pointer and indicate that only
+       the header key is available in this header. */
+    if( ( ptr[ i ] == '\n' ) || ( ptr[ i ] == '\r' ) )
+    {
+        hasData = false;
+    }
 
-    /* Extract the value for the header key. */
-    if( i != toCopy )
+    /* Extract the value for this header key provided there is one. */
+    if( ( i != toCopy ) && hasData )
     {
         /* Extract data. Skip ':[[:space:]]*' */
         while( i < toCopy )
@@ -169,16 +188,20 @@ CurlWriteHeader(
 	    memcpy( data, &ptr[ i ], dataEndIdx - i );
 	    data[ dataEndIdx - i ] = '\0';
 	}
+    }
 
+    /* Ignore the header and data if it's an empty line. */
+    if( ( strlen( header ) != 0 ) || ( data != NULL ) )
+    {
         /* Allocate or expand the buffer to receive the new data. */
-	if( curlWriteBuffer == NULL )
+        if( curlWriteBuffer == NULL )
 	{
 	    curlWriteBufferLength = 0;
 	    curlWriteBuffer = malloc( HEADER_ALLOC_AMOUNT *
 				      2 * sizeof( char* ) );
 	}
 	else
-	{
+        {
 	    /* Increase pair count. */
 	    curlWriteBufferLength = curlWriteBufferLength + 1;
 	    /* Expand the buffer by HEADER_ALLOC_AMOUNT items if necessary. */
@@ -194,6 +217,7 @@ CurlWriteHeader(
 		}
 	    }
 	}
+
 	/* Write the key and the value into the buffer. */
 	bufIdx = curlWriteBufferLength * 2;
 	( (char**)curlWriteBuffer )[ bufIdx     ] = header;
@@ -254,6 +278,46 @@ CurlWriteData(
 
 
 /**
+ * Deallocate the write-back buffers if they are non-empty and prepare the
+ * buffers to be filled with either headers or body data.
+ * @param prepareForHeaders [in] If \a true, indicate that the buffer will
+ *        be filled with headers; if \a false, the buffer will be filled with
+ *        body data.
+ * @return Nothing.
+ */
+STATIC void
+PrepareCurlBuffers(
+    bool prepareForHeaders
+		)
+{
+    int i;
+
+    if( curlWriteBufferLength != 0 )
+    {
+        /* If the write buffer contains pointers to headers, then the headers
+	   must each be deleted before the write buffer is deleted. */
+        if( curlWriteBufferIsHeaders )
+	{
+	    for( i = 0; i < curlWriteBufferLength * 2; i++ )
+	    {
+	        if( ( (char**)curlWriteBuffer )[ i ] != NULL )
+		{
+		    free( ( (char**)curlWriteBuffer )[ i ] );
+		}
+	    }
+	}
+	/* Delete the write buffer. */
+	free( curlWriteBuffer );
+    }
+
+    /* Indicate the type of the next fill. */
+    curlWriteBufferIsHeaders = prepareForHeaders;
+    curlWriteBuffer          = NULL;
+}
+
+
+
+/**
  * Initialize the S3 Interface module.
  * @return Nothing.
  */
@@ -262,6 +326,9 @@ InitializeS3If(
     void
 	       )
 {
+    time_t    tnow;
+    struct tm tm;
+
     /* Initialize libxml. */
     LIBXML_TEST_VERSION
 
@@ -273,6 +340,13 @@ InitializeS3If(
 	/*	curlReadBuffer  = NULL;*/
     }
     pthread_mutex_unlock( &curl_mutex );
+
+    /* Determine local timezone. */
+    tnow = time( NULL );
+    localtime_r( &tnow, &tm );
+    localTimezone = tm.tm_gmtoff;
+
+    curlWriteBufferLength = 0;
 }
 
 
@@ -309,19 +383,28 @@ BuildGenericHeader(
     char              headbuf[ 4096 ];
 
     time_t            now;
-    const struct tm   *tnow;
+    struct tm         tnow;
     char              *locale;
 
     /* Make Host: address a virtual host. */
-    sprintf( headbuf, "Host: %s.%s.amazonaws.com",
-	     globalConfig.bucketName, amazonHost[ globalConfig.region ] );
+    if( globalConfig.region != US_STANDARD )
+    {
+        sprintf( headbuf, "Host: %s.%s.amazonaws.com",
+		 globalConfig.bucketName, amazonHost[ globalConfig.region ] );
+    }
+    else
+    {
+        /* US Standard does not have an augmented host name. */
+        sprintf( headbuf, "Host: s3.amazonaws.com" );
+    }
     headers = curl_slist_append( headers, headbuf );
 
     /* Generate time string. */
     locale = setlocale( LC_TIME, "en_US.UTF-8" );
     now    = time( NULL );
-    tnow   = localtime( &now );
-    strftime( headbuf, sizeof( headbuf ), "Date: %a, %d %b %Y %T %z", tnow );
+    /* localtime is not thread-safe; use localtime_r. */
+    localtime_r( &now, &tnow );
+    strftime( headbuf, sizeof( headbuf ), "Date: %a, %d %b %Y %T %z", &tnow );
     setlocale( LC_TIME, locale );
     headers = curl_slist_append( headers, headbuf );
 
@@ -633,23 +716,38 @@ SubmitS3Request(
     /* Build the full URL, adding a '/' to the host if the filename does not
        include it as its leading character. */
     url = malloc( urlLength );
-    sprintf( url, "https://%s.%s.amazonaws.com%s%s",
-	     globalConfig.bucketName, amazonHost[ globalConfig.region ],
-	     filename[ 0 ] == '/' ? "" : "/", filename );
+    if( globalConfig.region != US_STANDARD )
+    {
+        sprintf( url, "https://%s.%s.amazonaws.com%s%s",
+		 globalConfig.bucketName, amazonHost[ globalConfig.region ],
+		 filename[ 0 ] == '/' ? "" : "/", filename );
+    }
+    else
+    {
+        /* US Standard does not have a separate host name. */
+        sprintf( url, "https://s3.amazonaws.com/%s%s%s",
+		 globalConfig.bucketName,
+		 filename[ 0 ] == '/' ? "" : "/", filename );
+    }
 
     /* Submit request via CURL and wait for the response. */
     pthread_mutex_lock( &curl_mutex );
     if( strcmp( httpVerb, "HEAD" ) == 0 )
     {
+        PrepareCurlBuffers( true );
         curl_easy_setopt( curl, CURLOPT_NOBODY, 1 );
         curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, CurlWriteHeader );
     }
     else
     {
+        PrepareCurlBuffers( false );
         curl_easy_setopt( curl, CURLOPT_WRITEFUNCTION, CurlWriteData );
     }
     curl_easy_setopt( curl, CURLOPT_HTTPHEADER, headers );
     curl_easy_setopt( curl, CURLOPT_URL, url );
+    /*
+      curl_easy_setopt( curl, CURLOPT_VERBOSE, 1 );
+    */
     status = curl_easy_perform( curl );
     /* Move the response to a safe place and prepare the CURL write buffer
        for new data. */
@@ -732,23 +830,122 @@ GetHeaderTime(
     time_t     *value
 	     )
 {
-    static const char *amazonTimeFormat = "%a, %e %b %Y %T %Z";
-    char      *lastChar;
     struct tm tm;
     int       success = 0;
 
-    /* Convert the value. Possible errors are EILSEQ or ERANGE. */
+    int       idx = 0;
+    int       strBegin;
+    int       i;
+    char      ch;
+    char      chNext;
+    int       val;
+    const char *months[ ] = { "jan", "feb", "mar", "apr", "may", "jun",
+			      "jul", "aug", "sep", "oct", "nov", "dec" };
+
     memset( &tm, 0, sizeof( struct tm ) );
-    lastChar = strptime( string, amazonTimeFormat, &tm );
-    if( ( lastChar == NULL ) || ( *lastChar != '\0' ) )
+    *value  = 0l;
+
+    /* Convert the value. Possible errors are EILSEQ or ERANGE. */
+    /* Date sample: Tue, 19 Jun 2012 10:04:06 GMT */
+
+#define DECODE_TIME_FIND_ALPHA( src, index, character ) \
+    while( ( ( (character) = (src)[index] ) != '\0' )   \
+	   && ( ! isalpha( character ) ) )              \
+        (index)++;                                      \
+    if( character == '\0' ) return -EILSEQ
+
+#define DECODE_TIME_FIND_DIGIT( src, index, character ) \
+    while( ( ( (character) = (src)[index] ) != '\0' )   \
+	   && ( ! isdigit( character ) ) )              \
+        (index)++;                                      \
+    if( character == '\0' ) return -EILSEQ
+
+#define DECODE_TIME_GET_DOUBLEDIGIT( string, idx, value, max )	\
+    ch = ((string)[ idx ]);                             \
+    chNext = ((string)[ (idx) + 1 ]);                   \
+    if( ( ! isdigit( ch ) ) || ( ! isdigit( chNext ) ) ) return( -EILSEQ ); \
+    (value) = ch - '0';					\
+    (value) = (value) * 10 + chNext - '0';		\
+    if( (value) >= (max) ) return( -ERANGE )
+
+    /* Decode day of month. */
+    DECODE_TIME_FIND_DIGIT( string, idx, ch );
+    /* ch is 1 through 9 */
+    val = ch - '0';
+    chNext = string[ idx + 1 ];
+    if( isdigit( chNext ) )
     {
-        success = -EILSEQ;
-	*value  = 0l;
+        val = val * 10 + chNext - '0';
     }
-    else
+    tm.tm_mday = val;
+
+    /* Decode month. */
+    DECODE_TIME_FIND_ALPHA( string, idx, ch );
+    strBegin = idx;
+    while( ( ( ch = tolower( string[ idx ] ) ) != '\0' ) && isalpha( ch ) )
     {
-        *value = mktime( &tm );
+        idx++;
     }
+    if( idx - strBegin < 3 )
+    {
+        return( -EILSEQ );
+    }
+    for( val = 0; val < 12; val++ )
+    {
+        if( strncasecmp( months[ val ], &string[ strBegin ], 3 ) == 0 ) break;
+    }
+    if( val >= 12 )
+    {
+        return( -ERANGE );
+    }
+    tm.tm_mon = val;
+
+    /* Decode year. */
+    DECODE_TIME_FIND_DIGIT( string, idx, ch );
+    val = ch - '0';
+    for( i = 0; i < 3; i++ )
+    {
+        if( ! isdigit( ch = string[ ++idx ] ) )
+	{
+	    return( -EILSEQ );
+	}
+	val = val * 10 + ch - '0';
+    }
+    if( val < 1900 )
+    {
+        return( -ERANGE );
+    }
+    tm.tm_year = val - 1900;
+    idx++;
+
+    /* Decode time. */
+    DECODE_TIME_FIND_DIGIT( string, idx, ch );
+    DECODE_TIME_GET_DOUBLEDIGIT( string, idx, val, 24 );
+    tm.tm_hour = val;
+    idx += 3;
+    DECODE_TIME_GET_DOUBLEDIGIT( string, idx, val, 60 );
+    tm.tm_min  = val;
+    idx += 3;
+    DECODE_TIME_GET_DOUBLEDIGIT( string, idx, val, 60 );
+    tm.tm_sec  = val;
+    idx += 2;
+
+    /* Decode timezone. */
+    /* Don't bother: Amazon AWS apparently always returns GMT (i.e., UTC)
+       regardless of the geographic location of the bucket.
+    DECODE_TIME_FIND_ALPHA( string, idx, ch );
+    strBegin = idx;
+    while( ( ( ch = tolower( string[ idx ] ) ) != '\0' ) && isalpha( ch ) )
+    {
+        idx++;
+    }
+    printf( "Timezone: %s (%d chars)\n", &string[strBegin],idx-strBegin);
+    */
+    tm.tm_gmtoff = 0;
+    tm.tm_isdst = -1;
+
+    *value = mktime( &tm ) + localTimezone;
+
     return success;
 }
 
@@ -761,7 +958,7 @@ GetHeaderTime(
  * @return 0 on success, or \a -errno on failure.
  */
 STATIC int
-S3FileStatRequest(
+S3GetFileStat(
     const char        *filename,
     struct S3FileInfo **fileInfo
 		  )
@@ -781,10 +978,11 @@ S3FileStatRequest(
     /* (None required.) */
 
     /* Setup S3 headers. */
-    BuildS3Request( "HEAD", headers, filename );
+    headers = BuildS3Request( "HEAD", headers, filename );
     /* Make request via curl and wait for response. */
     status = SubmitS3Request( "HEAD", headers, filename,
 			      (void**)&response, &length );
+
     if( status == 0 )
     {
         /* Prepare an S3 File Info structure. */
@@ -801,6 +999,9 @@ S3FileStatRequest(
 	{
 	    headerKey   = response[ headerIdx * 2     ];
 	    headerValue = response[ headerIdx * 2 + 1 ];
+	    /*
+	    printf( "DEBUG: %s:%s\n", headerKey, headerValue );
+	    */
 	    if( strcmp( headerKey, "x-amz-meta-uid" ) == 0 )
 	    {
 	        if( ( status = GetHeaderInt( headerValue, &tempValue ) ) != 0 )
@@ -912,7 +1113,7 @@ ResolveS3FileStatCacheMiss(
     struct S3FileInfo *newFileInfo;
 
     /* Read the file attributes for the specified file. */
-    status = S3FileStatRequest( filename, &newFileInfo );
+    status = S3GetFileStat( filename, &newFileInfo );
     if( status == 0 )
     {
         InsertCacheElement( filename, newFileInfo, &DeleteS3FileInfoStructure );
@@ -930,7 +1131,7 @@ ResolveS3FileStatCacheMiss(
  * @return 0 on success, or \a -errno on failure.
  */
 int
-S3GetFileStat(
+S3FileStat(
     const char        *filename,
     struct S3FileInfo **fi
 	   )
