@@ -85,9 +85,15 @@ The tests include live tests that communicate with an Amazon S3 bucket host.
 These tests require a configuration file with authentication data and the
 following setup:
 
-    * Copy the README file to the top folder of your S3 bucket.
+    * Upload the README file to the top folder of your S3 bucket.
 
     * Create a folder named "directory" in the top folder of your S3 bucket.
+
+    * Upload the COPYING file into the "directory" folder you just created.
+
+    * Create a folder named "directory2" in the "directory" folder.
+
+    * Upload some file (anything is okay) into "directory2".
 
     * The live tests will be performed if a configuration file named
       "livetest.ini" is found in test/testdata. Copy the file named
@@ -99,8 +105,11 @@ following setup:
 
     Your file structure on the S3 drive should now look like this:
 
-       your-bucket-name/directory/
-       your-bucket-name/README
+       <your-bucket-name>/README
+       <your-bucket-name>/directory/
+       <your-bucket-name>/directory/COPYING
+       <your-bucket-name>/directory/directory2/
+       <your-bucket-name>/directory/directory2/<whatever file or files>
 
 
 == Lint ==

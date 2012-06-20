@@ -243,18 +243,19 @@ CurlWriteData(
     size_t        toCopy = size * nmemb;
     unsigned char *destBuffer;
     int           i;
+    size_t        toAllocate;
 
     /* Allocate or expand the buffer to receive the new data. */
     if( curlWriteBuffer == NULL )
     {
 	curlWriteBufferLength = 0;
-        curlWriteBuffer = malloc( toCopy );
+        curlWriteBuffer = malloc( toCopy + sizeof( char ) );
 	destBuffer = curlWriteBuffer;
     }
     else
     {
-        curlWriteBuffer = realloc( curlWriteBuffer,
-				   curlWriteBufferLength + toCopy );
+        toAllocate = curlWriteBufferLength + toCopy + sizeof( char );
+        curlWriteBuffer = realloc( curlWriteBuffer, toAllocate );
 	destBuffer = &( (unsigned char*)curlWriteBuffer )[ curlWriteBufferLength ];
     }
 
@@ -263,7 +264,8 @@ CurlWriteData(
     {
 	*destBuffer++ = *ptr++;
     }
-    curlWriteBufferLength = curlWriteBufferLength + toCopy;
+    *destBuffer = '\0';
+    curlWriteBufferLength = curlWriteBufferLength + toCopy + 1;
 
     return( toCopy );
 }
@@ -985,14 +987,17 @@ SubmitS3Request(
     }
 
     /* Translate the HTTP request status, if any, to an errno value. */
-    httpStatus = GetHttpStatus( *response );
-    if( httpStatus == 0 )
+    if( strcmp( httpVerb, "HEAD" ) == 0 )
     {
-        status = 0;
-    }
-    else
-    {
-	status = ConverHttpStatusToErrno( httpStatus );
+        httpStatus = GetHttpStatus( *response );
+	if( httpStatus == 0 )
+	{
+	    status = 0;
+	}
+	else
+        {
+	    status = ConverHttpStatusToErrno( httpStatus );
+	}
     }
 
     return( status );
@@ -1358,6 +1363,65 @@ ResolveS3FileStatCacheMiss(
 
 
 
+static char*
+StripTrailingSlash(
+    const char *filename
+		 )
+{
+    char *dirname;
+    int  filenameLength;
+
+    if( filename == NULL )
+    {
+        filenameLength = 0;
+    }
+    else
+    {
+	filenameLength = strlen( filename );
+    }
+    dirname = malloc( filenameLength + sizeof( char ) );
+    strncpy( dirname, filename, filenameLength );
+    dirname[ filenameLength ] = '\0';
+    /* Strip all trailing slashes. */
+    while( ( --filenameLength != 0 ) && ( dirname[ filenameLength ] == '/' ) )
+    {
+        dirname[ filenameLength ] = '\0';
+    }
+    return dirname;
+}
+
+
+
+static char*
+AddTrailingSlash(
+    const char *filename
+		 )
+{
+    char *dirname;
+    int  filenameLength;
+
+    if( filename == NULL )
+    {
+        filenameLength = 0;
+    }
+    else
+    {
+	filenameLength = strlen( filename );
+    }
+    dirname = malloc( filenameLength + sizeof( char ) );
+    strncpy( dirname, filename, filenameLength );
+    /* Add trailing slash if necessary. */
+    if( dirname[ filenameLength - 1 ] != '/' )
+    {
+        dirname[ filenameLength     ] = '/';
+        dirname[ filenameLength + 1 ] = '\0';
+    }
+
+    return dirname;
+}
+
+
+
 /**
  * Return the S3 File Info for the specified file.
  * @param filename [in] Filename of the file.
@@ -1376,10 +1440,7 @@ S3FileStat(
     struct S3FileInfo *dirFileInfo;
 
     /* Prepare a directory name version of the file as well. */
-    dirname = malloc( strlen( filename ) + 2 * sizeof( char ) );
-    strcpy( dirname, filename );
-    dirname[ strlen( filename )     ] = '/';
-    dirname[ strlen( filename ) + 1 ] = '\0';
+    dirname = AddTrailingSlash( filename );
 
     /* Attempt to read the S3FileStat from the stat cache. */
     status = 0;
@@ -1421,22 +1482,287 @@ S3FileStat(
 
 
 
-
-
-
-
-
-
-/* Disable warning that userdata is unused. */
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-int S3ReadDir( struct S3FileInfo *fi, const char *dir,
-	       char **nameArray[ ], int *nFiles )
+STATIC char*
+EncodeUrl(
+    const char *url
+	  )
 {
-    /* Stub */
-    return 0;
+    const char const *hexChar = "0123456789ABCDEF";
+    char       *safeUrl;
+    const char *urlPtr;
+    char       *safeUrlPtr;
+    char ch;
+
+    /* Allocate the maximum number of characters that could possibly
+       be used for this URL. */
+    safeUrl = malloc( 3 * strlen( url ) + sizeof( char ) );
+    urlPtr     = url;
+    safeUrlPtr = safeUrl;
+    while( *urlPtr != '\0' )
+    {
+        ch = *urlPtr++;
+
+	/* Safe characters. */
+        if( isalnum( ch ) || ( ch == '-' ) ||
+	    ( ch == '_' ) || ( ch == '.' ) || ( ch == '~' ) )
+        {
+	    *safeUrlPtr++ = ch;
+	}
+	/* Space becomes +. */
+	else if( ch == ' ' )
+	{
+	    *safeUrlPtr++ = '+';
+	}
+	/* Other characters are hex-encoded. */
+	else
+	{
+	    *safeUrlPtr++ = '%';
+	    *safeUrlPtr++ = hexChar[ ( ch >> 4 ) & 0x0f ];
+	    *safeUrlPtr++ = hexChar[   ch        & 0x0f ];
+	}
+    }
+    *safeUrlPtr = '\0';
+
+    return( safeUrl );
+}
+
+
+
+/**
+ * Recursive function that goes through an XML file and adds the contents of
+ * all occurrences of <key> to a linked list. In addition, if the function
+ * encounters a <marker> node, it records its contents.
+ * @param node [in] Current XML node.
+ * @param prefixLength [in] Number of bytes in the prefix which are skipped.
+ * @param directory [in/out] Linked list of directory entries.
+ * @param marker [out] Name of the marker, if found.
+ * @param nFiles [out] Number of files in the directory.
+ * @return Nothing.
+ */
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#pragma GCC diagnostic ignored "-Wunused-variable"
+static void
+ReadXmlDirectory(
+    xmlNode           *node,
+    int               prefixLength,
+    struct curl_slist *directory,
+    char              **marker,
+    int               *nFiles
+		 )
+{
+    xmlNode    *currentNode;
+    char       *direntry;
+    const char *nodeName;
+    const char *nodeValue;
+    char       *newMarker;
+
+    /* Search the XML tree depth first (not that it really matters, because
+       the tree is very shallow). */
+    for( currentNode = node; currentNode; currentNode = currentNode->next )
+    {
+        if( currentNode->type == XML_ELEMENT_NODE )
+	{
+	    /* "Key" and "Prefix" mark file or directory names,
+	       respectively. */
+	    nodeName =  (char*) currentNode->name;
+	    nodeValue = (char*) xmlNodeGetContent( currentNode );
+	    if( ( strcmp( nodeName, "Key" ) == 0 ) ||
+		( strcmp( nodeName, "Prefix" ) == 0 ) )
+	    {
+	        /* Strip the prefix from the path and add the directory. */
+	        if( strcmp( &nodeValue[ prefixLength ], "" ) != 0 )
+		{
+		    direntry = malloc( strlen( nodeValue )
+				       - prefixLength
+				       + sizeof( char ) );
+		    strcpy( direntry, &nodeValue[ prefixLength ] );
+		    directory = curl_slist_append( directory, direntry );
+		    (*nFiles)++;
+		}
+	    }
+	    /* Record marker names that might be encountered. */
+	    else if( strcmp( nodeName, "NextMarker" ) == 0 )
+	    {
+	        if( strlen( nodeValue ) != 0 )
+		{
+		    if( *marker != NULL )
+		    {
+		        free( *marker );
+		    }
+		    *marker = malloc( strlen( nodeValue ) + sizeof( char ) );
+		    strcpy( *marker, nodeValue );
+		}
+	    }
+	    /* If this is the last entry, clear the "marker" data to
+	       indicate that the directory chunk loop may end. (IsTruncated
+	       is actually redundant, because the presence of "NextMarker"
+	       implies that the directory listing was truncated.) */
+	    else if( strcmp( nodeName, "IsTruncated" ) == 0 )
+	    {
+	        if( strcmp( nodeValue, "false" ) == 0 )
+		{
+		    if( *marker != NULL )
+		    {
+		        free( *marker );
+			*marker = NULL;
+		    }
+		}
+	    }
+        }
+
+	ReadXmlDirectory( currentNode->children, prefixLength,
+			  directory, marker, nFiles );
+    }
 }
 #pragma GCC diagnostic pop
+
+
+
+/* Disable warning that fi is unused. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+int S3ReadDir( struct S3FileInfo *fi, const char *dirname,
+	       char ***nameArray, int *nFiles )
+{
+    int        status = 0;
+
+    const char *delimiter;
+    const char *prefix;
+    char       *queryBase;
+    const char *urlSafePrefix;
+    int        toSkip = 0;
+    char       *relativeRoot;
+
+    char              *query;
+    char              *fromFile = NULL;
+    char              *urlSafeFromFile;
+    struct curl_slist *headers = NULL;
+    struct curl_slist *directory = NULL;
+    char              *xmlData;
+    int               xmlDataLength;
+    xmlDocPtr         xmlResponse;
+    xmlNode           *rootNode;
+    int               fileCounter;
+
+    char              **dirArray;
+    int               dirIdx;
+    struct curl_slist *nextEntry;
+
+    /* Construct a base query with a prefix and a delimiter. */
+
+    /* Skip any leading slashes in the dirname. */
+    while( dirname[ toSkip ] == '/' )
+    {
+        toSkip++;
+    }
+    /* Create prefix and a delimiter for the S3 list. The prefix is the entire
+       path including dirname plus trailing slash, so add a slash to the
+       dirname if it is not already specified. The delimiter is a '/'. */
+    prefix    = StripTrailingSlash( &dirname[ toSkip ] );
+    delimiter = "/";
+    /* Create the base query. */
+    urlSafePrefix = EncodeUrl( prefix );
+
+    relativeRoot = malloc( strlen( globalConfig.bucketName )
+			   + strlen( prefix ) + 5 * sizeof( char ) );
+    relativeRoot[ 0 ] = '/';
+    relativeRoot[ 1 ] = '\0';
+    strcpy( relativeRoot, globalConfig.bucketName );
+    strcpy( relativeRoot, "/" );
+    strcpy( relativeRoot, prefix );
+    strcpy( relativeRoot, "/" );
+
+    queryBase = malloc( strlen( prefix )
+			+ sizeof( char )
+		        + strlen( urlSafePrefix )
+			+ strlen( "/?prefix=/&delimiter=" )
+			+ strlen( delimiter )
+			+ sizeof( char ) );
+
+    /* Add a non-encoded trailing slash to the prefix in the query. */
+    sprintf( queryBase, "%s?prefix=%s/&delimiter=%s",
+	     relativeRoot, urlSafePrefix, delimiter );
+    free( (char*) urlSafePrefix );
+
+    /* Fake the ".." and "." paths. */
+    directory = curl_slist_append( directory, "." );
+    directory = curl_slist_append( directory, ".." );
+    fileCounter = 2;
+
+    /* Retrieve truncated directory lists by specifying the base query plus a
+       marker. */
+    do
+    {
+        /* Get an XML list of directories and decode the directory contents. */
+        query = queryBase;
+	if( fromFile != NULL )
+        {
+	    urlSafeFromFile = EncodeUrl( fromFile );
+	    query = malloc( strlen( queryBase )
+			    + strlen( "&marker=" )
+			    + strlen( urlSafeFromFile )
+			    + sizeof( char ) );
+	    strcpy( query, queryBase );
+	    strcat( query, "&marker=" );
+	    strcat( query, urlSafeFromFile );
+	}
+	/* query now contains the path for the S3 request. */
+	headers = BuildS3Request( "GET", NULL, relativeRoot );
+	status  = SubmitS3Request( "GET", headers, query,
+				   (void**) &xmlData, &xmlDataLength );
+	if( query != queryBase )
+	{
+	    free( query );
+        }
+	if( status == 0 )
+	{
+ 	    /* Decode the XML response. */
+	    xmlResponse = xmlReadMemory( xmlData, xmlDataLength,
+					 "readdir.xml", NULL, 0 );
+	    if( xmlResponse == NULL )
+	    {
+		status = -EIO;
+	    }
+	    else
+	    {
+	        /* Begin a depth-first traversal from the root node. */
+	        rootNode = xmlDocGetRootElement( xmlResponse );
+		if( rootNode == NULL )
+		{
+		    status = -EIO;
+		}
+		else
+	        {
+		    ReadXmlDirectory( rootNode, strlen( prefix ) + 1,
+				      directory, &fromFile, &fileCounter );
+		}
+		xmlFreeDoc( xmlResponse );
+		xmlCleanupParser( );
+	    }
+	}
+    } while( fromFile != NULL );
+
+    /* Move the linked-list file names into an array. */
+    dirArray = malloc( sizeof( char* ) * fileCounter );
+    dirIdx   = 0;
+    while( directory )
+    {
+        dirArray[ dirIdx++ ] = StripTrailingSlash( directory->data );
+	free( directory->data );
+	nextEntry = directory->next;
+	if( directory != NULL )
+	{
+	    free( directory );
+	}
+	directory = nextEntry;
+    }
+
+    *nameArray = dirArray;
+    *nFiles    = fileCounter;
+    return( status );
+}
+#pragma GCC diagnostic pop
+
 
 
 /* Disable warning that userdata is unused. */
@@ -1472,34 +1798,3 @@ int S3FileClose( const char *path )
 #pragma GCC diagnostic pop
 
 
-    /*
-    xmlDocPtr  xmlResponse;
-    xmlNodePtr currentNode;
-
-    xmlResponse = xmlReadMemory( response, length, "s3.xml", NULL, 0 );
-    if( xmlResponse == NULL )
-    {
-        status = -EIO;
-    }
-    else
-    {
-	 currentNode = xmlDocGetRootElement( xmlResponse );
-	 if( currentNode == NULL )
-	 {
-	      status = -EIO;
-	      xmlFreeDoc( xmlResponse );
-	 }
-	 else
-	 {
-	     if( xmlStrcmp( currentNode->name, (const xmlChar*) "story") )
-	     {
-	         status = -EIO;
-		 xmlFreeDoc( xmlResponse );
-	     }
-	     else
-	     {
-	       
-	     }
-	 }
-    }
-    */

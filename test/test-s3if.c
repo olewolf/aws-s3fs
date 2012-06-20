@@ -74,10 +74,12 @@ static void test_SubmitS3RequestData( const char *param );
 static void test_S3GetFileStat( const char *param );
 static void test_S3FileStat_File( const char *param );
 static void test_S3FileStat_Dir( const char *param );
+static void test_S3ReadDir( const char *param );
 
 
 const struct dispatchTable dispatchTable[ ] =
 {
+    { "S3ReadDir", test_S3ReadDir },
     { "S3FileStatDir", test_S3FileStat_Dir },
     { "S3FileStatFile", test_S3FileStat_File },
     { "S3GetFileStat", test_S3GetFileStat },
@@ -297,10 +299,6 @@ static void test_SubmitS3RequestHead( const char *param )
 
     headers = BuildS3Request( "HEAD", NULL, "/README" );
     i = SubmitS3Request( "HEAD", headers, "/README", (void**)&curlOut, &outLength );
-    /*
-    headers = BuildS3Request( "GET", NULL, "/" );
-    i = SubmitS3Request( "GET", headers, "/?prefix=musik/&delimiter=/", (void**)&curlOut, &outLength );
-    */
 
     free( globalConfig.keyId );
     free( globalConfig.secretKey );
@@ -316,7 +314,7 @@ static void test_SubmitS3RequestHead( const char *param )
 
     else
     {
-	printf( "CURL error\n" );
+        printf( "CURL error %d\n", i );
     }
 
 }
@@ -328,14 +326,14 @@ static void test_SubmitS3RequestData( const char *param )
     struct curl_slist *headers = NULL;
     char **curlOut  = NULL;
     int  outLength = 0;
-    int                i;
+    int  i;
     char *outPrint;
 
     ReadLiveConfig( param );
     InitializeS3If( );
 
     headers = BuildS3Request( "GET", NULL, "/" );
-    i = SubmitS3Request( "GET", headers, "/?prefix=musik/&delimiter=/", (void**)&curlOut, &outLength );
+    i = SubmitS3Request( "GET", headers, "/?prefix=directory/&delimiter=/", (void**)&curlOut, &outLength );
 
     free( globalConfig.keyId );
     free( globalConfig.secretKey );
@@ -447,5 +445,28 @@ static void test_S3FileStat_Dir( const char *param )
 		( fi->exeUid ? S_ISUID : 0 ) | ( fi->exeGid ? S_ISGID : 0 ) |
 		( fi->exeUid ? S_ISVTX : 0 ) );
     }
+}
+
+
+
+static void test_S3ReadDir( const char *param )
+{
+    char **directory;
+    int  dirEntries;
+    int  status;
+    int  i;
+
+    ReadLiveConfig( param );
+    InitializeS3If( );
+
+    status = S3ReadDir( NULL, "/directory", &directory, &dirEntries );
+    if( status != 0) exit( 1 );
+
+    for( i = 0; i < dirEntries; i++ )
+    {
+	printf( "%d: %s\n", i, directory[ i ] );
+	free( directory[ i ] );
+    }
+    free( directory );
 }
 

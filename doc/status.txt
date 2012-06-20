@@ -1,8 +1,10 @@
 2012-06-20:
-	S3FileStat finds the file or directory on the S3 drive and places
+	S3FileStat finds a file or directory on the S3 drive and places
 	the file stat in the stat cache.
-	Compiler warning level tightened with -Wextra, and #pragma inserted
+	Compiler warning level increased with -Wextra, and #pragma inserted
 	in the code where appropriate.
+	SubmitS3RequestData tested.
+	S3ReadDir implemented and tested.
 	README file updated with additional live test setup instructions.
 
 2012-06-19:
