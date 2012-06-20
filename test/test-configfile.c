@@ -29,6 +29,7 @@
 #include "testfunctions.h"
 
 
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 
 extern const char *LookupConfigString( const struct config_t *, const char * );
 extern void ConfigSetBoolean( struct ConfigurationBoolean *,

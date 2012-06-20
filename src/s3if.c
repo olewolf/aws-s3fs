@@ -97,6 +97,9 @@ struct HttpHeaders
  * @param userdata [in] Unused.
  * @return Number of bytes copied from \a ptr.
  */
+/* Disable warning that userdata is unused. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 static size_t
 CurlWriteHeader(
     char   *ptr,
@@ -127,7 +130,7 @@ CurlWriteHeader(
        key takes up the entire line. For example, "HTTP/1.1 200 OK" is
        returned without value. */
     for( i = 0;
-	 ( i < toCopy ) && ( ptr[ i ] != ':' ) &&
+	 ( i < (int) toCopy ) && ( ptr[ i ] != ':' ) &&
 	     ( ptr[ i ] != '\n' ) && ( ptr[ i ] != '\r' );
 	 i++ );
     header = malloc( ( i + 1 ) * sizeof( char ) );
@@ -142,10 +145,10 @@ CurlWriteHeader(
     }
 
     /* Extract the value for this header key provided there is one. */
-    if( ( i != toCopy ) && hasData )
+    if( ( i != (int) toCopy ) && hasData )
     {
         /* Extract data. Skip ':[[:space:]]*' */
-        while( i < toCopy )
+      while( i < (int) toCopy )
 	{
 	    if( ( ptr[ i ] == ':' ) || isspace( ptr[ i ] ) )
 	    {
@@ -156,12 +159,12 @@ CurlWriteHeader(
 		break;
 	    }
 	}
-	if( i != toCopy )
+      if( i != (int) toCopy )
 	{
 	    /* Extract header value. If the header value ends with a newline,
 	       terminate it prematurely. */
 	    dataEndIdx = i;
-	    while( dataEndIdx < toCopy )
+	    while( dataEndIdx < (int) toCopy )
 	    {
 	        if( ( ptr[ dataEndIdx ] == '\0' ) ||
 		    ( ptr[ dataEndIdx ] == '\n' ) )
@@ -212,6 +215,7 @@ CurlWriteHeader(
 
     return( toCopy );
 }
+#pragma GCC diagnostic pop
 
 
 
@@ -225,6 +229,9 @@ CurlWriteHeader(
  * @param userdata [in] Unused.
  * @return Number of bytes copied from \a ptr.
  */
+/* Disable warning that userdata is unused. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 static size_t
 CurlWriteData(
     char   *ptr,
@@ -252,7 +259,7 @@ CurlWriteData(
     }
 
     /* Receive data. */
-    for( i = 0; i < toCopy; i++ )
+    for( i = 0; i < (int) toCopy; i++ )
     {
 	*destBuffer++ = *ptr++;
     }
@@ -260,6 +267,7 @@ CurlWriteData(
 
     return( toCopy );
 }
+#pragma GCC diagnostic pop
 
 
 
@@ -404,7 +412,7 @@ GetS3HostNameByRegion(
     char *hostname;
     int  toAlloc;
 
-    assert( ( 0 <= region ) && ( region <= SAO_PAULO ) );
+    assert( region <= SAO_PAULO );
 
     toAlloc = strlen( "s3-ap-southeast-1" ) +
               strlen( "..amazonaws.com" ) +
@@ -435,7 +443,7 @@ GetS3HostNameByRegion(
  */
 STATIC struct curl_slist*
 BuildGenericHeader(
-    const char *httpMethod
+    void
 		    )
 {
     struct curl_slist *headers       = NULL;
@@ -645,7 +653,7 @@ CreateAwsSignature(
 	    dateString = GetHeaderStringValue( headerString );
 	}
 
-	assert( messageLength < sizeof( messageToSign ) - 200 );
+	assert( messageLength < (int) sizeof( messageToSign ) - 200 );
 	currentHeader = currentHeader->next;
     }
 
@@ -713,7 +721,7 @@ BuildS3Request(
     int               i;
 
     /* Build basic headers. */
-    allHeaders = BuildGenericHeader( httpMethod );
+    allHeaders = BuildGenericHeader( );
 
     /* Add any additional headers, if any, in sorted order. */
     currentHeader = additionalHeaders;
@@ -869,7 +877,7 @@ GetHttpStatus(
 		j++;
 	    }
 	    toCopy = j - i;
-	    if( sizeof( statusBuf ) - 1 < toCopy )
+	    if( (int) sizeof( statusBuf ) - 1 < toCopy )
 	    {
 		toCopy = sizeof( statusBuf );
 	    }
@@ -1182,7 +1190,7 @@ STATIC int
 S3GetFileStat(
     const char        *filename,
     struct S3FileInfo **fileInfo
-		  )
+	      )
 {
     struct curl_slist *headers = NULL;
     struct S3FileInfo *newFileInfo = NULL;
@@ -1212,6 +1220,12 @@ S3GetFileStat(
 	memset( newFileInfo, 0, sizeof( struct S3FileInfo ) );
 	newFileInfo->fileType    = 'f';
 	newFileInfo->permissions = 0644;
+	/* A trailing slash in the filename indicates that it is a directory. */
+	if( filename[ strlen( filename ) - 1 ] == '/' )
+	{
+	    newFileInfo->fileType    = 'd';
+	    newFileInfo->permissions = 0755;
+	}
 	newFileInfo->uid         = getuid( );
 	newFileInfo->gid         = getgid( );
 	/* Translate header values to S3 File Info values. */
@@ -1330,7 +1344,7 @@ ResolveS3FileStatCacheMiss(
 			   )
 {
     int               status;
-    struct S3FileInfo *newFileInfo;
+    struct S3FileInfo *newFileInfo = NULL;
 
     /* Read the file attributes for the specified file. */
     status = S3GetFileStat( filename, &newFileInfo );
@@ -1358,28 +1372,50 @@ S3FileStat(
 {
     struct S3FileInfo *fileInfo;
     int               status;
+    char              *dirname;
+    struct S3FileInfo *dirFileInfo;
+
+    /* Prepare a directory name version of the file as well. */
+    dirname = malloc( strlen( filename ) + 2 * sizeof( char ) );
+    strcpy( dirname, filename );
+    dirname[ strlen( filename )     ] = '/';
+    dirname[ strlen( filename ) + 1 ] = '\0';
 
     /* Attempt to read the S3FileStat from the stat cache. */
     status = 0;
     fileInfo = SearchStatEntry( filename );
     if( fileInfo == NULL )
     {
-        /* Read the file stat from S3. */
-        status = ResolveS3FileStatCacheMiss( filename, &fileInfo );
-
-        /* Add the file stat to the cache. */
-        if( status != 0 )
-        {
-	    InsertCacheElement( filename, fileInfo,
-				&DeleteS3FileInfoStructure );
-	    *fi = fileInfo;
+        /* If the file was not found, attempt a directory name version. */
+        fileInfo = SearchStatEntry( dirname );
+	if( fileInfo == NULL )
+	{
+	    /* Read the file stat from S3. */
+	    status = ResolveS3FileStatCacheMiss( filename, &fileInfo );
+	    if( status == 0 )
+	    {
+		*fi = fileInfo;
+	    }
 	}
     }
+    if( status != 0 )
+    {
+        /* If the file was not found in neither the cache nor on the S3 storage,
+	   maybe it is a directory. Add a '/' to the filename and try again,
+	   unless the filename already has a trailing slash. */
+        if( filename[ strlen( filename ) - 1 ] != '/' )
+	{
+	    status = S3FileStat( dirname, &dirFileInfo );
+	    *fi = dirFileInfo;
+	}
+    }
+
     if( fileInfo == NULL )
     {
         status = -ENOENT;
     }
 
+    free( dirname );
     return( status );
 }
 
@@ -1391,30 +1427,49 @@ S3FileStat(
 
 
 
+/* Disable warning that userdata is unused. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 int S3ReadDir( struct S3FileInfo *fi, const char *dir,
 	       char **nameArray[ ], int *nFiles )
 {
     /* Stub */
     return 0;
 }
+#pragma GCC diagnostic pop
 
+
+/* Disable warning that userdata is unused. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 int S3ReadFile( const char *path, char *buf, size_t size, off_t offset )
 {
     /* Stub */
     return 0;
 }
+#pragma GCC diagnostic pop
 
+
+/* Disable warning that userdata is unused. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 int S3FlushBuffers( const char *path )
 {
     /* Stub */
     return 0;
 }
+#pragma GCC diagnostic pop
 
+
+/* Disable warning that userdata is unused. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 int S3FileClose( const char *path )
 {
     /* Stub */
     return 0;
 }
+#pragma GCC diagnostic pop
 
 
     /*

@@ -27,6 +27,8 @@
 #include "digest.h"
 #include "base64.h"
 
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+
 
 static void test_MD5DigestBuffer( const char *parms );
 static void test_MD5DigestStream( const char *parms );
@@ -196,7 +198,7 @@ static void test_EncodeBase64( const char *parms )
     base64 = EncodeBase64( buf, 256 );
 
     /*    lf = 0;*/
-    for( i = 0; i < strlen( base64 ); i++ )
+    for( i = 0; i < (int) strlen( base64 ); i++ )
     {
         printf( "%c", base64[ i ] );
 	/*

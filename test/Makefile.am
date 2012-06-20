@@ -45,7 +45,7 @@ test_s3if_SOURCES= $(SHAREDTESTSOURCE) test-s3if.c ../src/s3if.c \
 
 SHAREDTESTSOURCE = dispatch.c src/aws-s3fs.h shared.c testfunctions.h
 
-AM_CFLAGS = -I../src -DAUTOTEST -O0 -g
+AM_CFLAGS = -I../src -DAUTOTEST -DDEBUG -O0 -g
 if MAKE_OPENSSL_TESTS
 AM_CFLAGS += -DMAKE_OPENSSL_TESTS
 endif

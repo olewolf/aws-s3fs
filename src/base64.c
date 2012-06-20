@@ -65,10 +65,10 @@ EncodeBase64(
 #else
     char buildBuffer[ 2048 ];
 #endif
-    int  buildIdx = 0;
-    char *result;
-    int  allocCount;
-    char *toReturn;
+    unsigned int buildIdx = 0;
+    char         *result;
+    int          allocCount;
+    char         *toReturn;
 
     result     = malloc( sizeof( buildBuffer ) );
     allocCount = 1;
@@ -217,7 +217,7 @@ DecodeBase64( const char *source, int *length )
 	    /* Allocate a new block if the current block is full. "-5" because
 	       we want to leave room for another three characters. sizeof-1 is
 	       the last item, and we also need room for a '\0'. */
-	    if( buildIdx >= sizeof( buildBuffer ) - 5 )
+	    if( buildIdx >= (int) sizeof( buildBuffer ) - 5 )
 	    {
 		memcpy( &result[ blockBegin ], buildBuffer, buildIdx );
 		result = realloc( result,

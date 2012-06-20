@@ -47,7 +47,7 @@ static bool CheckAppsSupport( void )
         "curl",
 	"aws"
     };
-    int i;
+    unsigned int i;
     char syscommand[ 50 ];
     char missingApps[ 1000 ];
     const char *command;

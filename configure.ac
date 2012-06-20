@@ -22,7 +22,7 @@ AC_CONFIG_AUX_DIR([config])
 AC_CONFIG_MACRO_DIR([m4])
 AM_INIT_AUTOMAKE
 
-DEBUG=1
+CFLAGS=""
 
 # Prepare autotest suite.
 AC_CONFIG_TESTDIR([test])
@@ -37,6 +37,7 @@ AC_ARG_ENABLE([openssltest],
 	[ac_enable_openssltest=$enableval], [ac_enable_openssltest=auto])
 
 AC_CANONICAL_HOST
+AC_GNU_SOURCE
 
 # Check for programs.
 AC_PROG_CC
@@ -59,7 +60,6 @@ AC_PATH_PROGS(RATS, rats)
 AC_PATH_PROGS(PSCAN, pscan)
 
 # Check for typedefs, structures, and compiler characteristics.
-AC_DEFINE([_GNU_SOURCE], [], [Use GNU extensions])
 AC_HEADER_STDC
 AC_C_CONST
 AC_C_INLINE
@@ -86,6 +86,32 @@ AC_CHECK_LIB([xml2], [xmlReadMemory],,
 # Check for modules.
 PKG_CHECK_MODULES([DEPS], [fuse >= 2.8 libxml-2.0 >= 2.7.0 libconfig >= 1.3 libcurl >= 7.20],,
     AC_MSG_ERROR([*** libfuse, libconfig, libxml2, or curl source not found **]))
+
+# Check for library functions.
+AC_CHECK_FUNCS([getopt_long],,
+    AC_MSG_ERROR([*** Getopt functions not found. **]))
+AC_CHECK_FUNCS([strcasecmp strlen strcat strcpy strncpy isspace],,
+    AC_MSG_ERROR([*** String handling functions not found. **]))
+AC_CHECK_FUNCS([fopen fprintf fclose getenv system lockf chdir umask dup \
+               open write close getdtablesize],,
+    AC_MSG_ERROR([*** File handling functions not found. **]))
+AC_CHECK_FUNCS([malloc free memset],,
+    AC_MSG_ERROR([*** Memory allocation functions not found. **]))
+AC_CHECK_FUNCS([openlog syslog closelog],,
+    AC_MSG_ERROR([*** Syslog functions not found. **]))
+AC_CHECK_FUNCS([time localtime],,
+    AC_MSG_ERROR([*** Time functions not found. **]))
+AC_CHECK_FUNCS([sigaction fork setsid exit perror pthread_mutex_lock \
+	       pthread_mutex_unlock],,
+    AC_MSG_ERROR([*** Process functions not found. **]))
+AC_CHECK_FUNCS([config_init config_lookup_bool config_lookup_string \
+               config_read_file config_destroy],,
+AC_MSG_ERROR([*** libopt functions not found. **]))
+AC_CHECK_FUNCS([fuse_main],,
+    AC_MSG_ERROR([*** FUSE functions not found. **]))
+AC_CHECK_FUNCS([curl_easy_init curl_easy_setopt curl_easy_perform \
+	       curl_easy_cleanup curl_slist_append],,
+AC_MSG_ERROR([*** CURL functions not found. **]))
 
 # Check for header files.
 AC_CHECK_HEADERS([stdio.h],,
@@ -137,32 +163,7 @@ AC_MSG_ERROR([*** libxml/tree.h not found **]),
 AC_INCLUDES_DEFAULT
 ])
 CFLAGS="$CFLAGS_SAVE"
-
-# Check for library functions.
-AC_CHECK_FUNCS([getopt_long],,
-    AC_MSG_ERROR([*** Getopt functions not found. **]))
-AC_CHECK_FUNCS([strcasecmp strlen strcat strcpy strncpy isspace],,
-    AC_MSG_ERROR([*** String handling functions not found. **]))
-AC_CHECK_FUNCS([fopen fprintf fclose getenv system lockf chdir umask dup \
-               open write close getdtablesize],,
-    AC_MSG_ERROR([*** File handling functions not found. **]))
-AC_CHECK_FUNCS([malloc free memset],,
-    AC_MSG_ERROR([*** Memory allocation functions not found. **]))
-AC_CHECK_FUNCS([openlog syslog closelog],,
-    AC_MSG_ERROR([*** Syslog functions not found. **]))
-AC_CHECK_FUNCS([time localtime],,
-    AC_MSG_ERROR([*** Time functions not found. **]))
-AC_CHECK_FUNCS([sigaction fork setsid exit perror pthread_mutex_lock \
-	       pthread_mutex_unlock],,
-    AC_MSG_ERROR([*** Process functions not found. **]))
-AC_CHECK_FUNCS([config_init config_lookup_bool config_lookup_string \
-               config_read_file config_destroy],,
-AC_MSG_ERROR([*** libopt functions not found. **]))
-AC_CHECK_FUNCS([fuse_main],,
-    AC_MSG_ERROR([*** FUSE functions not found. **]))
-AC_CHECK_FUNCS([curl_easy_init curl_easy_setopt curl_easy_perform \
-	       curl_easy_cleanup curl_slist_append],,
-AC_MSG_ERROR([*** CURL functions not found. **]))
+AC_DEFINE([_GNU_SOURCE], [], [Use GNU extensions])
 
 
 MAKE_DOXYGEN=false
@@ -190,7 +191,7 @@ fi
 AM_CONDITIONAL(MAKE_OPENSSL_TESTS,$MAKE_OPENSSL_TESTS)
 
 
-CFLAGS="$CFLAGS -Wall -Werror $DEPS_CFLAGS"
+CFLAGS="$CFLAGS -Wall -Werror -Wextra $DEPS_CFLAGS"
 LIBS="$DEPS_LIBS $LIBS"
 
 # Output files.
@@ -198,21 +199,12 @@ AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_FILES([Makefile src/Makefile data/Makefile doc/Makefile doc/man/Makefile test/Makefile])
 AC_OUTPUT([doc/main.doc debian/postinst debian/postrm])
 
-echo "
-  $PACKAGE_NAME version $PACKAGE_VERSION
+AC_MSG_NOTICE([
+$PACKAGE_NAME version $PACKAGE_VERSION:
   Prefix..........: $prefix
   C Compiler......: $CC $CFLAGS
   C++ Compiler....: $CXX $CXXFLAGS $CPPFLAGS
   Linker..........: $LD $LDFLAGS $LIBS
-
+Options:
   Generate source code documentation: $ac_enable_doc
-  Perform OpenSSL tests:              $ac_enable_openssltest
-"
-
-#  Doxygen.........: ${DOXYGEN:-no}
-#  Dot (GraphViz)..: ${GRAPHVIZ:-no}
-#  OpenSSL.........: ${OPENSSL:-no}
-#  Splint..........: ${SPLINT:-no}
-#  Flawfinder......: ${FLAWFINDER:-no}
-#  Rats............: ${RATS:-no}
-#  Pscan...........: ${PSCAN:-no}
+  Perform OpenSSL tests:              $ac_enable_openssltest])

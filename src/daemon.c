@@ -49,6 +49,9 @@ static int                      lockFp;
  * @param sig [in] Signal from the operating system.
  * @return Nothing.
 */
+/* Disable warning that sig and context are not used. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 static void
 SignalHandler(
     int       sig,
@@ -83,6 +86,7 @@ SignalHandler(
 	    break;
     }
 }
+#pragma GCC diagnostic pop
 
 
 

@@ -1,3 +1,10 @@
+2012-06-20:
+	S3FileStat finds the file or directory on the S3 drive and places
+	the file stat in the stat cache.
+	Compiler warning level tightened with -Wextra, and #pragma inserted
+	in the code where appropriate.
+	README file updated with additional live test setup instructions.
+
 2012-06-19:
 	MS4: S3 raw function reads S3 file info correctly.
 	Refactored the s3if.c http response and s3if.c host code.

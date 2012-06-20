@@ -68,7 +68,7 @@ ROTATE(
     *w = ( *w << s ) | ( (uint32_t) ( *w >> ( 32 - s ) ) );
 }
 
-static uint32_t inline
+static inline uint32_t
 SHA1CircularShift(
     register uint32_t bits,
     register uint32_t word
@@ -535,7 +535,7 @@ DigestStream(
        beginning at RESBLOCK.  */
 
     /* Important: BLOCKSIZE must be a multiple of 64.  */
-    const int          BLOCKSIZE = 4096;
+    const unsigned int BLOCKSIZE = 4096;
     struct DigestState state;
     unsigned char      resblock[ 20 ];
     unsigned char      *buffer;
@@ -565,7 +565,7 @@ DigestStream(
 	    bytesRead = fread( buffer + sum, 1, BLOCKSIZE - sum, stream );
 	    sum += bytesRead;
 	}
-	while( sum < BLOCKSIZE && bytesRead != 0 );
+	while( ( sum < BLOCKSIZE ) && ( bytesRead != 0 ) );
 	if( ( bytesRead == 0 ) && ferror( stream ) )
 	{
 	    return 1;

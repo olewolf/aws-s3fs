@@ -27,6 +27,7 @@
 #include "aws-s3fs.h"
 #include "testfunctions.h"
 
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 
 
 extern const FILE *TestFileReadable( const char * );

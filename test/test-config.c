@@ -27,6 +27,7 @@
 #include "aws-s3fs.h"
 #include "testfunctions.h"
 
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 
 
 extern void ConfigSetRegion( enum bucketRegions *, const char *, bool * );
@@ -68,8 +69,8 @@ void test_InitializeConfiguration( const char *parms )
     struct Configuration config =
     {
         TOKYO,        /* region */
-	NULL,         /* bucketName */
 	NULL,         /* mountPoint */
+	NULL,         /* bucketName */
 	NULL,         /* path */
 	NULL,         /* keyId */
 	NULL,         /* secretKey */
@@ -77,7 +78,9 @@ void test_InitializeConfiguration( const char *parms )
 	{             /* verbose */
 	    true,     /* value */
 	    true      /* isset */
-	}
+	},
+	log_DEBUG,    /* logLevel */
+	false         /* daemonize */
     };
     configuration.verbose.value = false;
     configuration.verbose.isset = false;

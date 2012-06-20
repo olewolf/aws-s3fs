@@ -49,30 +49,35 @@ const struct dispatchTable dispatchTable[ ] =
 
 
 
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 void test_DecodeCommandLine( const char *parms )
 {
     struct CmdlineConfiguration cmdlineConfig =
     {
         {
-	    US_STANDARD,
-	    NULL,
-	    NULL,
-	    NULL,
-	    NULL,
-	    NULL,
-	    NULL,
+	    .region = US_STANDARD,
+	    .mountPoint = NULL,
+	    .bucketName = NULL,
+	    .path = NULL,
+	    .keyId = NULL,
+	    .secretKey = NULL,
+	    .logfile = NULL,
+	    .verbose =
 	    {
-	        false,
-		false
-	    }
+	        .value = false,
+		.isset = false
+	    },
+	    .logLevel = log_DEBUG,
+	    .daemonize = false,
 	},
-	NULL,
-	false,
-	false,
-	false,
-	false,
-	false,
-	false
+	.configFile = NULL,
+	.regionSpecified = false,
+	.bucketNameSpecified = false,
+	.pathSpecified = false,
+	.keyIdSpecified = false,
+	.secretKeySpecified = false,
+	.logfileSpecified = false,
+	.loglevelSpecified = false
     };
 
     const char *const cmdline[ ] =

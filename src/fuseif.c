@@ -729,6 +729,9 @@ s3fs_opendir(
  * @param fi [in] FUSE file info structure.
  * @return 0 if the directory was read, \a -errno otherwise.
  */
+/* Disable warning that offset is not used. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 static int
 s3fs_readdir(
     const char            *dir,
@@ -775,6 +778,7 @@ s3fs_readdir(
 
     return( status );
 }
+#pragma GCC diagnostic pop
 
 
 
@@ -784,6 +788,9 @@ s3fs_readdir(
  * @param fi [in] FUSE file info structure.
  * @return 0 if the directory was released, \a -errno otherwise.
  */
+/* Disable warning that dir is not used. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 static int
 s3fs_releasedir(
     const char            *dir,
@@ -809,6 +816,7 @@ s3fs_releasedir(
 
     return( status );
 }
+#pragma GCC diagnostic pop
 
 
 
@@ -891,6 +899,9 @@ s3fs_access(
  * @param fi [in] FUSE file information.
  * @return Number of bytes read, or \a -errno on failure.
  */
+/* Disable warning that fi is not used. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 static int
 s3fs_read(
     const char            *path,
@@ -906,6 +917,7 @@ s3fs_read(
 
     return( status );
 }
+#pragma GCC diagnostic pop
 
 
 
@@ -917,6 +929,9 @@ s3fs_read(
  * @param fi [in] FUSE file info.
  * @return 0 on success, or \a -errno on failure.
  */
+/* Disable warning that path and fi are not used. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 static int
 s3fs_fgetattr(
     const char            *path,
@@ -936,6 +951,7 @@ s3fs_fgetattr(
 
     return( status );
 }
+#pragma GCC diagnostic pop
 
 
 
@@ -945,6 +961,9 @@ s3fs_fgetattr(
  * @param fi [in] FUSE file info.
  * @return 0 on success, or \a -errno on failure.
  */
+/* Disable warning that fi is not used. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 static int
 s3fs_flush(
     const char            *path,
@@ -957,6 +976,7 @@ s3fs_flush(
 
     return( status );
 }
+#pragma GCC diagnostic pop
 
 
 

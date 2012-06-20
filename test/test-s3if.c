@@ -27,9 +27,10 @@
 #include <curl/curl.h>
 #include "testfunctions.h"
 #include "aws-s3fs.h"
+#include "statcache.h"
 #include "s3if.h"
 
-#include <pthread.h>
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 
 
 struct Configuration globalConfig =
@@ -71,10 +72,14 @@ static void test_BuildS3Request( const char *param );
 static void test_SubmitS3RequestHead( const char *param );
 static void test_SubmitS3RequestData( const char *param );
 static void test_S3GetFileStat( const char *param );
+static void test_S3FileStat_File( const char *param );
+static void test_S3FileStat_Dir( const char *param );
 
 
 const struct dispatchTable dispatchTable[ ] =
 {
+    { "S3FileStatDir", test_S3FileStat_Dir },
+    { "S3FileStatFile", test_S3FileStat_File },
     { "S3GetFileStat", test_S3GetFileStat },
     { "SubmitS3RequestHead", test_SubmitS3RequestHead },
     { "SubmitS3RequestData", test_SubmitS3RequestData },
@@ -211,7 +216,7 @@ static void test_AddHeaderValueToSignString( const char *parms )
     toAdd = malloc( 100 );
     strcpy( toAdd, "Test line 3" );
     addedlen = AddHeaderValueToSignString( signString, toAdd );
-    for( i = 0; i < strlen( signString ); i++ )
+    for( i = 0; i < (int) strlen( signString ); i++ )
     {
         if( signString[ i ] == '\n' )
 	{
@@ -373,5 +378,74 @@ static void test_S3GetFileStat( const char *param )
 	    ( fi->exeUid ? S_ISUID : 0 ) | ( fi->exeGid ? S_ISGID : 0 ) |
 	    ( fi->exeUid ? S_ISVTX : 0 ) );
 
-    /*    free( fi );*/
+    free( fi );
 }
+
+
+
+static void test_S3FileStat_File( const char *param )
+{
+    struct S3FileInfo *fi;
+    struct S3FileInfo *cachedFi;
+    int               status;
+
+    ReadLiveConfig( param );
+
+    InitializeS3If( );
+    status = S3FileStat( "/README", &fi );
+    if( status != 0) exit( 1 );
+    if( fi == NULL ) exit( 1 );
+
+    /* Verify that the file was found in the cache. */
+    cachedFi = SearchStatEntry( "/README" );
+    if( cachedFi == NULL )
+    {
+        printf( "File not found in stat cache.\n" );
+        exit( 1 );
+    }
+    else
+    {
+        printf( "t=%c s=%d p=%3o uid=%d gid=%d\na=%s",
+		fi->fileType, (int)fi->size, fi->permissions, fi->uid, fi->gid,
+		ctime(&fi->atime) );
+	printf( "m=%s", ctime(&fi->mtime) );
+	printf( "c=%ssp=%d\n", ctime(&fi->ctime),
+		( fi->exeUid ? S_ISUID : 0 ) | ( fi->exeGid ? S_ISGID : 0 ) |
+		( fi->exeUid ? S_ISVTX : 0 ) );
+    }
+}
+
+
+
+static void test_S3FileStat_Dir( const char *param )
+{
+    struct S3FileInfo *fi;
+    struct S3FileInfo *cachedFi;
+    int               status;
+
+    ReadLiveConfig( param );
+
+    InitializeS3If( );
+    status = S3FileStat( "/directory", &fi );
+    if( status != 0) exit( 1 );
+    if( fi == NULL ) exit( 1 );
+
+    /* Verify that the directory was found in the cache. */
+    cachedFi = SearchStatEntry( "/directory/" );
+    if( cachedFi == NULL )
+    {
+        printf( "Directory not found in stat cache.\n" );
+        exit( 1 );
+    }
+    else
+    {
+        printf( "t=%c s=%d p=%3o uid=%d gid=%d\na=%s",
+		fi->fileType, (int)fi->size, fi->permissions, fi->uid, fi->gid,
+		ctime(&fi->atime) );
+	printf( "m=%s", ctime(&fi->mtime) );
+	printf( "c=%ssp=%d\n", ctime(&fi->ctime),
+		( fi->exeUid ? S_ISUID : 0 ) | ( fi->exeGid ? S_ISGID : 0 ) |
+		( fi->exeUid ? S_ISVTX : 0 ) );
+    }
+}
+

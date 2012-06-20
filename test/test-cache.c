@@ -26,6 +26,7 @@
 #include "statcache.h"
 #include "testfunctions.h"
 
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 
 
 static void test_AddEntry( const char *parms );

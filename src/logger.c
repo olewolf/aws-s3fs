@@ -355,7 +355,7 @@ Syslog(
     va_end( v1 );
 
     pthread_mutex_lock( &logger_mutex );
-    if( priority <= logger.logLevel )
+    if( priority <= (int) logger.logLevel )
     {
         LogMessage( logger.logFh, logger.loggingEnabled,
 		    logger.logToSyslog, logger.stdoutDisabled,
