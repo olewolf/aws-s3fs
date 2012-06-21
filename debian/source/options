@@ -1,0 +1,2 @@
+# Ignore changes on auto-generataed files.
+extend-diff-ignore = "((^|/)(config.*|configure|test/testdata/livetest\.ini|aclocal\.m4))|(Makefile|Makefile\.in)$"
