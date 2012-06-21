@@ -1889,7 +1889,7 @@ S3ReadFile(
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 int S3FlushBuffers( const char *path )
 {
-    /* Stub */
+    /* There currently aren't any buffers to flush, so just return. */
     return 0;
 }
 #pragma GCC diagnostic pop
@@ -1901,7 +1901,7 @@ int S3FlushBuffers( const char *path )
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 int S3FileClose( const char *path )
 {
-    /* Stub */
+    /* Update the last access time, and stat the file. */
     return 0;
 }
 #pragma GCC diagnostic pop
@@ -1963,3 +1963,127 @@ S3ReadLink(
 
     return( status );
 }
+
+
+
+/**
+ * Submit an x-amz-copy-source to file-from-samefile, but with new metadata.
+ * @param file [in] File whose settings are to be updated.
+ * @param fi [in] File Info structure with new information.
+ * @return 0 on success, or \a -errno on failure.
+ */
+static int
+UpdateAmzHeaders(
+    const char        *file,
+    struct S3FileInfo *fi
+		 )
+{
+    char              atimeHeader[ 50 ];
+    char              mtimeHeader[ 50 ];
+    struct tm         atm;
+    struct tm         mtm;
+    const char        *tFormat = "%s:%s, %d %s %d %02d:%02d:%02d GMT";
+    const char        *wdays[ ] = { "Mon", "Tue", "Wed", "Thu",
+				    "Fri", "Sat", "Sun" };
+    const char        *months[ ] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+				     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+    struct curl_slist *headers = NULL;
+    char              *copySourceHdr;
+    char              tmpHdr[ 30 ];
+    char              *response;
+    int               responseLength;
+    int               status = 0;
+
+    printf( "UpdateAmzHeaders beginning...\n" );
+
+    /* Replace the file by copy-source. Unfortunately, this implies a complete
+       rewrite of the amz headers. */
+    copySourceHdr = malloc( strlen( file )
+			    + strlen( globalConfig.bucketName )
+			    + strlen( "x-amz-copy-source:" )
+			    + sizeof (char ) );
+    strcpy( copySourceHdr, "x-amz-copy-source:" );
+    strcat( copySourceHdr, globalConfig.bucketName );
+    strcat( copySourceHdr, file );
+    headers = curl_slist_append( headers, copySourceHdr );
+    free( copySourceHdr );
+    headers = curl_slist_append( headers,
+				 "x-amz-metadata-directive:REPLACE" );
+    /* Rewrite file type header. */
+    if( fi->fileType == 'd' )
+    {
+        headers = curl_slist_append( headers, "Content-Type:x-directory" );
+    }
+    else if( fi->fileType == 'l')
+    {
+        headers = curl_slist_append( headers, "Content-Type:x-symlink" );
+    }
+
+    /* Update time stamps. */
+    localtime_r( &fi->atime, &atm );
+    sprintf( atimeHeader, tFormat, "x-amz-meta-atime",
+	     wdays[ atm.tm_wday ],
+	     atm.tm_mday, months[ atm.tm_mon ], atm.tm_year,
+	     atm.tm_hour, atm.tm_min, atm.tm_sec );
+    headers = curl_slist_append( headers, atimeHeader );
+    localtime_r( &fi->mtime, &mtm );
+    sprintf( mtimeHeader, tFormat, "Last-Modified", wdays[ mtm.tm_wday ],
+	     mtm.tm_mday, months[ mtm.tm_mon ], mtm.tm_year,
+	     mtm.tm_hour, mtm.tm_min, mtm.tm_sec );
+    headers = curl_slist_append( headers, mtimeHeader );
+
+    /* Update uid, gid, and permissions. */
+    sprintf( tmpHdr, "x-amz-meta-uid:%d", fi->uid );
+    headers = curl_slist_append( headers, tmpHdr );
+    sprintf( tmpHdr, "x-amz-meta-uid:%d", fi->uid );
+    headers = curl_slist_append( headers, tmpHdr );
+    sprintf( tmpHdr, "x-amz-meta-mode:%d", fi->permissions );
+    headers = curl_slist_append( headers, tmpHdr );
+    /* Update s-uid bit, s-gid bit, and sticky bit. */
+    sprintf( tmpHdr, "x-amz-meta-modex:%d",
+	      ( fi->exeUid ? S_ISUID : 0 )
+	    | ( fi->exeGid ? S_ISGID : 0 )
+	    | ( fi->sticky ? S_ISVTX : 0 ) );
+    headers = curl_slist_append( headers, tmpHdr );
+
+    /* Update the headers. */
+    headers = BuildS3Request( "PUT", headers, file );
+    status  = SubmitS3Request( "PUT", headers, file,
+			       (void**) &response, &responseLength );
+
+    printf( "UpdateAmzHeaders ended, status = %d...\n", status );
+    free( response );
+
+    return( status );
+}
+
+
+
+/**
+ * Modify the atime and mtime timestamps for a file.
+ * @param file [in] File whose timestamps are to be updated.
+ * @param atime [in] New atime value.
+ * @param atime [in] New mtime value.
+ * @return 0 on success, or \a -errno on failure.
+ */
+int
+S3ModifyTimeStamps(
+    const char *file,
+    time_t     atime,
+    time_t     mtime
+		   )
+{
+    struct S3FileInfo *fi;
+    int               status;
+
+    status = S3FileStat( file, &fi );
+    if( status == 0 )
+    {
+	fi->atime = atime;
+	fi->mtime = mtime;
+
+	status = UpdateAmzHeaders( file, fi );
+    }
+    return( status );
+}
+

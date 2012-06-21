@@ -77,6 +77,7 @@ int S3ReadFile( const char *path, char *buf,
 int S3FlushBuffers( const char *path );
 int S3FileClose( const char *path );
 int S3ReadLink( const char *link, char **target );
+int S3ModifyTimeStamps( const char *file, time_t atime, time_t mtime );
 
 
 

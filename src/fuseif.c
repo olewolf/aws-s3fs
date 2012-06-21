@@ -47,7 +47,6 @@ static int s3fs_opendir(const char *, struct fuse_file_info *);
 static int s3fs_readdir(const char *, void *, fuse_fill_dir_t, off_t, struct fuse_file_info *);
 static int s3fs_releasedir(const char *, struct fuse_file_info *);
 static int s3fs_access(const char *, int);
-/* cat a file: */
 static int s3fs_read(const char *, char *, size_t, off_t, struct fuse_file_info *);
 static int s3fs_fgetattr(const char *, struct stat *, struct fuse_file_info *);
 static int s3fs_flush(const char *, struct fuse_file_info *);
@@ -55,6 +54,7 @@ static int s3fs_release(const char *, struct fuse_file_info *);
 
 //static int s3fs_symlink(const char *, const char *);
 static int s3fs_readlink(const char *, char *, size_t);
+static int s3fs_utimens( const char *file, const struct timespec tv[ 2 ] );
 
 /*
 int s3fs_getdir( const char *, char *, size_t);
@@ -67,7 +67,9 @@ int s3fs_link(const char *, const char *);
 int s3fs_chmod(const char *, mode_t);
 int s3fs_chown(const char *, uid_t, gid_t);
 int s3fs_truncate(const char *, off_t);
-int s3fs_utime(const char *, struct utimbuf *);
+*/
+/* Deprecated: int s3fs_utime(const char *, struct utimbuf *); */
+/*
 int s3fs_write(const char *, const char *, size_t, off_t, struct fuse_file_info *);
 int s3fs_statfs(const char *, struct statvfs *);
 int s3fs_fsync(const char *, int, struct fuse_file_info *);
@@ -81,7 +83,7 @@ void s3fs_destroy(void *);
 int s3fs_create(const char *, mode_t, struct fuse_file_info *);
 int s3fs_ftruncate(const char *, off_t, struct fuse_file_info *);
 int s3fs_lock(const char *, struct fuse_file_info *, int cmd, struct flock *);
-int s3fs_utimens(const char *, const struct timespec tv[2]);
+int s3fs_utimens(const char *, const struct timespec tv[2])
 int s3fs_bmap(const char *, size_t blocksize, uint64_t *idx);
 int s3fs_ioctl(const char *, int cmd, void *arg, struct fuse_file_info *, unsigned int flags, void *data);
 int s3fs_poll(const char *, struct fuse_file_info *, struct fuse_pollhandle *ph, unsigned *reventsp);
@@ -135,9 +137,13 @@ struct fuse_operations s3fsOperations =
     .fgetattr    = s3fs_fgetattr,
     /*
     .lock        = s3fs_lock,
+    */
     .utimens     = s3fs_utimens,
+    /*
     .bmap        = s3fs_bmap,
+    */
     .flag_nullpath_ok = 0,
+    /*
     .flag_reserved    = 0,
     .ioctl       = s3fs_ioctl,
     .poll        = s3fs_poll
@@ -1090,3 +1096,24 @@ s3fs_readlink(
     return( status );
 }
 
+
+
+/**
+ * Modify the atime and mtime settings for a file.
+ * @param file [in] File whose timestamps are to be updated.
+ * @param tv [in] atime and mtime timestamps.
+ * @return 0 on success, or \a -errno otherwise.
+ */
+static int
+s3fs_utimens(
+    const char            *file,
+    const struct timespec tv[ 2 ]
+	     )
+{
+    const time_t atime = tv[ 0 ].tv_sec;
+    const time_t mtime = tv[ 0 ].tv_sec;
+    int status;
+
+    status = S3ModifyTimeStamps( file, atime, mtime );
+    return( status );
+}
