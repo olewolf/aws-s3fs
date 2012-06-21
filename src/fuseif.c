@@ -521,6 +521,8 @@ CopyFileInfoToFileStat(
     stat->st_uid  =  fileInfo->uid;
     stat->st_gid  =  fileInfo->gid;
     stat->st_size =  fileInfo->size;
+    stat->st_blocks = ( fileInfo->size + 511 ) / 512;
+    stat->st_blksize = 65536l;
     stat->st_mode |= ( fileInfo->exeGid ? S_ISGID : 0 );
     stat->st_mode |= ( fileInfo->exeUid ? S_ISUID : 0 );
     stat->st_mode |= ( fileInfo->sticky ? S_ISVTX : 0 );
@@ -529,12 +531,7 @@ CopyFileInfoToFileStat(
     memcpy( &stat->st_ctime, &fileInfo->ctime, sizeof( time_t ) );
     /* Set st_nlink = 1 for directories to make "find" work (see
        the FUSE FAQ). */
-    /*
-    if( fileInfo->fileType == 'd' )
-    {
-    }
-    */
-        stat->st_nlink = 1;
+    stat->st_nlink = 1;
 }
 
 

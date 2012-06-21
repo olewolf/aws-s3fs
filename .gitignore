@@ -19,9 +19,7 @@ stamp-h1
 debian/aws-*.log
 debian/*.substvars
 debian/aws-s3fs/*
-debian/compat
 debian/files
-debian/source/*
 debian/postinst
 debian/postrm
 
