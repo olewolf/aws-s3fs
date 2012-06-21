@@ -122,7 +122,7 @@ Daemonize(
     if( forkPid < 0 )
     {
 	Syslog( LOG_ERR, "Could not spawn daemon process\n" );
-	    exit( EXIT_FAILURE );
+	exit( EXIT_FAILURE );
     }
     /* We're the parent, so now exit. */
     else if( forkPid > 0 )

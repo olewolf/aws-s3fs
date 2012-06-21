@@ -378,6 +378,7 @@ InitializeConfiguration(
     /*@+null@*/
     configuration->verbose.value = DEFAULT_VERBOSE;
     configuration->verbose.isset = false;
+    configuration->logLevel      = log_WARNING;
     configuration->daemonize     = true;
 }
 
@@ -438,6 +439,75 @@ static const char *ShowLogLevel( enum LogLevels logLevel )
 
 
 /**
+ * Attempt to lock a configuration file. The configuration file names are
+ * tried in the following order: (1) command-line override,
+ * (2) ~/.aws-s3fs.conf, and (3) /etc/aws-s3fs.conf.
+ * @param override [in] Configuration file filename specified on the command
+ *        line.
+ * @param configFilename [out] The name of the configuration file that was
+ *        eventually selected.
+ * @return File handle for the file.
+ */
+static const FILE*
+TryConfigFiles(
+    const char *override,
+    char       **configFilename
+	       )
+{
+    const FILE *configFp = NULL;
+    char       *configFile;
+    const char *homedir;
+
+    /* Attempt to read the configuration file override, if specified. */
+    if( override != NULL )
+    {
+	configFp = TestFileReadable( override );
+	if( configFp == NULL )
+        {
+	    fprintf( stderr, "Cannot open %s for reading.\n", override );
+	    exit( EXIT_FAILURE );
+	}
+	else
+	{
+	    *configFilename = strdup( override );
+	}
+    }
+    else
+    {
+        /* Otherwise, attempt "~/.aws-s3fs". */
+        homedir = getenv( "HOME" );
+	if( homedir != NULL )
+	{
+	    /* Build the path for "~/.aws-s3fs". */
+	    configFile = malloc( strlen( homedir ) + sizeof( "/.aws-s3fs" )
+				 + sizeof( char ) );
+	    assert( configFile != NULL );
+	    strcpy( configFile, homedir );
+	    strcat( configFile, "/.aws-s3fs" );
+	    configFp = TestFileReadable( configFile );
+	    if( configFp != NULL )
+	    {
+		*configFilename = configFile;
+	    }
+	    else
+	    {
+	        free( configFile );
+	        /* Still unsuccessful, attempt DEFAULT_CONFIG_FILENAME. */
+		configFp = TestFileReadable( DEFAULT_CONFIG_FILENAME );
+		if( configFp != NULL )
+		{
+		    *configFilename = strdup( DEFAULT_CONFIG_FILENAME );
+		}
+	    }
+	}
+    }
+
+    return( configFp );
+}
+
+
+
+/**
  * Fill a \a configuration structure according to aws-s3fs.conf file contents
  * and command-line options and parameters, and the AWS_S3FS_KEY.
  * @param configuration [out] Pointer to configuration structure that is to
@@ -458,6 +528,7 @@ Configure(
 	.configuration =
 	{
 	    .region      = US_STANDARD,
+	    .mountPoint  = NULL,
 	    .bucketName  = NULL,
 	    .path        = NULL,
 	    .keyId       = NULL,
@@ -481,14 +552,12 @@ Configure(
 	.loglevelSpecified   = false
     };
 
-    char                        *configFile = NULL;
-    const FILE                  *configFp;
-    const char                  *homedir;
-    const char                  *accessKeys;
-    bool                        keyError;
-    bool                        forcedConfigFile = false;
-    bool                        optionSuccess;
-    bool                        configSuccess = true;
+    const FILE *configFp;
+    char       *configFilename = NULL;
+    const char *accessKeys;
+    bool       keyError;
+    bool       optionSuccess;
+    bool       configSuccess = true;
 
     /* Decode the command line options, which may include an override of
        the configuration file. */
@@ -500,69 +569,29 @@ Configure(
 	exit( EXIT_FAILURE );
     }
 
-    /* Read the configuration files in the following priority:
-       (1) command-line specified config file
-       (2) /etc/aws-s3fs.conf
-       (3) ~/.aws-s3fs.conf
-    */
-
+    /* Read configuration file. */
     InitializeConfiguration( configuration );
 
-    /* Attempt to read the configuration file override, if specified. */
-    if( cmdlineConfiguration.configFile != NULL )
-    {
-        configFile = strdup( cmdlineConfiguration.configFile );
-	assert( configFile != NULL );
-        forcedConfigFile = true;
-	configFp = TestFileReadable( configFile );
-    }
-    else
-    {
-        /* Otherwise, attempt "~/.aws-s3fs". */
-        configFp = NULL;
-        homedir = getenv( "HOME" );
-	if( homedir != NULL )
-	{
-	    /* Build the path for "~/.aws-s3fs". */
-	    configFile = malloc( strlen( homedir ) + sizeof( "/.aws-s3fs" )
-				 + sizeof( char ) );
-	    assert( configFile != NULL );
-	    strcpy( configFile, homedir );
-	    strcat( configFile, "/.aws-s3fs" );
-	    configFp = TestFileReadable( configFile );
-	}
-	/* Still unsuccessful, attempt DEFAULT_CONFIG_FILENAME. */
-	if( configFp == NULL )
-	{
-	    if( configFile != NULL )
-	    {
-	        free( configFile );
-	    }
-	    configFile = strdup( DEFAULT_CONFIG_FILENAME );
-	    assert( configFile != NULL );
-	    configFp = TestFileReadable( configFile );
-	}
-    }
+    /* Read the configuration files in the following priority:
+       (1) command-line specified config file
+       (2) ~/.aws-s3fs.conf
+       (3) /etc/aws-s3fs.conf     */
+    configFp = TryConfigFiles( cmdlineConfiguration.configFile,
+			       &configFilename );
     if( configFp != NULL )
     {
-	configSuccess = ReadConfigFile( configFp, configFile, configuration );
+        configSuccess = ReadConfigFile( configFilename, configuration );
+	fclose( (FILE*) configFp );
+	if( ! configSuccess )
+	{
+	    fprintf( stderr, "Invalid config file settings in %s.\n",
+		     configFilename );
+	    exit( EXIT_FAILURE );
+	}
     }
-    if( ( configFp == NULL ) && bool_equal( forcedConfigFile, true ) )
-    {
-	fprintf( stderr, "Cannot open %s for reading.\n", configFile );
-	exit( EXIT_FAILURE );
-    }
-    free( configFile );
-    if( ! configSuccess )
-    {
-	fprintf( stderr, "Invalid config file settings.\n" );
-	exit( EXIT_FAILURE );
-    }
-    else
-    {
-        VerboseOutput( configuration->verbose.value,
-		       "Read configuration from %s.\n", configFile );
-    }
+    VerboseOutput( configuration->verbose.value,
+		   "Read configuration from %s.\n", configFilename );
+    free( configFilename );
 
     /* Having read the config file (if any of them existed), overwrite any
        configuration setting that is specified by the secret key environment
@@ -651,7 +680,8 @@ Configure(
 
     VerboseOutput( configuration->verbose.value,
 		   "Configuration:\n  Region: %s\n  Bucket: %s\n"
-		   "  Path: %s\n  Syslog: %s\n  Mount point %s\n",
+		   "  Path: %s\n  Log: %s\n  Log level: %s\n"
+                   "Mount point:\n  %s\n",
 		   regionNames[ configuration->region ],
 		   ShowStringValue( configuration->bucketName ),
 		   ShowStringValue( configuration->path ),

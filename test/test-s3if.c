@@ -391,7 +391,11 @@ static void test_S3FileStat_File( const char *param )
 
     InitializeS3If( );
     status = S3FileStat( "/README", &fi );
-    if( status != 0) exit( 1 );
+    if( status != 0)
+    {
+        fprintf( stderr, "Error: %d\n", status );
+	exit( 1 );
+    }
     if( fi == NULL ) exit( 1 );
 
     /* Verify that the file was found in the cache. */

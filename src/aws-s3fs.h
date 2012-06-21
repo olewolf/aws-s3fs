@@ -37,8 +37,8 @@
 #define MAX_FILE_DESCRIPTORS 16
 
 
-/* Make room for 50,000 files in the stat cache. */
-#define MAX_STAT_CACHE_SIZE 50000l
+/* Make room for 20,000 files in the stat cache. */
+#define MAX_STAT_CACHE_SIZE 20000l
 
 /* Default, system-wide aws-s3fs.conf file. */
 #define DEFAULT_CONFIG_FILENAME SYSCONFDIR "/aws-s3fs.conf"
@@ -136,7 +136,6 @@ Configure(
 
 bool
 ReadConfigFile(
-    const FILE           *fp,
     const char           *configFilename,
     struct Configuration *configuration
 );

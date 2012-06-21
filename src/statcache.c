@@ -27,7 +27,6 @@
 #include "statcache.h"
 #include "aws-s3fs.h"
 
-
 #ifdef AUTOTEST
 #undef MAX_STAT_CACHE_SIZE
 #define MAX_STAT_CACHE_SIZE 4

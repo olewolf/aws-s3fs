@@ -104,7 +104,6 @@ ConfigSetBoolean(
  */
 bool
 ReadConfigFile(
-    const FILE           *lockFp,
     const char           *configFilename,
     struct Configuration *configuration
 	      )
@@ -193,11 +192,6 @@ ReadConfigFile(
     /*@-compdef@*/
     config_destroy( &config );
     /*@+compdef@*/
-
-    /* Unlock the config file. */
-    /*@-abstract@* Overridden to maintain const correctness everywhere else. */
-    (void)fclose( (FILE *)lockFp );
-    /*@+abstract@*/
 
     return( ! configError );
 /* Lint override: configRegion, configPath, configKey, and configLogfile

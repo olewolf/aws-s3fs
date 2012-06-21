@@ -87,6 +87,17 @@ struct HttpHeaders
 
 
 
+/*
+static void DumpStat( struct S3FileInfo *fi )
+{
+    if( fi == NULL ) return;
+    printf( "  uid = %d, gid = %d\n", fi->uid, fi->gid );
+    printf( "  perms = %o, type = %c\n", fi->permissions, fi->fileType );
+    printf( "  mtime = %ld\n", (long int)fi->mtime );
+}
+*/
+
+
 /**
  * Callback function for CURL write where header data is expected. The function
  * adds headers to an expanding array organized as {header-name, header-value}
@@ -949,6 +960,7 @@ SubmitS3Request(
 
     /* Submit request via CURL and wait for the response. */
     pthread_mutex_lock( &curl_mutex );
+    curl_easy_reset( curl );
     /* Set different callback functions for HEAD and GET requests. */
     if( strcmp( httpVerb, "HEAD" ) == 0 )
     {
@@ -1216,7 +1228,7 @@ S3GetFileStat(
     /* Make request via curl and wait for response. */
     status = SubmitS3Request( "HEAD", headers, filename,
 			      (void**)&response, &length );
-
+    if( status == 0 )
     {
         /* Prepare an S3 File Info structure. */
         newFileInfo = malloc( sizeof (struct S3FileInfo ) );
@@ -1328,8 +1340,17 @@ S3GetFileStat(
 	}
 	free( response );
     }
-
-    *fileInfo = newFileInfo;
+    if( status == 0 )
+    {
+        *fileInfo = newFileInfo;
+    }
+    else
+    {
+        if( newFileInfo != NULL )
+	{
+ 	    free( newFileInfo );
+	}
+    }
     return( status );
 }
 
@@ -1356,6 +1377,10 @@ ResolveS3FileStatCacheMiss(
     if( status == 0 )
     {
         InsertCacheElement( filename, newFileInfo, &DeleteS3FileInfoStructure );
+	/*
+	printf( "Cache miss: %s (perms=%o)\n", filename,
+		newFileInfo->permissions );
+	*/
     }
     *fi = newFileInfo;
     return( status );
@@ -1408,7 +1433,7 @@ AddTrailingSlash(
     {
 	filenameLength = strlen( filename );
     }
-    dirname = malloc( filenameLength + sizeof( char ) );
+    dirname = malloc( filenameLength + 3 * sizeof( char ) );
     strncpy( dirname, filename, filenameLength );
     /* Add trailing slash if necessary. */
     if( dirname[ filenameLength - 1 ] != '/' )
@@ -1416,7 +1441,6 @@ AddTrailingSlash(
         dirname[ filenameLength     ] = '/';
         dirname[ filenameLength + 1 ] = '\0';
     }
-
     return dirname;
 }
 
@@ -1424,22 +1448,33 @@ AddTrailingSlash(
 
 /**
  * Return the S3 File Info for the specified file.
- * @param filename [in] Filename of the file.
+ * @param file [in] Filename of the file.
  * @param fi [out] Pointer to a pointer to the S3 File Info.
  * @return 0 on success, or \a -errno on failure.
  */
 int
 S3FileStat(
-    const char        *filename,
+    const char        *file,
     struct S3FileInfo **fi
 	   )
 {
+    int               stripIdx = 0;
+    char              *filename;
     struct S3FileInfo *fileInfo;
     int               status;
     char              *dirname;
-    struct S3FileInfo *dirFileInfo;
 
-    /* Prepare a directory name version of the file as well. */
+    /* Make sure there is exactly one leading slash in the filename. */
+    while( file[ stripIdx ] == '/' )
+    {
+	stripIdx++;
+    }
+    filename = malloc( strlen( file ) + 2 * sizeof( char ) );
+    filename[ 0 ] = '/';
+    filename[ 1 ] = '\0';
+    strcat( filename, &file[ stripIdx ] );
+
+    /* Prepare a directory name version of the file. */
     dirname = AddTrailingSlash( filename );
 
     /* Attempt to read the S3FileStat from the stat cache. */
@@ -1447,35 +1482,39 @@ S3FileStat(
     fileInfo = SearchStatEntry( filename );
     if( fileInfo == NULL )
     {
-        /* If the file was not found, attempt a directory name version. */
-        fileInfo = SearchStatEntry( dirname );
-	if( fileInfo == NULL )
-	{
-	    /* Read the file stat from S3. */
-	    status = ResolveS3FileStatCacheMiss( filename, &fileInfo );
-	    if( status == 0 )
-	    {
-		*fi = fileInfo;
-	    }
-	}
-    }
-    if( status != 0 )
-    {
-        /* If the file was not found in neither the cache nor on the S3 storage,
-	   maybe it is a directory. Add a '/' to the filename and try again,
-	   unless the filename already has a trailing slash. */
+        /* If the file was not found, attempt the directory name version. */
         if( filename[ strlen( filename ) - 1 ] != '/' )
 	{
-	    status = S3FileStat( dirname, &dirFileInfo );
-	    *fi = dirFileInfo;
+	    fileInfo = SearchStatEntry( dirname );
 	}
     }
 
     if( fileInfo == NULL )
     {
+        /* Read the file stat from S3. */
+        status = ResolveS3FileStatCacheMiss( filename, &fileInfo );
+	/* If unsuccessful, attempt the directory name version. */
+	if( status != 0 )
+	{
+	    status = ResolveS3FileStatCacheMiss( dirname, &fileInfo );
+	}
+    }
+    else
+    {
+      /*
+        printf( "Cache hit: %s\n", filename );
+      */
+    }
+    if( status == 0 )
+    {
+        *fi = fileInfo;
+    }
+    if( fileInfo == NULL )
+    {
         status = -ENOENT;
     }
 
+    free( filename );
     free( dirname );
     return( status );
 }
@@ -1574,7 +1613,7 @@ ReadXmlDirectory(
 		{
 		    direntry = malloc( strlen( nodeValue )
 				       - prefixLength
-				       + sizeof( char ) );
+				       + 2 * sizeof( char ) );
 		    strcpy( direntry, &nodeValue[ prefixLength ] );
 		    directory = curl_slist_append( directory, direntry );
 		    (*nFiles)++;
@@ -1638,6 +1677,7 @@ int S3ReadDir( struct S3FileInfo *fi, const char *dirname,
     char              *urlSafeFromFile;
     struct curl_slist *headers = NULL;
     struct curl_slist *directory = NULL;
+    int               prefixToSkip;
     char              *xmlData;
     int               xmlDataLength;
     xmlDocPtr         xmlResponse;
@@ -1669,9 +1709,11 @@ int S3ReadDir( struct S3FileInfo *fi, const char *dirname,
     relativeRoot[ 1 ] = '\0';
     strcpy( relativeRoot, globalConfig.bucketName );
     strcpy( relativeRoot, "/" );
-    strcpy( relativeRoot, prefix );
-    strcpy( relativeRoot, "/" );
-
+    if( strlen( prefix ) > 0 )
+    {
+        strcpy( relativeRoot, prefix );
+	strcpy( relativeRoot, "/" );
+    }
     queryBase = malloc( strlen( prefix )
 			+ sizeof( char )
 		        + strlen( urlSafePrefix )
@@ -1679,9 +1721,17 @@ int S3ReadDir( struct S3FileInfo *fi, const char *dirname,
 			+ strlen( delimiter )
 			+ sizeof( char ) );
 
-    /* Add a non-encoded trailing slash to the prefix in the query. */
-    sprintf( queryBase, "%s?prefix=%s/&delimiter=%s",
-	     relativeRoot, urlSafePrefix, delimiter );
+    /* Add a non-encoded trailing slash to the prefix in the query.
+       Omit the prefix if the root folder was specified. */
+    if( strlen( prefix ) == 0 )
+    {
+        sprintf( queryBase, "%s?delimiter=%s", relativeRoot, delimiter );
+    }
+    else
+    {
+        sprintf( queryBase, "%s?prefix=%s/&delimiter=%s",
+		 relativeRoot, urlSafePrefix, delimiter );
+    }
     free( (char*) urlSafePrefix );
 
     /* Fake the ".." and "." paths. */
@@ -1733,7 +1783,14 @@ int S3ReadDir( struct S3FileInfo *fi, const char *dirname,
 		}
 		else
 	        {
-		    ReadXmlDirectory( rootNode, strlen( prefix ) + 1,
+		    /* Skip the prefix and slash... */
+		    prefixToSkip = strlen( prefix ) + 1;
+		    /* ... except at the root folder which has neither. */
+		    if( prefixToSkip == 1 )
+		    {
+		        prefixToSkip = 0;
+		    }
+		    ReadXmlDirectory( rootNode, prefixToSkip,
 				      directory, &fromFile, &fileCounter );
 		}
 		xmlFreeDoc( xmlResponse );
@@ -1759,6 +1816,7 @@ int S3ReadDir( struct S3FileInfo *fi, const char *dirname,
 
     *nameArray = dirArray;
     *nFiles    = fileCounter;
+
     return( status );
 }
 #pragma GCC diagnostic pop

@@ -164,7 +164,7 @@ AC_INCLUDES_DEFAULT
 ])
 CFLAGS="$CFLAGS_SAVE"
 AC_DEFINE([_GNU_SOURCE], [], [Use GNU extensions])
-
+AC_DEFINE([FUSE_USE_VERSION], [26], [Use FUSE version 26])
 
 MAKE_DOXYGEN=false
 if @<:@ "x$ac_enable_doc" = "xyes" @:>@; then

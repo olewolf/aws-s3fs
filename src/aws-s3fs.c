@@ -25,12 +25,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <fuse/fuse.h>
 #include "aws-s3fs.h"
-
+#include "fuseif.h"
+#include "s3if.h"
 
 
 struct Configuration globalConfig;
-
 
 
 
@@ -93,27 +94,57 @@ static bool CheckAppsSupport( void )
 int
 main( int argc, char **argv )
 {
+    int         fuseStatus;
+    struct stat st;
+    int         fuseArgc;
+    char        *fuseArgv[ ] = { NULL, NULL, NULL, NULL };
+
     if( CheckAppsSupport( ) != true )
     {
 	exit( EXIT_FAILURE );
     }
 
+    /* Initialize modules. */
     InitializeConfiguration( &globalConfig );
     InitializeLoggingModule( );
-
+    InitializeS3If( );
+    /* Read configuration settings. */
     Configure( &globalConfig, argc, (const char * const *) argv );
+    /* Initialize the logging module. */
+    InitLog( globalConfig.logfile, globalConfig.logLevel );
 
-    InitLog( globalConfig.logfile,
-	     globalConfig.logLevel );
+    stat( globalConfig.mountPoint, &st );
+    if( ( st.st_mode & S_IFDIR ) == 0 )
+    {
+        fprintf( stderr, "Bad mount point \"%s\": no such directory\n",
+		 globalConfig.mountPoint );
+	exit( EXIT_FAILURE );
+    }
 
+    /* Daemonize unless foreground is requested. */
+    /*
     if( globalConfig.daemonize )
     {
         Daemonize( );
+	printf( "Demonized!\n" );
     }
-
-    while( 1 ) sleep( 10 );
+    */
+    /* Connect to FUSE. */
+    fuseArgc = 2;
+    if( ! globalConfig.daemonize )
+    {
+        fuseArgc++;
+	fuseArgv[ 2 ] = "-f";
+    }
+    /*
+    fuseArgc++;
+    fuseArgv[ 3 ] = "-d";
+    */
+    fuseArgv[ 0] = globalConfig.bucketName;
+    fuseArgv[ 1 ] = globalConfig.mountPoint;
+    fuseStatus = fuse_main( fuseArgc, fuseArgv, &s3fsOperations, NULL );
+    return( fuseStatus );
 
     return( EXIT_SUCCESS );
 }
-
 

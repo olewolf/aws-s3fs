@@ -21,8 +21,6 @@
  */
 
 
-#define FUSE_USE_VERSION 26
-
 #include <config.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -34,7 +32,6 @@
 #include <errno.h>
 #include <pthread.h>
 #include <fuse/fuse.h>
-/*#include <linux/major.h>*/
 #include "aws-s3fs.h"
 #include "s3if.h"
 
@@ -299,7 +296,7 @@ SetOpenFlags( struct OpenFlags *openFlags, int flags )
  * specified path is "component1/component2/filename", the function extracts
  * the string "component1". The function eventually returns the filename
  * and NULL as the path is depleted of components.
- * @param origPath [in] Pointer to the first character in the path.
+ * @param path [in] Path from which to extract the first directory component.
  * @param component [out] String with the first component.
  * @param length [out] Length of the component that was extracted, or 0 if
  *        there are no more components. Ignored if NULL.
@@ -308,7 +305,7 @@ SetOpenFlags( struct OpenFlags *openFlags, int flags )
  */
 static int
 GetNextPathComponent(
-    const char *origPath,
+    const char *path,
     char       **component,
     int        *length
 		     )
@@ -319,11 +316,11 @@ GetNextPathComponent(
     int  componentLength;
 
     /* The ugly while construct means: scan from the current position until
-       either an unescaped '/' is found or until the end of the string is
-       encountered. */
+       either an unescaped '/' is found or until the of the string. */
     endPos = 0;
     escaped = false;
-    while( ( ( ch = origPath[ endPos++ ] ) != '\0' )
+
+    while( ( ( ch = path[ endPos ] ) != '\0' )
 	   && ( ! ( ( ch == '/' ) && ( bool_equal( escaped, true ) ) ) ) )
     {
         if( ch == '\\' )
@@ -334,25 +331,35 @@ GetNextPathComponent(
 	{
 	    escaped = false;
 	}
+	endPos++;
     }
-    componentLength = endPos;
+
+    /* endPos is the position right after the first '/' encountered or right
+       after the end of the string. */
+    componentLength = ( ch == '\0' ) ? endPos - 1 : endPos;
+
     /* Skip past any additional '/' characters in case the path looks like:
        path/component1//component2..., which is valid. */
-    while( ( ch = origPath[ endPos ] ) == '/' )
+    if( endPos < (int) strlen( path ) )
     {
-        endPos++;
+        while( ( ch = path[ endPos ] ) == '/' )
+	{
+	    endPos++;
+	}
+    }
+
+    /* Return the component length. */
+    if( length != NULL )
+    {
+	*length = componentLength;
     }
 
     /* Copy the component into a new string. */
-    if( 1 < componentLength )
+    if( 0 < componentLength )
     {
         *component = malloc( componentLength + sizeof( char ) );
-	strncpy( *component, origPath, componentLength );
+	strncpy( *component, path, componentLength );
 	(*component)[ componentLength ] = '\0';
-	if( length != NULL )
-	{
-	    *length = componentLength;
-	}
 	return( endPos );
     }
     /* No additional components found. */
@@ -367,7 +374,7 @@ GetNextPathComponent(
 
 /**
  * Return the directory component of a path that contains both directories
- * and filename, that is, anything but the "basename" of a file.
+ * and filename, that is, everything but the "basename" of a file.
  * @param path [in] Full path of the file.
  * @return Directory component or NULL if only the filename was specified.
  */
@@ -376,23 +383,38 @@ GetPathPrefix(
     const char *path
 	      )
 {
-    int  lastPos;
+    int  idx = 0;
+    int  lastSlashPos = -1;
     char *pathPrefix;
+    char ch;
+    bool escaped = false;
 
-    lastPos = strlen( path ) - 1;
-    while( 0 <= --lastPos )
+    /* Find the last unescaped '/'. */
+    while( ( ch = path[ idx ] ) != '\0' )
     {
-        /* A '/' marks the last directory unless it the character is escaped. */
-        if( path[ lastPos ] == '/' )
+        if( ! escaped )
 	{
-	    if( ( lastPos != 0 ) && ( path[ lastPos ] != '\\' ) )
+	    if( ch == '/' )
 	    {
-	        pathPrefix = malloc( lastPos + sizeof( char ) );
-		strncpy( pathPrefix, path, lastPos );
-		pathPrefix[ lastPos ] = '\0';
-		return( pathPrefix );
+	        lastSlashPos = idx;
+	    }
+	    else if( ch == '\\' )
+	    {
+	        escaped = true;
 	    }
 	}
+	else
+	{
+	    escaped = false;
+	}
+	idx++;
+    }
+    if( lastSlashPos >= 0 )
+    {
+        pathPrefix = malloc( lastSlashPos + 2 * sizeof( char ) );
+	strncpy( pathPrefix, path, lastSlashPos + 1 );
+	pathPrefix[ lastSlashPos + 1 ] = '\0';
+	return( pathPrefix );
     }
 
     return( NULL );
@@ -414,76 +436,64 @@ VerifyPathSearchPermissions(
 {
     char              *pathPrefix;
     char              *pathComponent;
+    int               componentLength;
     int               position;
     char              *accumulatedPath;
     struct S3FileInfo *fileInfo;
     int               status;
 
     status = 0;
+
     pathPrefix = GetPathPrefix( path );
     if( pathPrefix != NULL )
     {
-        pathComponent        = NULL;
-        position             = 0;
-	accumulatedPath      = malloc( sizeof( char ) );
+        accumulatedPath      = malloc( strlen( pathPrefix )
+				       + 2 * sizeof( char ) );
 	accumulatedPath[ 0 ] = '\0';
-	do
+	position             = 0;
+	position = GetNextPathComponent( &pathPrefix[ position ],
+					 &pathComponent, &componentLength );
+	while( componentLength > 0 )
 	{
-	    if( pathComponent != NULL )
+	    /* Grow a path from the path components. */
+	    strcat( accumulatedPath, pathComponent );
+
+	    /* Examine the path at its current depth. */
+	    status = S3FileStat( accumulatedPath, &fileInfo );
+	    if( status == 0 )
 	    {
-		free( pathComponent );
-	    }
-	    position += GetNextPathComponent( &path[ position ],
-					      &pathComponent, NULL );
-	    if( pathComponent != NULL )
-	    {
-	        /* Grow a path from the path components. */
-	        accumulatedPath = realloc( accumulatedPath,
-					   strlen( accumulatedPath ) +
-					   sizeof( char ) /* for: '/' */ +
-					   strlen( pathComponent ) +
-					   sizeof( char ) /* for: '\0' */ );
-		strcat( accumulatedPath, "/" );
-		strcat( accumulatedPath, pathComponent );
-		/* Examine the path at its current depth. */
-		status = S3FileStat( accumulatedPath, &fileInfo );
-		if( status == 0 )
+	        /* If any component of the path prefix is not a
+		   directory, the error is ENOTDIR. */
+	        if( fileInfo->fileType != 'd' )
 		{
-		    /* If any component of the path prefix is not a
-		       directory, the error is ENOTDIR. */
-		    if( fileInfo->fileType != 'd' )
-		    {
-		        status = -ENOTDIR;
-			break;
-		    }
-		    /* Check permissions. The directory must be searchable
-		       by the user's gid and uid.  */
-		    if( ! IsUserAccessible( fileInfo, 01 ) )
-		    {
-		        status = -EACCES;
-			break;
-		    }
+		    status = -ENOTDIR;
+		    break;
 		}
-		else
+		/* Check permissions. The directory must be searchable
+		   by the user's gid and uid.  */
+		if( ! IsUserAccessible( fileInfo, 01 ) )
 		{
-		    /* If any component of the path does not exist, the error
-		       is ENOENT. */
-		    status = -ENOENT;
+		    status = -EACCES;
 		    break;
 		}
 	    }
-	} while( pathComponent != NULL );
+	    else
+	    {
+	        /* If any component of the path does not exist, the error
+		   is ENOENT. */
+	        status = -ENOENT;
+		break;
+	    }
 
-	/* Free all temporarily allocated memory. */
-	free( pathPrefix );
-	if( pathComponent != NULL )
-	{
 	    free( pathComponent );
+	    strcat( accumulatedPath, "/" );
+	    position += GetNextPathComponent( &pathPrefix[ position ],
+					      &pathComponent,
+					      &componentLength );
 	}
-	if( strlen( accumulatedPath ) != 0 )
-	{
-	    free( accumulatedPath );
-	}
+
+	free( accumulatedPath );
+	free( pathPrefix );
     }
 
     return( status );
@@ -517,6 +527,14 @@ CopyFileInfoToFileStat(
     memcpy( &stat->st_atime, &fileInfo->atime, sizeof( time_t ) );
     memcpy( &stat->st_mtime, &fileInfo->mtime, sizeof( time_t ) );
     memcpy( &stat->st_ctime, &fileInfo->ctime, sizeof( time_t ) );
+    /* Set st_nlink = 1 for directories to make "find" work (see
+       the FUSE FAQ). */
+    /*
+    if( fileInfo->fileType == 'd' )
+    {
+    }
+    */
+        stat->st_nlink = 1;
 }
 
 
@@ -540,6 +558,7 @@ s3fs_getattr(
 
     if( ( path == NULL ) || ( strcmp( path, "" ) == 0 ) )
     {
+        printf( "s3fs_getattr: null path\n" );
         status = -ENOENT;
 	return( status );
     }
@@ -554,7 +573,10 @@ s3fs_getattr(
         /* Update the stat structure with file information. */
         CopyFileInfoToFileStat( fileInfo, stat );
     }
-
+    if( status == 0 )
+        printf( "s3fs_getattr: %s perms = %07o\n", path, stat->st_mode );
+    else
+        printf( "s3fs_getattr: %s not found\n", path );
     return( status );
 }
 
@@ -674,11 +696,11 @@ s3fs_opendir(
 {
     struct S3FileInfo *fileInfo;
     int               status = 0;
-    int               dh;
+    int               dh = 0;
 
     /* Get information on the directory. */
     status = S3FileStat( dir, &fileInfo );
-    if( status != 0 )
+    if( status == 0 )
     {
         /* Determine if the user may open the directory. */
         if( IsExecutable( fileInfo ) )
@@ -700,7 +722,11 @@ s3fs_opendir(
 	    status = -EACCES;
 	}
     }
-
+    else
+    {
+        status = -ENFILE;
+    }
+    printf( "s3fs_opendir %s, status %d, file handle %d\n", dir, status, dh );
     return( status );
 }
 
@@ -747,6 +773,8 @@ s3fs_readdir(
     int  nFiles        = 0;
     char *dirEntry;
     int  i;
+
+    printf( "s3fs_readdir: %s\n", dir );
 
     /* Get directory handle. */
     dh = fi->fh;
@@ -813,6 +841,7 @@ s3fs_releasedir(
 	   expires from the stat cache. */
 	status = 0;
     }
+    printf( "s3fs_releasedir %s, fh = %d\n", dir, (int)fi->fh );
 
     return( status );
 }
@@ -840,6 +869,8 @@ s3fs_access(
     struct S3FileInfo *fileInfo;
     int               permissions = 0;
 
+    printf( "s3fs_access %s, mask %06o\n", path, mask );
+
     /* Verify that the path has search permissions throughout. */
     status = VerifyPathSearchPermissions( path );
     if( status == 0 )
@@ -863,7 +894,7 @@ s3fs_access(
 		{
 		    permissions |= X_OK;
 		}
-		if( permissions != mask )
+		if( ( permissions & mask ) != mask )
 		{
 		    status = -EACCES;
 		}
@@ -942,6 +973,8 @@ s3fs_fgetattr(
     struct S3FileInfo *fileInfo;
     int               status;
 
+    printf( "s3fs_fgetattr %s, fh = %d\n", path, (int)fi->fh );
+
     /* Stat the file. */
     fileInfo = fileDescriptors[ fi->fh ];
     status = 0;
@@ -971,6 +1004,8 @@ s3fs_flush(
 	   )
 {
     int status;
+
+    printf( "s3fs_flush %s\n", path );
 
     status = S3FlushBuffers( path );
 

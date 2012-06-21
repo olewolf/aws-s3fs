@@ -27,6 +27,7 @@
 #include <string.h>
 #include "aws-s3fs.h"
 
+#include <stdlib.h>
 
 /* Maximum message for each verbose output string. */
 #define MAX_OUTPUT_STRING 1024
