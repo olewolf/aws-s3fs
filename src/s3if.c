@@ -1283,9 +1283,13 @@ S3GetFileStat(
 	    }
 	    else if( strcmp( headerKey, "Content-Type" ) == 0 )
 	    {
-		if( strcasecmp( headerValue, "x-directory" ) == 0 )
+		if( strncmp( headerValue, "x-directory", 11 ) == 0 )
 		{
 		    newFileInfo->fileType = 'd';
+		}
+		else if( strncmp( headerValue, "x-symlink", 9 ) == 0 )
+		{
+		    newFileInfo->fileType = 'l';
 		}
 	    }
 	    else if( strcmp( headerKey, "Content-Length" ) == 0 )
@@ -1823,15 +1827,61 @@ int S3ReadDir( struct S3FileInfo *fi, const char *dirname,
 
 
 
-/* Disable warning that userdata is unused. */
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-int S3ReadFile( const char *path, char *buf, size_t size, off_t offset )
+/** Read data from an open file
+ * @param path [in] Full file path.
+ * @param buf [out] Destination buffer for the file contents.
+ * @param maxSize [in] Maximum number of octets to read.
+ * @param offset [in] Offset from the beginning of the file.
+ * @param actuallyRead [out] Number of octets read from the file.
+ * @return 0 on success, or \a -errno on failure.
+ */
+int
+S3ReadFile(
+    const char *path,
+    char       *buf,
+    size_t     maxSize,
+    off_t      offset,
+    size_t     *actuallyRead
+	   )
 {
-    /* Stub */
-    return 0;
+    struct S3FileInfo *fi;
+    int               status;
+    int               receivedSize;
+    char              *contents;
+    struct curl_slist *headers = NULL;
+    char              range[ 50 ];
+
+    status = S3FileStat( path, &fi );
+    if( status == 0 )
+    {
+	if( fi->fileType == 'f' )
+	{
+	    /* Get the file contents between "offset" and the following
+	       "maxSize" bytes. */
+	    sprintf( range, "Range:bytes=%lld-%lld",
+		     (long long) offset, (long long) offset + maxSize - 1 );
+	    headers = curl_slist_append( headers, range );
+	    headers = BuildS3Request( "GET", headers, path );
+	    status  = SubmitS3Request( "GET", headers, path,
+				       (void**) &contents, &receivedSize );
+	    if( status == 0 )
+	    {
+	        /* Copy the contents to the destination and free the local
+		   buffer. */
+	        memcpy( buf, contents, receivedSize );
+		*actuallyRead = receivedSize;
+		free( contents );
+	    }
+	}
+	else
+	{
+	    status = -EIO;
+        }
+    }
+
+    return( status );
 }
-#pragma GCC diagnostic pop
+
 
 
 /* Disable warning that userdata is unused. */
@@ -1845,6 +1895,7 @@ int S3FlushBuffers( const char *path )
 #pragma GCC diagnostic pop
 
 
+
 /* Disable warning that userdata is unused. */
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
@@ -1856,3 +1907,59 @@ int S3FileClose( const char *path )
 #pragma GCC diagnostic pop
 
 
+
+/**
+ * Resolve a symbolic link.
+ * @param link [in] File path of the link.
+ * @param target [out] A pointer to where the link target string is stored.
+ * @return 0 on success, or \a -errno on failure.
+ */
+int
+S3ReadLink(
+    const char *link,
+    char       **target
+	   )
+{
+    struct S3FileInfo *fi;
+    int               status;
+    size_t            size;
+    char              *linkContents;
+    int               length;
+    struct curl_slist *headers = NULL;
+    char              range[ 25 ];
+
+    status = S3FileStat( link, &fi );
+    if( status == 0 )
+    {
+	if( fi->fileType == 'l' )
+	{
+	    size = fi->size;
+	    if( size <= 4096 )
+	    {
+	        /* Get the file contents; it is a rather small transfer. */
+	        sprintf( range, "Range:bytes=0-%d", (int)size );
+		headers = curl_slist_append( headers, range );
+		headers = BuildS3Request( "GET", headers, link );
+		status  = SubmitS3Request( "GET", headers, link,
+					   (void**) &linkContents, &length );
+		if( status == 0 )
+		{
+		    /* Zero-terminate and return. */
+		    linkContents = realloc( linkContents, length + 1 );
+		    linkContents[ length ] = '\0';
+		    *target = linkContents;
+		}
+	    }
+	    else
+	    {
+		status = -ENAMETOOLONG;
+	    }
+	}
+	else
+	{
+	    status = -EISNAM;
+        }
+    }
+
+    return( status );
+}

@@ -1,6 +1,6 @@
 /**
  * \file fuseif.c
- * \brief Interface to the FUSE .
+ * \brief Interface to FUSE.
  *
  * Copyright (C) 2012 Ole Wolf <wolf@blazingangles.com>
  *
@@ -33,6 +33,7 @@
 #include <pthread.h>
 #include <fuse/fuse.h>
 #include "aws-s3fs.h"
+#include "fuseif.h"
 #include "s3if.h"
 
 
@@ -45,8 +46,6 @@ static int s3fs_open( const char *, struct fuse_file_info* );
 static int s3fs_opendir(const char *, struct fuse_file_info *);
 static int s3fs_readdir(const char *, void *, fuse_fill_dir_t, off_t, struct fuse_file_info *);
 static int s3fs_releasedir(const char *, struct fuse_file_info *);
-
-/* cd to dir: */
 static int s3fs_access(const char *, int);
 /* cat a file: */
 static int s3fs_read(const char *, char *, size_t, off_t, struct fuse_file_info *);
@@ -54,15 +53,15 @@ static int s3fs_fgetattr(const char *, struct stat *, struct fuse_file_info *);
 static int s3fs_flush(const char *, struct fuse_file_info *);
 static int s3fs_release(const char *, struct fuse_file_info *);
 
+//static int s3fs_symlink(const char *, const char *);
+static int s3fs_readlink(const char *, char *, size_t);
 
 /*
-int s3fs_readlink(const char *, char *, size_t);
 int s3fs_getdir( const char *, char *, size_t);
 int s3fs_mknod(const char *, mode_t, dev_t);
 int s3fs_mkdir(const char *, mode_t);
 int s3fs_unlink(const char *);
 int s3fs_rmdir(const char *);
-int s3fs_symlink(const char *, const char *);
 int s3fs_rename(const char *, const char *);
 int s3fs_link(const char *, const char *);
 int s3fs_chmod(const char *, mode_t);
@@ -91,8 +90,8 @@ int s3fs_poll(const char *, struct fuse_file_info *, struct fuse_pollhandle *ph,
 struct fuse_operations s3fsOperations =
 {
     .getattr     = s3fs_getattr,
-    /*
     .readlink    = s3fs_readlink,
+    /*
     .mknod       = s3fs_mknod,
     .mkdir       = s3fs_mkdir,
     .unlink      = s3fs_unlink,
@@ -518,6 +517,10 @@ CopyFileInfoToFileStat(
     stat->st_mode |= ( fileInfo->fileType == 'f' ? S_IFREG : 0 );
     stat->st_mode |= ( fileInfo->fileType == 'l' ? S_IFLNK : 0 );
     stat->st_mode |= fileInfo->permissions;
+    if( fileInfo->fileType == 'l' )
+    {
+        stat->st_mode |= 0777; /* rwxrwxrwx for symlinks. */
+    }
     stat->st_uid  =  fileInfo->uid;
     stat->st_gid  =  fileInfo->gid;
     stat->st_size =  fileInfo->size;
@@ -598,6 +601,8 @@ s3fs_open(
     struct S3FileInfo *fileInfo;
     struct OpenFlags  openFlags;
 
+    printf( "s3fs_open: %s\n", path );
+
     /* If no filename is provided, return immediately. */
     if( ( path == NULL ) || ( strcmp( path, "" ) == 0 ) )
     {
@@ -655,6 +660,8 @@ s3fs_open(
 		    status = -EACCES;
 		}
 	    }
+
+    printf( "s3fs_open (end): %d\n", status );
 
 	    if( status != 0 )
 	    {
@@ -939,10 +946,14 @@ s3fs_read(
     struct fuse_file_info *fi
 	  )
 {
-    int status;
+    int    status;
+    size_t actuallyRead;
 
-    status = S3ReadFile( path, buf, size, offset );
-
+    status = S3ReadFile( path, buf, size, offset, &actuallyRead );
+    if( status == 0 )
+    {
+        return( actuallyRead );
+    }
     return( status );
 }
 #pragma GCC diagnostic pop
@@ -1035,4 +1046,47 @@ s3fs_release(
     return( status );
 }
 
+
+
+/*
+static int
+s3fs_symlink(
+    const char *linkname,
+    const char *path
+	     )
+{
+
+
+}
+*/
+
+
+
+/**
+ * Resolve a symbolic link.
+ * @param linkname [in] File path of the link.
+ * @param path [out] Buffer that receives the link target.
+ * @param length [in] Maximum link target length.
+ * @return 0 on success, or \a -errno on failure.
+ */
+static int
+s3fs_readlink(
+    const char *linkname,
+    char       *path,
+    size_t     length
+	     )
+{
+    int  status;
+    char *target;
+
+    status = S3ReadLink( linkname, &target );
+    if( status == 0 )
+    {
+	/* Truncate the link target. */
+	target[ length ] = '\0';
+	strcpy( path, target );
+	free( target );
+    }
+    return( status );
+}
 
