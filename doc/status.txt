@@ -1,3 +1,15 @@
+2012-06-22:
+	Walkthrough for memory leaks in s3fs.c.
+	Short-file upload functionality added.
+	Improved cache performance.
+	configfile.c changed to use libgetopt built-in search.
+	create symlink functionality added.
+
+2012-06-21:
+	readlink functionality added.
+	File metadata can be updated.
+	utimens functionality added.
+
 2012-06-20:
 	S3FileStat finds a file or directory on the S3 drive and places
 	the file stat in the stat cache.

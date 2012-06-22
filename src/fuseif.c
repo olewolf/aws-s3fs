@@ -41,19 +41,21 @@
 
 
 
-static int s3fs_getattr( const char  *path, struct stat *stat );
-static int s3fs_open( const char *, struct fuse_file_info* );
-static int s3fs_opendir(const char *, struct fuse_file_info *);
-static int s3fs_readdir(const char *, void *, fuse_fill_dir_t, off_t, struct fuse_file_info *);
-static int s3fs_releasedir(const char *, struct fuse_file_info *);
-static int s3fs_access(const char *, int);
-static int s3fs_read(const char *, char *, size_t, off_t, struct fuse_file_info *);
-static int s3fs_fgetattr(const char *, struct stat *, struct fuse_file_info *);
-static int s3fs_flush(const char *, struct fuse_file_info *);
-static int s3fs_release(const char *, struct fuse_file_info *);
+static int s3fs_getattr( const char *path, struct stat *stat );
+static int s3fs_open( const char*, struct fuse_file_info* );
+static int s3fs_opendir( const char*, struct fuse_file_info* );
+static int s3fs_readdir( const char*, void*, fuse_fill_dir_t,
+			 off_t, struct fuse_file_info* );
+static int s3fs_releasedir( const char*, struct fuse_file_info* );
+static int s3fs_access( const char*, int );
+static int s3fs_read( const char*, char*, size_t, off_t,
+		      struct fuse_file_info* );
+static int s3fs_fgetattr( const char*, struct stat*, struct fuse_file_info* );
+static int s3fs_flush( const char*, struct fuse_file_info* );
+static int s3fs_release( const char*, struct fuse_file_info* );
 
-//static int s3fs_symlink(const char *, const char *);
-static int s3fs_readlink(const char *, char *, size_t);
+static int s3fs_symlink( const char*, const char* );
+static int s3fs_readlink( const char*, char*, size_t );
 static int s3fs_utimens( const char *file, const struct timespec tv[ 2 ] );
 
 /*
@@ -79,7 +81,9 @@ int s3fs_listxattr(const char *, char *, size_t);
 int s3fs_removexattr(const char *, const char *);
 int s3fs_fsyncdir(const char *, int, struct fuse_file_info *);
 void *s3fs_init(struct fuse_conn_info *conn);
+*/
 void s3fs_destroy(void *);
+/*
 int s3fs_create(const char *, mode_t, struct fuse_file_info *);
 int s3fs_ftruncate(const char *, off_t, struct fuse_file_info *);
 int s3fs_lock(const char *, struct fuse_file_info *, int cmd, struct flock *);
@@ -98,7 +102,9 @@ struct fuse_operations s3fsOperations =
     .mkdir       = s3fs_mkdir,
     .unlink      = s3fs_unlink,
     .rmdir       = s3fs_rmdir,
+    */
     .symlink     = s3fs_symlink,
+    /*
     .rename      = s3fs_rename,
     .link        = s3fs_link,
     .chmod       = s3fs_chmod,
@@ -127,8 +133,8 @@ struct fuse_operations s3fsOperations =
     /*
     .fsyncdir    = s3fs_syncdir,
     .init        = s3fs_init,
-    .destroy     = s3fs_destroy,
     */
+    .destroy     = s3fs_destroy,
     .access      = s3fs_access,
     /*
     .create      = s3fs_create,
@@ -571,18 +577,21 @@ s3fs_getattr(
 
     /* Verify that the full path has search permissions. */
     status = VerifyPathSearchPermissions( path );
-
-    /* Examine the full path where the file itself may have any permission. */
-    status = S3FileStat( path, &fileInfo );
     if( status == 0 )
     {
-        /* Update the stat structure with file information. */
-        CopyFileInfoToFileStat( fileInfo, stat );
+        /* Examine the full path where the file itself may have any
+	   permission. */
+        status = S3FileStat( path, &fileInfo );
+	if( status == 0 )
+	{
+	    /* Update the stat structure with file information. */
+	    CopyFileInfoToFileStat( fileInfo, stat );
+	}
+	if( status == 0 )
+	    printf( "s3fs_getattr: %s perms = %07o\n", path, stat->st_mode );
+	else
+  	    printf( "s3fs_getattr: %s not found\n", path );
     }
-    if( status == 0 )
-        printf( "s3fs_getattr: %s perms = %07o\n", path, stat->st_mode );
-    else
-        printf( "s3fs_getattr: %s not found\n", path );
     return( status );
 }
 
@@ -1054,17 +1063,24 @@ s3fs_release(
 
 
 
-/*
+/**
+ * Create a symbolic link.
+ * @param target [in] Link target.
+ * @param path [in] File path of the link.
+ * @return 0 on success, or \a -errno on failure.
+ */
 static int
 s3fs_symlink(
-    const char *linkname,
+    const char *target,
     const char *path
 	     )
 {
+    int status;
 
-
+    printf( "s3fs_symlink: link %s -> %s\n", path, target );
+    status = S3CreateLink( path, target );
+    return( status );
 }
-*/
 
 
 
@@ -1088,8 +1104,11 @@ s3fs_readlink(
     status = S3ReadLink( linkname, &target );
     if( status == 0 )
     {
-	/* Truncate the link target. */
-	target[ length ] = '\0';
+	/* Truncate the link target if necessary. */
+        if( length < strlen( target ) + 1 )
+	{
+	    target[ length - 1 ] = '\0';
+	}
 	strcpy( path, target );
 	free( target );
     }
@@ -1117,3 +1136,20 @@ s3fs_utimens(
     status = S3ModifyTimeStamps( file, atime, mtime );
     return( status );
 }
+
+
+
+/* Disable warning that data is not used. What is it, anyway? */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+void
+s3fs_destroy(
+    void *data
+	     )
+{
+    /* Shutdown the S3IF. This also deletes all the fileinfo structures in
+       the filehandles array. */
+    S3Destroy( );
+}
+#pragma GCC diagnostic pop
+

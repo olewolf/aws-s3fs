@@ -133,19 +133,31 @@ DeleteStatEntry(
 
 
 /**
- * Expire the least recently used cache entries until the cache reaches its
- * maximum size.
+ * Expire the least recently used cache entries until the cache reaches the
+ * specified size.
+ * @param truncateTo [in] The maximum number of entries in the cache. To use
+ *        the MAX_STAT_CACHE_SIZE value, specify -1 for \a truncateTo.
  * @return Nothing.
  */
 void
 TruncateCache(
+    long truncateTo
 	      )
 {
     struct StatCacheEntry *entry;
     struct StatCacheEntry *tmpEntry;
     int                   cacheSize     = HASH_COUNT( statCache );
-    int                   toDelete      = cacheSize - MAX_STAT_CACHE_SIZE;
+    int                   toDelete;
     int                   numberDeleted = 0;
+
+    if( truncateTo != -1 )
+    {
+        toDelete = cacheSize - truncateTo;
+    }
+    else
+    {
+        toDelete = cacheSize - MAX_STAT_CACHE_SIZE;
+    }
 
     if( 0 < toDelete )
     {
@@ -218,6 +230,5 @@ InsertCacheElement(
     pthread_mutex_unlock( &mutex_statCache );
     Syslog( log_DEBUG, "Entry added to stat cache\n" );
 
-    TruncateCache( );
+    TruncateCache( -1 );
 }
-

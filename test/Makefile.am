@@ -19,7 +19,7 @@
 TESTSCRIPTS = commandline.at config.at common.at logging.at cache.at hash.at \
 	s3if.at
 
-noinst_PROGRAMS = test-decodecmdline test-config test-configfile test-common \
+noinst_PROGRAMS = test-decodecmdline test-config test-common \
 	test-logging test-cache test-hash test-s3if
 
 test_decodecmdline_SOURCES = $(SHAREDTESTSOURCE) test-decodecmdline.c \
@@ -27,9 +27,6 @@ test_decodecmdline_SOURCES = $(SHAREDTESTSOURCE) test-decodecmdline.c \
 	../src/common.c
 test_config_SOURCES = $(SHAREDTESTSOURCE) test-config.c \
 	../src/decodecmdline.c ../src/config.c ../src/configfile.c \
-	../src/common.c
-test_configfile_SOURCES = $(SHAREDTESTSOURCE) test-configfile.c \
-	../src/configfile.c ../src/config.c ../src/decodecmdline.c \
 	../src/common.c
 test_common_SOURCES = $(SHAREDTESTSOURCE) test-common.c ../src/common.c
 test_logging_SOURCES = $(SHAREDTESTSOURCE) test-logging.c \

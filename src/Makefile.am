@@ -16,12 +16,13 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 AM_LIBS = pthread
-AM_CFLAGS = -O2 -g
+#AM_CFLAGS = -O2 -g
+AM_CFLAGS = -O0 -g
 
 bin_PROGRAMS = aws-s3fs
 aws_s3fs_SOURCES = aws-s3fs.h sysdirs.h aws-s3fs.c \
 	decodecmdline.c configfile.c common.c fix-i386-cc.c config.c \
-	base64.c base64.h digest.c digest.h logger.c daemon.c \
+	base64.c base64.h digest.c digest.h logger.c \
 	fuseif.c fuseif.h s3if.c s3if.h statcache.c statcache.h
 
 BUILT_SOURCES = sysdirs.h

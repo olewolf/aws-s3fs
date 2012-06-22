@@ -61,6 +61,10 @@ struct S3FileInfo
     bool             exeUid : 1;
     bool             exeGid : 1;
     bool             sticky : 1;
+    /* filenotfound is used to cache 404 errors. It obviously means that
+       the entire structure contents are otherwise invalid. */
+    bool             filenotfound : 1;
+    char             *symlinkTarget;
     off_t            size;
     time_t           atime;
     time_t           mtime;
@@ -78,6 +82,8 @@ int S3FlushBuffers( const char *path );
 int S3FileClose( const char *path );
 int S3ReadLink( const char *link, char **target );
 int S3ModifyTimeStamps( const char *file, time_t atime, time_t mtime );
+int S3CreateLink( const char *linkname, const char *target );
+void S3Destroy( void );
 
 
 

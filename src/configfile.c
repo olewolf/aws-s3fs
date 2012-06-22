@@ -30,32 +30,6 @@
 
 
 /**
- * Return the value of a string that is specified in a configuration file.
- * @param config [in] libopt configuration structure.
- * @param key [in] Key of the configuration file value.
- * @return The value for the specified key.
- */
-/*@null@*/
-#ifndef AUTOTEST
-static
-#endif
-const char *
-LookupConfigString(
-    const struct config_t *config,
-    const char            *key
-		  )
-{
-    const char *configValue = NULL;
-
-    /*@-compdef@*/
-    ( void )config_lookup_string( config, key, &configValue );
-    /*@+compdef@*/
-    return( configValue );
-}
-
-
-
-/**
  * Read a boolean value from a libopt configuration file, and set a
  * \a configBoolean value to that value. (A \a configBoolean in this software
  * is a value that is true, false, or not set.)
@@ -71,23 +45,11 @@ static
 void
 ConfigSetBoolean(
     struct ConfigurationBoolean *configBoolean,
-    const struct config_t       *config,
-    const char                  *key
+    bool                        configValue
 		)
 {
-    bool configValue = false;
-
-    /*@-compdef@*/
-    if( config_lookup_bool( config, key, (int*)&configValue ) == CONFIG_TRUE )
-    /*@+compdef@*/
-    {
-        configBoolean->isset = true;
-	configBoolean->value = ( configValue ? true : false );
-    }
-    else
-    {
-        configBoolean->isset = false;
-    }
+    configBoolean->isset = true;
+    configBoolean->value = ( configValue ? true : false );
 }
 
 
@@ -116,10 +78,12 @@ ReadConfigFile(
     const char      *configPath;
     const char      *configKey;
     const char      *configLogfile;
+    int             configVerbose;
 
     /* Open the config file. */
     /*@-compdef@*/
     config_init( &config );
+
     readSuccess = config_read_file( &config, configFilename );
     /*@+compdef@*/
     if( readSuccess != CONFIG_TRUE )
@@ -136,27 +100,22 @@ ReadConfigFile(
     {
         /* Read the region from the config file. */
         /*@-compdef@*/
-        configRegion = LookupConfigString( &config, "region" );
-        /*@+compdef@*/
-	if( configRegion != NULL )
+        if( config_lookup_string( &config, "region", &configRegion ) )
 	{
-	    ConfigSetRegion( &configuration->region, configRegion, &configError );
+	    ConfigSetRegion( &configuration->region, configRegion,
+			     &configError );
 	}
 	/* Read the bucket name from the config file. */
         /*@-compdef@*/
-        configBucket = LookupConfigString( &config, "bucket" );
+	if( config_lookup_string( &config, "bucket", &configBucket ) )
         /*@+compdef@*/
-	if( configBucket != NULL )
 	{
-	    /*@-null@*/
 	    ConfigSetPath( &configuration->bucketName, configBucket );
-	    /*@+null@*/
 	}
 	/* Read the path from the config file. */
         /*@-compdef@*/
-        configPath = LookupConfigString( &config, "path" );
+	if( config_lookup_string( &config, "path", &configPath ) )
         /*@+compdef@*/
-	if( configPath != NULL )
 	{
 	    /*@-null@*/
 	    ConfigSetPath( &configuration->path, configPath );
@@ -164,9 +123,8 @@ ReadConfigFile(
 	}
 	/* Read the authentication key from the config file. */
         /*@-compdef@*/
-        configKey = LookupConfigString( &config, "key" );
+	if( config_lookup_string( &config, "key", &configKey ) )
         /*@+compdef@*/
-	if( configKey != NULL )
 	{
 	    /*@-null@*/
 	    ConfigSetKey( &configuration->keyId, &configuration->secretKey,
@@ -175,27 +133,18 @@ ReadConfigFile(
 	}
 	/* Read the logfile name from the config file. */
         /*@-compdef@*/
-        configLogfile = LookupConfigString( &config, "logfile" );
+	if( config_lookup_string( &config, "logfile", &configLogfile ) )
         /*@+compdef@*/
-	if( configLogfile != NULL )
 	{	
-	    /*@-null@*/
 	    ConfigSetPath( &configuration->logfile, configLogfile );
-	    /*@+null@*/
 	}
 	/* Read the verbosity setting from the config file. */
-        /*@-compdef@*/
-	ConfigSetBoolean( &configuration->verbose, &config, "verbose" );
-        /*@+compdef@*/
+	if( config_lookup_bool( &config, "verbose", &configVerbose ) )
+	{
+	     ConfigSetBoolean( &configuration->verbose, configVerbose );
+	}
     }
-
-    /*@-compdef@*/
     config_destroy( &config );
-    /*@+compdef@*/
 
     return( ! configError );
-/* Lint override: configRegion, configPath, configKey, and configLogfile
-   are deallocated by config_destroy. */
-/*@-mustfreefresh@*/
 }
-/*@+mustfreefresh@*/

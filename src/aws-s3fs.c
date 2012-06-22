@@ -36,55 +36,6 @@ struct Configuration globalConfig;
 
 
 /**
- * Determine whether required, external programs are available, and prints
- * an error to stderr for each missing program.
- * @return \a true if the required applications support is available, or
- *         \a false otherwise.
- */
-static bool CheckAppsSupport( void )
-{
-    const char *appslist[ ] =
-    {
-        "curl",
-	"aws"
-    };
-    unsigned int i;
-    char syscommand[ 50 ];
-    char missingApps[ 1000 ];
-    const char *command;
-
-    /* Search for applications from the appslist, and append any missing
-     * ones to the missingApps string. */
-    missingApps[ 0 ] = (char) 0;
-    for( i = 0; i < sizeof( appslist ) / sizeof( char* ); i++ )
-    {
-        command = appslist[ i ];
-        sprintf( syscommand, "which %s >/dev/null 2>&1", command );
-	if( system( syscommand ) != EXIT_SUCCESS )
-	{
-	    if( missingApps[ 0 ] != (char) 0 )
-	    {
-	        strcat( missingApps, ", " );
-	    }
-	    strcat (missingApps, command );
-	}
-    }
-    /* Return with status and/or error message. */
-    if( missingApps[ 0 ] == (char) 0 )
-    {
-        return( true );
-    }
-    else
-    {
-        fprintf( stderr, "Please install the following missing programs before using aws-s3fs:\n" );
-        fprintf( stderr, "  [ %s ]\n", missingApps );
-	return( false );
-    }
-}
-
-
-
-/**
  * The entry function decodes the command-line switches and invokes the
  * associated functions.
  * @param argc [in] The number of input arguments, used by the getopt library.
@@ -99,18 +50,13 @@ main( int argc, char **argv )
     int         fuseArgc;
     char        *fuseArgv[ ] = { NULL, NULL, NULL, NULL };
 
-    if( CheckAppsSupport( ) != true )
-    {
-	exit( EXIT_FAILURE );
-    }
-
     /* Initialize modules. */
     InitializeConfiguration( &globalConfig );
+    /* Initialize the logging module. */
     InitializeLoggingModule( );
-    InitializeS3If( );
     /* Read configuration settings. */
     Configure( &globalConfig, argc, (const char * const *) argv );
-    /* Initialize the logging module. */
+    InitializeS3If( );
     InitLog( globalConfig.logfile, globalConfig.logLevel );
 
     stat( globalConfig.mountPoint, &st );
@@ -121,14 +67,6 @@ main( int argc, char **argv )
 	exit( EXIT_FAILURE );
     }
 
-    /* Daemonize unless foreground is requested. */
-    /*
-    if( globalConfig.daemonize )
-    {
-        Daemonize( );
-	printf( "Demonized!\n" );
-    }
-    */
     /* Connect to FUSE. */
     fuseArgc = 2;
     if( ! globalConfig.daemonize )
@@ -144,7 +82,5 @@ main( int argc, char **argv )
     fuseArgv[ 1 ] = globalConfig.mountPoint;
     fuseStatus = fuse_main( fuseArgc, fuseArgv, &s3fsOperations, NULL );
     return( fuseStatus );
-
-    return( EXIT_SUCCESS );
 }
 

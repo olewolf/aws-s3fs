@@ -71,10 +71,12 @@ static CURL *curl = NULL;
 static void   *curlWriteBuffer;
 static size_t curlWriteBufferLength;
 static bool   curlWriteBufferIsHeaders;
-/*
-static unsigned char *curlReadBuffer;
-static size_t        curlReadBufferLength;
-*/
+static struct CurlReadBuffer
+{
+    unsigned char *data;
+    size_t        size;
+    off_t         offset;
+} curlReadBuffer;
 
 static long int localTimezone;
 
@@ -96,6 +98,22 @@ static void DumpStat( struct S3FileInfo *fi )
     printf( "  mtime = %ld\n", (long int)fi->mtime );
 }
 */
+
+
+
+static void
+DeleteCurlSlistAndContents(
+    struct curl_slist *toDelete
+			   )
+{
+    if( toDelete != NULL )
+    {
+	DeleteCurlSlistAndContents( toDelete->next );
+	free( toDelete->data );
+	free( toDelete );
+    }
+}
+
 
 
 /**
@@ -234,6 +252,43 @@ CurlWriteHeader(
  * Callback function for CURL write where body data is expected. The function
  * keeps track of a dynamically expanding buffer that may be filled by multiple
  * callbacks. The function is called from an already mutex-locked CURL function.
+ * @param ptr [out] Destination for the data to CURL.
+ * @param size [in] The allowed size of each data block.
+ * @param nmemb [in] The allowed number of data blocks.
+ * @param userdata [in] Pointer to the curlReadBuffer structure.
+ * @return Number of bytes copied to \a ptr.
+ */
+static size_t
+CurlReadData(
+    char   *ptr,
+    size_t size,
+    size_t nmemb,
+    void   *userdata
+	     )
+{
+    struct CurlReadBuffer *curlReadBuffer = userdata;
+    int maxWrite    = (int) ( size * nmemb );
+    int bytesCopied = 0;
+    int accumulatedTotal;
+
+    /* Copy a block of data to the CURL buffer. */
+    accumulatedTotal = (int) curlReadBuffer->offset;
+    while( ( bytesCopied <= maxWrite )
+	   && ( accumulatedTotal <= (int) curlReadBuffer->size ) )
+    {
+        ptr[ bytesCopied++ ] = curlReadBuffer->data[ accumulatedTotal++ ];
+    }
+    curlReadBuffer->offset = accumulatedTotal;
+
+    return( bytesCopied );
+}
+
+
+
+/**
+ * Callback function for CURL write where body data is expected. The function
+ * keeps track of a dynamically expanding buffer that may be filled by multiple
+ * callbacks. The function is called from an already mutex-locked CURL function.
  * @param ptr [in] Source of the data from CURL.
  * @param size [in] The size of each data block.
  * @param nmemb [in] Number of data blocks.
@@ -323,7 +378,7 @@ DeleteHeaderPairsTable(
  * @return Nothing.
  */
 STATIC void
-PrepareCurlBuffers(
+PrepareCurlWriteBuffers(
     bool prepareForHeaders
 		)
 {
@@ -335,11 +390,34 @@ PrepareCurlBuffers(
 	{
 	    DeleteHeaderPairsTable( curlWriteBuffer, curlWriteBufferLength );
 	}
+	else
+	{
+	    free( curlWriteBuffer );
+	}
     }
 
     /* Indicate the type of the next fill. */
     curlWriteBufferIsHeaders = prepareForHeaders;
     curlWriteBuffer          = NULL;
+}
+
+
+
+/**
+ * Prepare the read buffer with information about the pending upload.
+ * @param data [in] Data to be uploaded.
+ * @param size [in] Size of the data.
+ * @return Nothing.
+ */
+STATIC void
+PrepareCurlReadBuffer(
+    unsigned char *data,
+    size_t        size
+		       )
+{
+    curlReadBuffer.data   = data;
+    curlReadBuffer.size   = size;
+    curlReadBuffer.offset = 0l;
 }
 
 
@@ -388,9 +466,15 @@ static void DeleteS3FileInfoStructure(
     void *toDelete
 				      )
 {
-    if( toDelete != NULL )
+    struct S3FileInfo *fi = toDelete;
+
+    if( fi != NULL )
     {
-        free( toDelete );
+        if( fi->symlinkTarget != NULL )
+	{
+	    free( fi->symlinkTarget );
+	}
+        free( fi );
     }
 }
 
@@ -459,13 +543,16 @@ BuildGenericHeader(
     void
 		    )
 {
-    struct curl_slist *headers       = NULL;
+    struct curl_slist *headers = NULL;
     char              headbuf[ 512 ];
     char              *hostName;
-
     time_t            now;
     struct tm         tnow;
     char              *locale;
+
+    char *host;
+    char *date;
+    char *userAgent;
 
     /* Make Host: address a virtual host. */
     if( globalConfig.region != US_STANDARD )
@@ -480,19 +567,21 @@ BuildGenericHeader(
         /* US Standard does not have a virtual host name. */
         sprintf( headbuf, "Host: s3.amazonaws.com" );
     }
-    headers = curl_slist_append( headers, headbuf );
+    host = strdup( headbuf );
+    headers = curl_slist_append( headers, host );
 
     /* Generate time string. */
     locale = setlocale( LC_TIME, "en_US.UTF-8" );
     now    = time( NULL );
-    /* localtime is not thread-safe; use localtime_r. */
     localtime_r( &now, &tnow );
     strftime( headbuf, sizeof( headbuf ), "Date: %a, %d %b %Y %T %z", &tnow );
     setlocale( LC_TIME, locale );
-    headers = curl_slist_append( headers, headbuf );
+    date = strdup( headbuf );
+    headers = curl_slist_append( headers, date );
 
     /* Add user agent. */
-    headers = curl_slist_append( headers, "User-Agent: curl" );
+    userAgent = strdup( "User-Agent: curl" );
+    headers = curl_slist_append( headers, userAgent );
 
     return( headers );
 }
@@ -595,7 +684,7 @@ CreateAwsSignature(
 {
     char              messageToSign[ 4096 ];
     char              amzHeaders[ 2048 ];
-    char              awsHeader[ 100 ];
+    char              *awsHeader;
     int               messageLength;
     const char        *signature;
 
@@ -627,7 +716,7 @@ CreateAwsSignature(
 	/* Get x-amz-* headers. NOTE: Must be sorted!!! */
         if( strncasecmp( headerString, "x-amz-", strlen( "x-amz-" ) ) == 0 )
 	{
-	    /* Convert the x-amz- header to lower case. */
+	    /* Convert the x-amz-* header to lower case. */
 	    idx = 0;
 	    convertingHeaderKey = true;
 	    while( ( ch = headerString[ idx ] ) != '\0' )
@@ -686,28 +775,26 @@ CreateAwsSignature(
 		      strlen( messageToSign ),
 		      (const char*) globalConfig.secretKey,
 		      HASH_SHA1, HASHENC_BASE64 );
-    sprintf( awsHeader, "Authorization: AWS %s:%s\n",
+    awsHeader = malloc( 100 );
+    sprintf( awsHeader, "Authorization: AWS %s:%s",
 	     globalConfig.keyId, signature );
-    headers = curl_slist_append( headers, awsHeader );
-
+    free( (char*) signature );
+    headers = curl_slist_append( headers, strdup( awsHeader ) );
     return headers;
 }
 
 
 
 /**
- * Helper function for the qsort function in \a BuildS3Request. The helper
- * functions ensures that strings are sorted in descending order, because
- * the \a BuildS3Request reinserts them in a linked list in reverse order;
- * this will cause the strings to eventually be sorted in ascending order.
+ * Helper function for the qsort function in \a BuildS3Request.
  * @param a [in] First string in the qsort comparison.
  * @param b [in] Second string in the qsort comparison.
- * @return 0 if \a a = \a b, -1 if \a a > \a b, or 1 if \a a < \a b.
+ * @return 0 if \a a = \a b, 1 if \a a > \a b, or -1 if \a a < \a b.
  */
-static inline int
+static int
 qsort_strcmp( const void *a, const void *b )
 {
-    return( -strcmp( (const char*)a, (const char*)b ) );
+    return( strcasecmp( *((const char**) a ), *((const char**) b ) ) );
 }
 
 
@@ -749,13 +836,14 @@ BuildS3Request(
 	}
     }
     /* Sort the headers. */
-    qsort( &extraHeaders[ 0 ], count, sizeof( char* ), &qsort_strcmp );
+    qsort( extraHeaders, count, sizeof( extraHeaders[ 0 ] ), qsort_strcmp );
     /* Add the headers to the main header list and get rid of the extras
        list. */
     for( i = 0; i < count; i++ )
     {
         allHeaders = curl_slist_append( allHeaders, extraHeaders[ i ] );
     }
+    /* Free the list and its elements, but not the headers themselves. */
     curl_slist_free_all( additionalHeaders );
 
     /* Add a signature header. */
@@ -865,10 +953,6 @@ GetHttpStatus(
     const char *httpReply;
     char       ch;
     int        i;
-    int        j;
-
-    char       statusBuf[ 10 ];
-    int        toCopy;
 
     /* Assume that the first entry in the buffer contains the HTTP status
        reply. */
@@ -879,24 +963,11 @@ GetHttpStatus(
         i = strlen( "HTTP/1.1 " );
 	if( strncmp( httpReply, "HTTP/1.1 ", i ) == 0 )
 	{
-	    j = i;
-	    while( ( ( ch = httpReply[ j ] ) != '\0' ) && ( ! isdigit( ch ) ) )
+	    while( ( ( ch = httpReply[ i ] ) != '\0' ) && ( ! isdigit( ch ) ) )
 	    {
-		j++;
+		i++;
 	    }
-	    i = j;
-	    while( isdigit( httpReply[ j ] ) )
-	    {
-		j++;
-	    }
-	    toCopy = j - i;
-	    if( (int) sizeof( statusBuf ) - 1 < toCopy )
-	    {
-		toCopy = sizeof( statusBuf );
-	    }
-	    strncpy( statusBuf, &httpReply[ i ], toCopy );
-	    statusBuf[ toCopy ] = '\n';
-	    sscanf( statusBuf, "%d", &httpStatus );
+	    httpStatus = atoi( &httpReply[ i ] );
 	}
     }
 
@@ -908,6 +979,8 @@ GetHttpStatus(
 /**
  * Submit a sequence of headers containing an S3 request and receive the
  * output in the local write buffer. The headers list is deallocated.
+ * The request may include PUT requests, as long as there is no body data
+ * to put.
  * @param httpVerb [in] HTTP method (GET, HEAD, etc.).
  * @param headers [in/out] The CURL list of headers with the S3 request.
  * @param filename [in] Full path name of the file that is accessed.
@@ -920,8 +993,8 @@ SubmitS3Request(
     const char        *httpVerb,
     struct curl_slist *headers,
     const char        *filename,
-    void              **response,
-    int               *responseLength
+    void              **data,
+    int               *dataLength
 		)
 {
     char       *url;
@@ -929,6 +1002,8 @@ SubmitS3Request(
     int        urlLength;
     int        status = 0;
     int        httpStatus;
+
+    printf( "s3if: SubmitS3Request (%s)\n", filename );
 
     /* Determine the virtual host name. */
     hostName = GetS3HostNameByRegion( globalConfig.region,
@@ -961,18 +1036,19 @@ SubmitS3Request(
     /* Submit request via CURL and wait for the response. */
     pthread_mutex_lock( &curl_mutex );
     curl_easy_reset( curl );
-    /* Set different callback functions for HEAD and GET requests. */
+    /* Set different callback functions for HEAD and GET/PUT requests. */
     if( strcmp( httpVerb, "HEAD" ) == 0 )
     {
-        PrepareCurlBuffers( true );
+        PrepareCurlWriteBuffers( true );
         curl_easy_setopt( curl, CURLOPT_NOBODY, 1 );
         curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, CurlWriteHeader );
     }
     else
     {
-        PrepareCurlBuffers( false );
+        PrepareCurlWriteBuffers( false );
         curl_easy_setopt( curl, CURLOPT_WRITEFUNCTION, CurlWriteData );
     }
+
     curl_easy_setopt( curl, CURLOPT_HTTPHEADER, headers );
     curl_easy_setopt( curl, CURLOPT_URL, url );
     /*
@@ -981,15 +1057,17 @@ SubmitS3Request(
     status = curl_easy_perform( curl );
     if( status == 0 )
     {
-        /* Move the response to a safe place and prepare the CURL write buffer
-	for new data. */
-        *response       = curlWriteBuffer;
-	*responseLength = curlWriteBufferLength;
+        /* Move the response to a safe place and prepare the CURL write
+	   buffer for new data. */
+        *data                 = curlWriteBuffer;
+	*dataLength           = curlWriteBufferLength;
 	curlWriteBuffer       = NULL;
 	curlWriteBufferLength = 0;
     }
     pthread_mutex_unlock( &curl_mutex );
-    curl_slist_free_all( headers );
+
+    free( url );
+    DeleteCurlSlistAndContents( headers );
 
     /* Report errors back if necessary. */
     if( status != 0 )
@@ -1001,7 +1079,7 @@ SubmitS3Request(
     /* Translate the HTTP request status, if any, to an errno value. */
     if( strcmp( httpVerb, "HEAD" ) == 0 )
     {
-        httpStatus = GetHttpStatus( *response );
+        httpStatus = GetHttpStatus( *data );
 	if( httpStatus == 0 )
 	{
 	    status = 0;
@@ -1014,6 +1092,142 @@ SubmitS3Request(
 
     return( status );
 }
+
+
+
+/**
+ * Submit a sequence of headers containing an S3 request and receive the
+ * output in the local write buffer. The headers list is deallocated.
+ * The request includes a body buffer for upload data; if no should be
+ * uploaded, \a SubmitS3Request may be used instead. For large data,
+ * use the multi-uploader.
+ * @param httpVerb [in] HTTP method (GET, HEAD, etc.).
+ * @param headers [in/out] The CURL list of headers with the S3 request.
+ * @param filename [in] Full path name of the file that is accessed.
+ * @param response [out] Pointer to the response data.
+ * @param responseLength [out] Pointer to the response length.
+ * @param bodyData [in] Pointer to the upload data.
+ * @param bodyLength [in] Size of the upload data.
+ * @return 0 on success, or CURL error number on failure.
+ */
+STATIC int
+SubmitS3PutRequest(
+    struct curl_slist *headers,
+    const char        *filename,
+    void              **response,
+    int               *responseLength,
+    unsigned char     *bodyData,
+    size_t            bodyLength
+		)
+{
+    char       *url;
+    char       *hostName;
+    int        urlLength;
+    int        status     = 0;
+    //    int        httpStatus;
+
+    printf( "s3if: SubmitS3PutRequest (%s)\n", filename );
+
+    /* Determine the virtual host name. */
+    hostName = GetS3HostNameByRegion( globalConfig.region,
+				      globalConfig.bucketName );
+    /* Determine the length of the URL. */
+    urlLength = strlen( hostName )
+                + strlen( "https://" )
+                + strlen( globalConfig.bucketName ) + sizeof( char )
+                + strlen( filename )
+                + sizeof( char )
+                + sizeof( char );
+    /* Build the full URL, adding a '/' to the host if the filename does not
+       include it as its leading character. */
+    url = malloc( urlLength );
+    if( globalConfig.region != US_STANDARD )
+    {
+        sprintf( url, "https://%s%s%s", hostName,
+		 filename[ 0 ] == '/' ? "" : "/",
+		 filename );
+    }
+    else
+    {
+        sprintf( url, "https://%s/%s%s%s", hostName,
+		 globalConfig.bucketName,
+		 filename[ 0 ] == '/' ? "" : "/",
+		 filename );
+    }
+    free( hostName );
+
+    /* Submit request via CURL and wait for the response. */
+    pthread_mutex_lock( &curl_mutex );
+    curl_easy_reset( curl );
+
+    /* Prepare write buffer for response. */
+    /*
+    if( strcmp( httpVerb, "HEAD" ) == 0 )
+    {
+        PrepareCurlWriteBuffers( true );
+        curl_easy_setopt( curl, CURLOPT_NOBODY, 1 );
+        curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, CurlWriteHeader );
+
+    }
+    else
+    {
+        PrepareCurlWriteBuffers( false );
+        curl_easy_setopt( curl, CURLOPT_WRITEFUNCTION, CurlWriteData );
+    }
+    */
+
+    /* Prepare read buffer for PUT requests. */
+    PrepareCurlReadBuffer( (unsigned char*) bodyData, bodyLength );
+    curl_easy_setopt( curl, CURLOPT_READFUNCTION, CurlReadData );
+    curl_easy_setopt( curl, CURLOPT_READDATA, &curlReadBuffer );
+    curl_easy_setopt( curl, CURLOPT_UPLOAD, true );
+    curl_easy_setopt( curl, CURLOPT_HTTPHEADER, headers );
+    curl_easy_setopt( curl, CURLOPT_URL, url );
+      curl_easy_setopt( curl, CURLOPT_VERBOSE, 1 );
+    /*
+    */
+    status = curl_easy_perform( curl );
+    if( status == 0 )
+    {
+        /* Move the response to a safe place and prepare the CURL write
+	   buffer for new data. */
+        *response             = curlWriteBuffer;
+	*responseLength       = curlWriteBufferLength;
+	curlWriteBuffer       = NULL;
+	curlWriteBufferLength = 0;
+    }
+    pthread_mutex_unlock( &curl_mutex );
+
+    free( url );
+    DeleteCurlSlistAndContents( headers );
+
+    /* Report errors back if necessary. */
+    if( status != 0 )
+    {
+        status = -EIO;
+	return( status );
+    }
+
+    /* Translate the HTTP request status, if any, to an errno value. */
+    /*
+    if( strcmp( httpVerb, "HEAD" ) == 0 )
+    {
+        httpStatus = GetHttpStatus( *response );
+	if( httpStatus == 0 )
+	{
+	    status = 0;
+	}
+	else
+        {
+	    status = ConverHttpStatusToErrno( httpStatus );
+	}
+    }
+    */
+    return( status );
+}
+
+
+
 
 
 
@@ -1235,6 +1449,7 @@ S3GetFileStat(
 	assert( newFileInfo != NULL );
 	/* Set default values. */
 	memset( newFileInfo, 0, sizeof( struct S3FileInfo ) );
+	newFileInfo->filenotfound = false;
 	newFileInfo->fileType    = 'f';
 	newFileInfo->permissions = 0644;
 	/* A trailing slash in the filename indicates that it is a directory. */
@@ -1243,8 +1458,9 @@ S3GetFileStat(
 	    newFileInfo->fileType    = 'd';
 	    newFileInfo->permissions = 0755;
 	}
-	newFileInfo->uid         = getuid( );
-	newFileInfo->gid         = getgid( );
+	newFileInfo->uid = getuid( );
+	newFileInfo->gid = getgid( );
+	newFileInfo->symlinkTarget = NULL;
 	/* Translate header values to S3 File Info values. */
 	for( headerIdx = 0; headerIdx < length; headerIdx++ )
 	{
@@ -1365,12 +1581,14 @@ S3GetFileStat(
  * the stat cache.
  * @param filename [in] Full path of the file to be stat'ed.
  * @param fi [out] Where the S3 File Info pointer should be stored.
+ * @param hashAs [in] Filename to use for hashing by the cache.
  * @return 0 if successful, or \a -errno on failure.
  */
 static int
 ResolveS3FileStatCacheMiss(
     const char        *filename,
-    struct S3FileInfo **fi
+    struct S3FileInfo **fi,
+    const char        *hashAs
 			   )
 {
     int               status;
@@ -1380,13 +1598,9 @@ ResolveS3FileStatCacheMiss(
     status = S3GetFileStat( filename, &newFileInfo );
     if( status == 0 )
     {
-        InsertCacheElement( filename, newFileInfo, &DeleteS3FileInfoStructure );
-	/*
-	printf( "Cache miss: %s (perms=%o)\n", filename,
-		newFileInfo->permissions );
-	*/
+        InsertCacheElement( hashAs, newFileInfo, &DeleteS3FileInfoStructure );
+	*fi = newFileInfo;
     }
-    *fi = newFileInfo;
     return( status );
 }
 
@@ -1394,28 +1608,43 @@ ResolveS3FileStatCacheMiss(
 
 static char*
 StripTrailingSlash(
-    const char *filename
-		 )
+    char *filename,
+    bool makeCopy
+		   )
 {
     char *dirname;
-    int  filenameLength;
+    int  dirnameLength;
 
-    if( filename == NULL )
+    if( makeCopy )
     {
-        filenameLength = 0;
+        if( filename == NULL )
+	{
+	    dirname = strdup( "" );
+	}
+	else
+	{
+	    dirname = strdup( filename );
+	}
     }
     else
     {
-	filenameLength = strlen( filename );
+        dirname = filename;
     }
-    dirname = malloc( filenameLength + sizeof( char ) );
-    strncpy( dirname, filename, filenameLength );
-    dirname[ filenameLength ] = '\0';
+
     /* Strip all trailing slashes. */
-    while( ( --filenameLength != 0 ) && ( dirname[ filenameLength ] == '/' ) )
+    if( dirname != NULL )
     {
-        dirname[ filenameLength ] = '\0';
+	dirnameLength = strlen( dirname );
+	while( --dirnameLength != 0 )
+	{
+	    if( dirname[ dirnameLength ] != '/' )
+	    {
+		break;
+	    }
+	    dirname[ dirnameLength ] = '\0';
+	}
     }
+
     return dirname;
 }
 
@@ -1432,15 +1661,18 @@ AddTrailingSlash(
     if( filename == NULL )
     {
         filenameLength = 0;
+	dirname = malloc( 2 * sizeof( char ) );
+	dirname[ 0 ] = '/';
+	dirname[ 1 ] = '\0';
     }
     else
     {
 	filenameLength = strlen( filename );
+	dirname = malloc( filenameLength + 2 * sizeof( char ) );
+	strncpy( dirname, filename, filenameLength );
     }
-    dirname = malloc( filenameLength + 3 * sizeof( char ) );
-    strncpy( dirname, filename, filenameLength );
     /* Add trailing slash if necessary. */
-    if( dirname[ filenameLength - 1 ] != '/' )
+    if( ( filenameLength != 0 ) && ( dirname[ filenameLength - 1 ] != '/' ) )
     {
         dirname[ filenameLength     ] = '/';
         dirname[ filenameLength + 1 ] = '\0';
@@ -1477,38 +1709,48 @@ S3FileStat(
     filename[ 0 ] = '/';
     filename[ 1 ] = '\0';
     strcat( filename, &file[ stripIdx ] );
-
-    /* Prepare a directory name version of the file. */
-    dirname = AddTrailingSlash( filename );
+    /* Remove all trailing slashes. */
+    filename = StripTrailingSlash( filename, false );
 
     /* Attempt to read the S3FileStat from the stat cache. */
     status = 0;
     fileInfo = SearchStatEntry( filename );
-    if( fileInfo == NULL )
-    {
-        /* If the file was not found, attempt the directory name version. */
-        if( filename[ strlen( filename ) - 1 ] != '/' )
-	{
-	    fileInfo = SearchStatEntry( dirname );
-	}
-    }
 
+    /* If the file info is not available, resolve the cache miss. */
     if( fileInfo == NULL )
     {
         /* Read the file stat from S3. */
-        status = ResolveS3FileStatCacheMiss( filename, &fileInfo );
-	/* If unsuccessful, attempt the directory name version. */
+        status = ResolveS3FileStatCacheMiss( filename, &fileInfo, filename );
+	/* If unsuccessful, attempt the directory name version with a
+	   trailing slash. */
 	if( status != 0 )
 	{
-	    status = ResolveS3FileStatCacheMiss( dirname, &fileInfo );
+	    printf( "no. " );
+	    /* Prepare a directory name version of the file. */
+	    dirname = AddTrailingSlash( filename );
+	    status = ResolveS3FileStatCacheMiss( dirname, &fileInfo, filename );
+	    free( dirname );
+	    /* If still unsuccessful, create a "file not found" entry in
+	       the stat cache. */
+	    if( status != 0 )
+	    {
+	        fileInfo = malloc( sizeof( struct S3FileInfo ) );
+		fileInfo->symlinkTarget = NULL; /* For later free() */
+		fileInfo->filenotfound  = true;
+		InsertCacheElement( filename, fileInfo,
+				    &DeleteS3FileInfoStructure );
+	    }
 	}
     }
     else
     {
-      /*
-        printf( "Cache hit: %s\n", filename );
-      */
+        /* If the file is known to not exist, return an error. */
+        if( bool_equal( fileInfo->filenotfound, true ) )
+	{
+	    status = -ENOENT;
+	}
     }
+
     if( status == 0 )
     {
         *fi = fileInfo;
@@ -1519,7 +1761,6 @@ S3FileStat(
     }
 
     free( filename );
-    free( dirname );
     return( status );
 }
 
@@ -1577,7 +1818,7 @@ EncodeUrl(
  * encounters a <marker> node, it records its contents.
  * @param node [in] Current XML node.
  * @param prefixLength [in] Number of bytes in the prefix which are skipped.
- * @param directory [in/out] Linked list of directory entries.
+ * @param directory [in/out] Pointer to linked list of directory entries.
  * @param marker [out] Name of the marker, if found.
  * @param nFiles [out] Number of files in the directory.
  * @return Nothing.
@@ -1588,7 +1829,7 @@ static void
 ReadXmlDirectory(
     xmlNode           *node,
     int               prefixLength,
-    struct curl_slist *directory,
+    struct curl_slist **directory,
     char              **marker,
     int               *nFiles
 		 )
@@ -1619,7 +1860,7 @@ ReadXmlDirectory(
 				       - prefixLength
 				       + 2 * sizeof( char ) );
 		    strcpy( direntry, &nodeValue[ prefixLength ] );
-		    directory = curl_slist_append( directory, direntry );
+		    *directory = curl_slist_append( *directory, direntry );
 		    (*nFiles)++;
 		}
 	    }
@@ -1627,7 +1868,7 @@ ReadXmlDirectory(
 	    else if( strcmp( nodeName, "NextMarker" ) == 0 )
 	    {
 	        if( strlen( nodeValue ) != 0 )
-		{
+		{	
 		    if( *marker != NULL )
 		    {
 		        free( *marker );
@@ -1664,8 +1905,13 @@ ReadXmlDirectory(
 /* Disable warning that fi is unused. */
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
-int S3ReadDir( struct S3FileInfo *fi, const char *dirname,
-	       char ***nameArray, int *nFiles )
+int
+S3ReadDir(
+    struct S3FileInfo *fi,
+    const char        *dirname,
+    char              ***nameArray,
+    int               *nFiles
+	  )
 {
     int        status = 0;
 
@@ -1702,11 +1948,10 @@ int S3ReadDir( struct S3FileInfo *fi, const char *dirname,
     /* Create prefix and a delimiter for the S3 list. The prefix is the entire
        path including dirname plus trailing slash, so add a slash to the
        dirname if it is not already specified. The delimiter is a '/'. */
-    prefix    = StripTrailingSlash( &dirname[ toSkip ] );
+    prefix    = StripTrailingSlash( (char*) &dirname[ toSkip ], true );
     delimiter = "/";
     /* Create the base query. */
     urlSafePrefix = EncodeUrl( prefix );
-
     relativeRoot = malloc( strlen( globalConfig.bucketName )
 			   + strlen( prefix ) + 5 * sizeof( char ) );
     relativeRoot[ 0 ] = '/';
@@ -1738,11 +1983,7 @@ int S3ReadDir( struct S3FileInfo *fi, const char *dirname,
     }
     free( (char*) urlSafePrefix );
 
-    /* Fake the ".." and "." paths. */
-    directory = curl_slist_append( directory, "." );
-    directory = curl_slist_append( directory, ".." );
-    fileCounter = 2;
-
+    fileCounter = 0;
     /* Retrieve truncated directory lists by specifying the base query plus a
        marker. */
     do
@@ -1759,6 +2000,7 @@ int S3ReadDir( struct S3FileInfo *fi, const char *dirname,
 	    strcpy( query, queryBase );
 	    strcat( query, "&marker=" );
 	    strcat( query, urlSafeFromFile );
+	    free( urlSafeFromFile );
 	}
 	/* query now contains the path for the S3 request. */
 	headers = BuildS3Request( "GET", NULL, relativeRoot );
@@ -1767,7 +2009,7 @@ int S3ReadDir( struct S3FileInfo *fi, const char *dirname,
 	if( query != queryBase )
 	{
 	    free( query );
-        }
+	}
 	if( status == 0 )
 	{
  	    /* Decode the XML response. */
@@ -1795,31 +2037,37 @@ int S3ReadDir( struct S3FileInfo *fi, const char *dirname,
 		        prefixToSkip = 0;
 		    }
 		    ReadXmlDirectory( rootNode, prefixToSkip,
-				      directory, &fromFile, &fileCounter );
+				      &directory, &fromFile, &fileCounter );
 		}
-		xmlFreeDoc( xmlResponse );
+		/*
 		xmlCleanupParser( );
+		*/
+		xmlFreeDoc( xmlResponse );
 	    }
 	}
     } while( fromFile != NULL );
 
-    /* Move the linked-list file names into an array. */
-    dirArray = malloc( sizeof( char* ) * fileCounter );
+    free( relativeRoot );
+    free( (char*) prefix );
+
+    /* Move the linked-list file names into an array. Add two entries for
+       the directories "." and "..". */
+    dirArray = malloc( sizeof( char* ) * ( fileCounter + 2 ) );
+    assert( dirArray != NULL );
     dirIdx   = 0;
+    /* Fake the "." and ".." paths. */
+    dirArray[ dirIdx++ ] = strdup( "." );
+    dirArray[ dirIdx++ ] = strdup( ".." );
+
     while( directory )
     {
-        dirArray[ dirIdx++ ] = StripTrailingSlash( directory->data );
-	free( directory->data );
+        dirArray[ dirIdx++ ] = StripTrailingSlash( directory->data, false );
 	nextEntry = directory->next;
-	if( directory != NULL )
-	{
-	    free( directory );
-	}
+	free( directory );
 	directory = nextEntry;
     }
-
     *nameArray = dirArray;
-    *nFiles    = fileCounter;
+    *nFiles    = fileCounter + 2;
 
     return( status );
 }
@@ -1860,7 +2108,7 @@ S3ReadFile(
 	       "maxSize" bytes. */
 	    sprintf( range, "Range:bytes=%lld-%lld",
 		     (long long) offset, (long long) offset + maxSize - 1 );
-	    headers = curl_slist_append( headers, range );
+	    headers = curl_slist_append( headers, strdup( range ) );
 	    headers = BuildS3Request( "GET", headers, path );
 	    status  = SubmitS3Request( "GET", headers, path,
 				       (void**) &contents, &receivedSize );
@@ -1933,35 +2181,113 @@ S3ReadLink(
     {
 	if( fi->fileType == 'l' )
 	{
-	    size = fi->size;
-	    if( size <= 4096 )
+	    /* Read the target if it is not already in the cache. */
+	    if( fi->symlinkTarget == NULL )
 	    {
-	        /* Get the file contents; it is a rather small transfer. */
-	        sprintf( range, "Range:bytes=0-%d", (int)size );
-		headers = curl_slist_append( headers, range );
-		headers = BuildS3Request( "GET", headers, link );
-		status  = SubmitS3Request( "GET", headers, link,
-					   (void**) &linkContents, &length );
-		if( status == 0 )
+	        size = fi->size;
+		if( size <= 4096 )
+	        {
+		    /* Get the file contents; it is a rather small transfer. */
+		    sprintf( range, "Range:bytes=0-%d", (int)size );
+		    headers = curl_slist_append( headers, strdup( range ) );
+		    headers = BuildS3Request( "GET", headers, link );
+		    status  = SubmitS3Request( "GET", headers, link,
+					       (void**) &linkContents,
+					       &length );
+		    if( status == 0 )
+		    {
+			/* Zero-terminate and return. */
+			linkContents = realloc( linkContents, length + 1 );
+			linkContents[ length ] = '\0';
+			fi->symlinkTarget = strdup( linkContents );
+			printf( "Placing %s in symlink cache for %s.\n", fi->symlinkTarget, link );
+			*target = linkContents;
+		    }
+		}
+		else
 		{
-		    /* Zero-terminate and return. */
-		    linkContents = realloc( linkContents, length + 1 );
-		    linkContents[ length ] = '\0';
-		    *target = linkContents;
+		    status = -ENAMETOOLONG;
 		}
 	    }
 	    else
 	    {
-		status = -ENAMETOOLONG;
+	        *target = strdup( fi->symlinkTarget );
 	    }
 	}
 	else
 	{
 	    status = -EISNAM;
-        }
+	}
     }
 
     return( status );
+}
+
+
+
+static struct curl_slist*
+CreateHeadersFromFileInfo(
+    const struct S3FileInfo *fi,
+    struct curl_slist       *headers
+			)
+{
+    char       timeHeader[ 50 ];
+    struct tm  tm;
+    const char *tFormat = "%s:%s, %d %s %d %02d:%02d:%02d GMT";
+    const char *wdays[ ] = { "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" };
+    const char *months[ ] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+			      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+    char       tmpHdr[ 30 ];
+
+    /* Update time stamps. */
+    localtime_r( &fi->atime, &tm );
+    sprintf( timeHeader, tFormat, "x-amz-meta-atime",
+	     wdays[ tm.tm_wday ],
+	     tm.tm_mday, months[ tm.tm_mon ], tm.tm_year + 1900,
+	     tm.tm_hour, tm.tm_min, tm.tm_sec );
+    headers = curl_slist_append( headers, strdup( timeHeader ) );
+    localtime_r( &fi->mtime, &tm );
+    sprintf( timeHeader, tFormat, "Last-Modified",
+	     wdays[ tm.tm_wday ],
+	     tm.tm_mday, months[ tm.tm_mon ], tm.tm_year + 1900,
+	     tm.tm_hour, tm.tm_min, tm.tm_sec );
+    headers = curl_slist_append( headers, strdup( timeHeader ) );
+    /*
+    localtime_r( &fi->ctime, &tm );
+    sprintf( timeHeader, tFormat, "Created",
+	     wdays[ tm.tm_wday ],
+	     tm.tm_mday, months[ tm.tm_mon ], tm.tm_year + 1900,
+	     tm.tm_hour, tm.tm_min, tm.tm_sec );
+    headers = curl_slist_append( headers, strdup( timeHeader ) );
+    */
+
+    /* Rewrite file type header. */
+    if( fi->fileType == 'd' )
+    {
+        headers = curl_slist_append( headers,
+		      strdup( "Content-Type:x-directory" ) );
+    }
+    else if( fi->fileType == 'l')
+    {
+        headers = curl_slist_append( headers,
+		      strdup( "Content-Type:x-symlink" ) );
+    }
+
+    /* Update uid, gid, and permissions. */
+    sprintf( tmpHdr, "x-amz-meta-uid:%d", fi->uid );
+    headers = curl_slist_append( headers, strdup( tmpHdr ) );
+    sprintf( tmpHdr, "x-amz-meta-gid:%d", fi->gid );
+    headers = curl_slist_append( headers, strdup( tmpHdr ) );
+    sprintf( tmpHdr, "x-amz-meta-mode:%d", fi->permissions );
+    headers = curl_slist_append( headers, strdup( tmpHdr ) );
+    /* Update s-uid bit, s-gid bit, and sticky bit. */
+    sprintf( tmpHdr, "x-amz-meta-modex:%d",
+	     ( fi->exeUid ? S_ISUID : 0 )
+	     | ( fi->exeGid ? S_ISGID : 0 )
+	     | ( fi->sticky ? S_ISVTX : 0 ) );
+    headers = curl_slist_append( headers, strdup( tmpHdr ) );
+
+    return( headers );
 }
 
 
@@ -1974,27 +2300,15 @@ S3ReadLink(
  */
 static int
 UpdateAmzHeaders(
-    const char        *file,
-    struct S3FileInfo *fi
+    const char              *file,
+    const struct S3FileInfo *fi
 		 )
 {
-    char              atimeHeader[ 50 ];
-    char              mtimeHeader[ 50 ];
-    struct tm         atm;
-    struct tm         mtm;
-    const char        *tFormat = "%s:%s, %d %s %d %02d:%02d:%02d GMT";
-    const char        *wdays[ ] = { "Mon", "Tue", "Wed", "Thu",
-				    "Fri", "Sat", "Sun" };
-    const char        *months[ ] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-				     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
     struct curl_slist *headers = NULL;
     char              *copySourceHdr;
-    char              tmpHdr[ 30 ];
     char              *response;
     int               responseLength;
     int               status = 0;
-
-    printf( "UpdateAmzHeaders beginning...\n" );
 
     /* Replace the file by copy-source. Unfortunately, this implies a complete
        rewrite of the amz headers. */
@@ -2006,54 +2320,15 @@ UpdateAmzHeaders(
     strcat( copySourceHdr, globalConfig.bucketName );
     strcat( copySourceHdr, file );
     headers = curl_slist_append( headers, copySourceHdr );
-    free( copySourceHdr );
     headers = curl_slist_append( headers,
-				 "x-amz-metadata-directive:REPLACE" );
-    /* Rewrite file type header. */
-    if( fi->fileType == 'd' )
-    {
-        headers = curl_slist_append( headers, "Content-Type:x-directory" );
-    }
-    else if( fi->fileType == 'l')
-    {
-        headers = curl_slist_append( headers, "Content-Type:x-symlink" );
-    }
-
-    /* Update time stamps. */
-    localtime_r( &fi->atime, &atm );
-    sprintf( atimeHeader, tFormat, "x-amz-meta-atime",
-	     wdays[ atm.tm_wday ],
-	     atm.tm_mday, months[ atm.tm_mon ], atm.tm_year,
-	     atm.tm_hour, atm.tm_min, atm.tm_sec );
-    headers = curl_slist_append( headers, atimeHeader );
-    localtime_r( &fi->mtime, &mtm );
-    sprintf( mtimeHeader, tFormat, "Last-Modified", wdays[ mtm.tm_wday ],
-	     mtm.tm_mday, months[ mtm.tm_mon ], mtm.tm_year,
-	     mtm.tm_hour, mtm.tm_min, mtm.tm_sec );
-    headers = curl_slist_append( headers, mtimeHeader );
-
-    /* Update uid, gid, and permissions. */
-    sprintf( tmpHdr, "x-amz-meta-uid:%d", fi->uid );
-    headers = curl_slist_append( headers, tmpHdr );
-    sprintf( tmpHdr, "x-amz-meta-uid:%d", fi->uid );
-    headers = curl_slist_append( headers, tmpHdr );
-    sprintf( tmpHdr, "x-amz-meta-mode:%d", fi->permissions );
-    headers = curl_slist_append( headers, tmpHdr );
-    /* Update s-uid bit, s-gid bit, and sticky bit. */
-    sprintf( tmpHdr, "x-amz-meta-modex:%d",
-	      ( fi->exeUid ? S_ISUID : 0 )
-	    | ( fi->exeGid ? S_ISGID : 0 )
-	    | ( fi->sticky ? S_ISVTX : 0 ) );
-    headers = curl_slist_append( headers, tmpHdr );
+		  strdup( "x-amz-metadata-directive:REPLACE" ) );
+    headers = CreateHeadersFromFileInfo( fi, headers );
 
     /* Update the headers. */
     headers = BuildS3Request( "PUT", headers, file );
     status  = SubmitS3Request( "PUT", headers, file,
 			       (void**) &response, &responseLength );
-
-    printf( "UpdateAmzHeaders ended, status = %d...\n", status );
     free( response );
-
     return( status );
 }
 
@@ -2087,3 +2362,83 @@ S3ModifyTimeStamps(
     return( status );
 }
 
+
+
+int
+S3CreateLink(
+    const char *linkname,
+    const char *path
+	     )
+{
+    struct S3FileInfo *fi;
+    struct curl_slist *headers = NULL;
+    int               pathLength;
+    int               status;
+    time_t            now = time( NULL );
+    char              *response;
+    int               responseLength;
+    char              md5sum[ 25 ];
+    char              md5header[ 40 ];
+    char              sizeHeader[ 25 ];
+
+    /* Create a new FileInfo structure to the symbolic link. */
+    fi = malloc( sizeof( struct S3FileInfo ) );
+    fi->uid           = getuid( );
+    fi->gid           = getgid( );
+    fi->permissions   = 0644;
+    fi->fileType      = 'l';
+    fi->exeUid        = false;
+    fi->exeGid        = false;
+    fi->sticky        = false;
+    fi->filenotfound  = false;
+    fi->symlinkTarget = strdup( path );
+    fi->size          = strlen( path );
+    fi->atime         = now;
+    fi->mtime         = now;
+    fi->ctime         = now;
+
+    /* Write file metadata headers. */
+    pathLength = strlen( path );
+    headers = CreateHeadersFromFileInfo( fi, headers );
+    /* Calculate the MD5 checksum of the data and write Content-MD5 header. */
+    DigestBuffer( (const unsigned char*) path, pathLength,
+		  md5sum, HASH_MD5, HASHENC_BASE64 );
+    md5sum[ 24 ] = '\0';
+    sprintf( md5header, "Content-MD5: %s", md5sum );
+    headers = curl_slist_append( headers, strdup( md5header ) );
+    /* Write file size header. */
+    sprintf( sizeHeader, "Content-Length: %d", pathLength );
+    headers = curl_slist_append( headers, strdup( sizeHeader ) );
+    /* Disable the "Expect" and "Transfer-Encoding" headers, because this
+       is a very short message. */
+    headers = curl_slist_append( headers, strdup( "Expect:" ) );
+    headers = curl_slist_append( headers, strdup( "Transfer-Encoding:" ) );
+    /* Create standard headers. */
+    headers = BuildS3Request( "PUT", headers, linkname );
+    status = SubmitS3PutRequest( headers, linkname,
+				 (void**) &response, &responseLength,
+				 (unsigned char*) path, pathLength );
+
+    /* We already have the FileInfo structure, so because the file will be
+       stat'ed as soon as we return, let's add it to the stat cache. */
+    InsertCacheElement( linkname, fi, &DeleteS3FileInfoStructure );
+
+    return( status );
+}
+
+
+
+
+void
+S3Destroy(
+    void
+	  )
+{
+    curl_easy_cleanup( curl );
+    TruncateCache( 0 );
+    /* Preparing the write buffers means that the current contents are
+       freed and that no buffer is reallocated. */
+    PrepareCurlWriteBuffers( false );
+    /* Cleanup libxml. */
+    xmlCleanupParser( );
+}

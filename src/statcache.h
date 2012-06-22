@@ -30,7 +30,7 @@ SearchStatEntry( const char *filename );
 void
 DeleteStatEntry( const char *filename );
 
-void TruncateCache( );
+void TruncateCache( long );
 
 void
 InsertCacheElement(

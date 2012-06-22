@@ -433,7 +433,7 @@ static void test_S3FileStat_Dir( const char *param )
     if( fi == NULL ) exit( 1 );
 
     /* Verify that the directory was found in the cache. */
-    cachedFi = SearchStatEntry( "/directory/" );
+    cachedFi = SearchStatEntry( "/directory" );
     if( cachedFi == NULL )
     {
         printf( "Directory not found in stat cache.\n" );
