@@ -75,7 +75,7 @@ struct S3FileInfo
 void InitializeS3If( void );
 int S3FileStat( const char *path, struct S3FileInfo ** );
 int S3ReadDir( struct S3FileInfo *fi, const char *dir,
-	       char **nameArray[ ], int *nFiles );
+	       char **nameArray[ ], int *nFiles, int maxKeys );
 int S3ReadFile( const char *path, char *buf,
 		size_t size, off_t offset, size_t *actuallyRead );
 int S3FlushBuffers( const char *path );
@@ -84,6 +84,11 @@ int S3ReadLink( const char *link, char **target );
 int S3ModifyTimeStamps( const char *file, time_t atime, time_t mtime );
 int S3CreateLink( const char *linkname, const char *target );
 void S3Destroy( void );
+int S3Mkdir( const char* dirname, mode_t mode );
+int S3Unlink( const char *path );
+int S3Rmdir( const char *path );
+int S3Chmod( const char *path, mode_t mode );
+int S3Chown( const char *path, uid_t uid, gid_t gid );
 
 
 

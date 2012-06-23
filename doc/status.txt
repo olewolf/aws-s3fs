@@ -1,3 +1,8 @@
+2012-06-23:
+	Bugs fixed in permissions checking.
+	"Secret files" identify directories.
+	chmod, chown, mkdir, rmdir, delete functionality added.
+
 2012-06-22:
 	Walkthrough for memory leaks in s3fs.c.
 	Short-file upload functionality added.

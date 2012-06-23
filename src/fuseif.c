@@ -24,6 +24,7 @@
 #include <config.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <ctype.h>
 #include <fcntl.h>
 #include <stdbool.h>
 #include <unistd.h>
@@ -57,21 +58,20 @@ static int s3fs_release( const char*, struct fuse_file_info* );
 static int s3fs_symlink( const char*, const char* );
 static int s3fs_readlink( const char*, char*, size_t );
 static int s3fs_utimens( const char *file, const struct timespec tv[ 2 ] );
+static int s3fs_mkdir( const char*, mode_t );
+static int s3fs_unlink( const char *file );
+static int s3fs_rmdir( const char* );
+static void s3fs_destroy( void* );
+static int s3fs_chmod( const char*, mode_t );
+static int s3fs_chown( const char*, uid_t , gid_t );
+//static void *s3fs_init( struct fuse_conn_info *conn );
+
+
 
 /*
-int s3fs_getdir( const char *, char *, size_t);
-int s3fs_mknod(const char *, mode_t, dev_t);
-int s3fs_mkdir(const char *, mode_t);
-int s3fs_unlink(const char *);
-int s3fs_rmdir(const char *);
 int s3fs_rename(const char *, const char *);
 int s3fs_link(const char *, const char *);
-int s3fs_chmod(const char *, mode_t);
-int s3fs_chown(const char *, uid_t, gid_t);
 int s3fs_truncate(const char *, off_t);
-*/
-/* Deprecated: int s3fs_utime(const char *, struct utimbuf *); */
-/*
 int s3fs_write(const char *, const char *, size_t, off_t, struct fuse_file_info *);
 int s3fs_statfs(const char *, struct statvfs *);
 int s3fs_fsync(const char *, int, struct fuse_file_info *);
@@ -80,14 +80,9 @@ int s3fs_getxattr(const char *, const char *, char *, size_t);
 int s3fs_listxattr(const char *, char *, size_t);
 int s3fs_removexattr(const char *, const char *);
 int s3fs_fsyncdir(const char *, int, struct fuse_file_info *);
-void *s3fs_init(struct fuse_conn_info *conn);
-*/
-void s3fs_destroy(void *);
-/*
 int s3fs_create(const char *, mode_t, struct fuse_file_info *);
 int s3fs_ftruncate(const char *, off_t, struct fuse_file_info *);
 int s3fs_lock(const char *, struct fuse_file_info *, int cmd, struct flock *);
-int s3fs_utimens(const char *, const struct timespec tv[2])
 int s3fs_bmap(const char *, size_t blocksize, uint64_t *idx);
 int s3fs_ioctl(const char *, int cmd, void *arg, struct fuse_file_info *, unsigned int flags, void *data);
 int s3fs_poll(const char *, struct fuse_file_info *, struct fuse_pollhandle *ph, unsigned *reventsp);
@@ -97,20 +92,18 @@ struct fuse_operations s3fsOperations =
 {
     .getattr     = s3fs_getattr,
     .readlink    = s3fs_readlink,
-    /*
-    .mknod       = s3fs_mknod,
     .mkdir       = s3fs_mkdir,
     .unlink      = s3fs_unlink,
     .rmdir       = s3fs_rmdir,
-    */
     .symlink     = s3fs_symlink,
     /*
     .rename      = s3fs_rename,
     .link        = s3fs_link,
+    */
     .chmod       = s3fs_chmod,
     .chown       = s3fs_chown,
+    /*
     .truncate    = s3fs_truncate,
-    .utime       = s3fs_utime,
     */
     .open        = s3fs_open,
     .read        = s3fs_read,
@@ -161,6 +154,198 @@ struct fuse_operations s3fsOperations =
 pthread_mutex_t fileDescriptorsMutex = PTHREAD_MUTEX_INITIALIZER;
 struct S3FileInfo *fileDescriptors[ MAX_S3_FILE_DESCRIPTORS ];
 
+static int VerifyPathSearchPermissions( const char *path );
+
+
+
+/**
+ * Determine if a user is a member of the group with the specified gid in
+ * the /etc/group list.
+ * @param gid [in] Group ID that the user's membership is verified against.
+ * @param myGid [in] The user's gid. 
+ * @return \a true of the user is a member of the group; \a false otherwise.
+ */
+static bool
+IsUserMemberOfGroup(
+    gid_t gid,
+    gid_t myGid
+		    )
+{
+    /* Parse the /etc/group file (sigh) to determine if the user belongs to
+       the file's gid. */
+    FILE *etcGroup;
+    char etcLine[ 4096 ];
+    int  idx = 0;
+    char ch;
+
+    int        groupNameLength;
+    int        groupIdBegin;
+    int        groupIdLength;
+    char       groupIdText[ 6 ];
+    int        groupId;
+    const char *groupMembers = NULL;
+    char       myGroup[ 64 ] = { '\0' };
+    bool       foundMyGroup = false;
+    bool       foundMembers = false;
+
+#ifdef AUTOTEST
+    etcGroup = fopen( "../../testdata/etc-group", "r" );
+#else
+    etcGroup = fopen( "/etc/group", "r" );
+#endif
+    if( etcGroup == NULL )
+    {
+        return( false );
+    }
+
+    /* If user's gid equals the file's gid, then group membership is
+       implied. */
+    if( myGid == gid )
+    {
+	return( true );
+    }
+
+    /* Find the user's group name and the allowed member names in one swoop. */
+    while( ! feof( etcGroup ) && ( ( ! foundMyGroup ) || ( ! foundMembers ) ) )
+    {
+        /* Scan a line from /etc/group. */
+        fgets( etcLine, sizeof( etcLine ), etcGroup );
+
+	/* Group name begin: 0; group name length: groupNameLength. */
+	idx = 0;
+	while( ( ch = etcLine[ idx ] ) != ':' )
+	{
+	    idx++;
+	}
+	groupNameLength = idx;
+	idx += 3;
+
+	/* Group ID begin: groupIdBegin; group ID length: groupIdLength. */
+	groupIdBegin = idx++;
+	while( isdigit( ch = etcLine[ idx ] ) )
+	{
+	    idx++;
+	}
+	groupIdLength = idx++ - groupIdBegin;
+
+	/* Determine group id. */
+	strncpy( groupIdText, &etcLine[ groupIdBegin ], groupIdLength );
+	groupIdText[ groupIdLength ] = '\0';
+	sscanf( groupIdText, "%d", &groupId );
+
+	/* If it matches the user's gid, then we know the user's gid name. */
+	if( groupId == (int) myGid )
+	{
+	    strncpy( myGroup, etcLine, groupNameLength );
+	    myGroup[ groupNameLength ] = '\0';
+	    foundMyGroup = true;
+	}
+	/* And if it matches the file's gid, then we know the members. */
+	if( groupId == (int) gid )
+	{
+	    /* Group members begin. */
+	    groupMembers = strdup( &etcLine[ idx ] );
+	    foundMembers = true;
+	}
+    }
+
+    if( foundMyGroup && foundMembers )
+    {
+        /* Scan the group members for a match on the user's group name. */
+        idx = 0;
+	while( ( ch = groupMembers[ idx ] ) != '\0' )
+	{
+	    /* Fast-forward past ',' or whitespace. */
+	    if( ( ch == ',' ) || isspace( ch ) )
+	    {
+		idx++;
+	    }
+	    else
+	    {
+		/* Return if the names match. */
+		if( strncmp( &groupMembers[ idx ], myGroup,
+			     strlen( myGroup ) ) == 0 )
+	        {
+		    return( true );
+		}
+		/* Fast-forward until ',' or whitespace. */
+		while( ( ( ch = groupMembers[ idx ] ) != '\0' )
+		       && ( ( ! isspace( ch ) ) && ( ch != ',' ) ) )
+		{
+		    idx++;
+		}
+	    }
+	}
+    }
+
+    if( groupMembers != NULL )
+    {
+        free( (char*) groupMembers );
+    }
+    return( false );
+}
+
+
+
+/**
+ * Determine whether the user has rights to access a file according to a
+ * specified permissions mask. The function takes into account the uid and
+ * gid of the file combined with the user's uid and group membership.
+ * @param permissions [in] File permissions.
+ * @param fileUid [in] uid ownership of the file.
+ * @param fileGid [in] gid ownership of the file.
+ * @param mask [in] Permissions that must be honored.
+ * @return \a true if the user has permission, or \a false otherwise.
+ */
+static bool
+VerifyAccessPermission(
+    int   permissions,
+    uid_t fileUid,
+    gid_t fileGid,
+    int   mask
+		       )
+{
+    uid_t             myUid;
+    gid_t             myGid;
+
+    myUid = getuid( );
+    myGid = getgid( );
+
+    /* If the user owns the file, then check the user's own permissions. */
+    if( getuid( ) == fileUid )
+    {
+        if( ( ( permissions >> 6 ) & mask ) == mask )
+	{
+	    return( true );
+	}
+    }
+
+    /* If the group permissions match the mask, verify that the user is a
+       member of the file's group. */
+    if( ( ( permissions >> 3 ) & mask ) == mask )
+    {
+        return( IsUserMemberOfGroup( fileGid, getgid( ) ) );
+    }
+
+    /* If the others permissions match the mask, verify that the user is NOT
+       the owner of the file. (That's what "others" means; it does not mean
+       access for yourself.) */
+    if( ( ( permissions & mask ) == mask ) && ( myUid != fileUid ) )
+    {
+        return( true );
+    }
+
+    /* If the user is root or member of root gid, full access is granted,
+       regardless of permissions. */
+    if( ( myUid == 0 ) || ( myGid == 0 ) )
+    {
+        return( true );
+    }
+
+    /* All else fails. */
+    return( false );
+}
+
 
 
 /**
@@ -189,53 +374,6 @@ static int AllocateFileDescriptor( )
 
 
 /**
- * Determine if the current user has read, write, or execute permission to the
- * file specified by the fileInfo structure.
- * @param fi [in] fileInfo structure for the file.
- * @param permissionFlag [in] Permission flags; 0 to 7 for all combinations of
- *        [r w x] ~ [4 2 1].
- * @return \a true if the user has permission; \a false otherwise.
- */
-bool
-IsUserAccessible(
-    const struct S3FileInfo *fi,
-    unsigned int            permissionFlag
-		 )
-{
-    int   permissions   = fi->permissions;
-    bool  hasPermission = true;
-    uid_t uid;
-    gid_t gid;
-
-    /* Get uid and gid for the user who mounted the fs. */
-    uid = getuid( );
-    gid = getgid( );
-
-    /* Try world permission first. */
-    if( ( permissions & permissionFlag ) == 0 )
-    {
-        /* Try group permissions. */
-        if( ( ( permissions & ( permissionFlag << 3 ) ) == 0 ) ||
-	      ( gid != fi->gid ) )
-	{
-	    /* Try user permissions. */
-	    if( ( ( permissions & ( permissionFlag << 6 ) ) == 0 ) ||
-		  ( uid != fi->uid ) )
-	    {
-	        /* Root always has access. */
-	        if( ( uid != 0 ) && ( gid != 0 ) )
-		{
-		    hasPermission = false;
-		}
-	    }
-        }
-    }
-    return( hasPermission );
-}
-
-
-
-/**
  * Determine whether the current user has read access to the file with the
  * specified FileInfo.
  * @param fi [in] FileInfo for the file.
@@ -244,7 +382,11 @@ IsUserAccessible(
 static bool
 IsReadable( const struct S3FileInfo *fi )
 {
-    return( IsUserAccessible( fi, 04 ) );
+    int   permissions = fi->permissions;
+    uid_t uid         = fi->uid;
+    gid_t gid         = fi->gid;
+
+    return( VerifyAccessPermission( permissions, uid, gid, 0b0100 ) );
 }
 
 
@@ -258,7 +400,11 @@ IsReadable( const struct S3FileInfo *fi )
 static bool
 IsExecutable( const struct S3FileInfo *fi )
 {
-    return( IsUserAccessible( fi, 01 ) );
+    int   permissions = fi->permissions;
+    uid_t uid         = fi->uid;
+    gid_t gid         = fi->gid;
+
+    return( VerifyAccessPermission( permissions, uid, gid, 0b0001 ) );
 }
 
 
@@ -272,15 +418,26 @@ IsExecutable( const struct S3FileInfo *fi )
 static bool
 IsWriteable( const struct S3FileInfo *fi )
 {
-    return( IsUserAccessible( fi, 02 ) );
+    int   permissions = fi->permissions;
+    uid_t uid         = fi->uid;
+    gid_t gid         = fi->gid;
+
+    return( VerifyAccessPermission( permissions, uid, gid, 0b0010 ) );
 }
 
 
 
-void
+/**
+ * Set a structure of flags for easy decoding of open flags.
+ * @param openFlags [out] Structure to receive the flags.
+ * @param flags [in] FUSE open flags.
+ * @return Nothing.
+ */
+static void
 SetOpenFlags( struct OpenFlags *openFlags, int flags )
 {
-    openFlags->of_RDONLY    = ( flags & O_RDONLY ) ? true : false;
+    openFlags->of_RDONLY    = ( ( flags & O_WRONLY ) || ( flags & O_RDWR ) ) ?
+                                  false : true;
     openFlags->of_WRONLY    = ( flags & O_WRONLY ) ? true : false;
     openFlags->of_RDWR      = ( flags & O_RDWR ) ? true : false;
     openFlags->of_CREAT     = ( flags & O_CREAT ) ? true : false;
@@ -433,17 +590,11 @@ GetPathPrefix(
 
 
 
-/**
- * Verify path components search access. All of a file's parent directories
- * must be searchable (+x) in order to stat the file. Scan through the
- * directories one at a time.
- * @param path [in] Path of the file.
- * @return 0 on success, or \a -errno on failure.
- */
 static int
-VerifyPathSearchPermissions(
-    const char *path
-		 )
+ValidateDirectoryComponents(
+    const char *path,
+    bool       verifyExecutionBit
+			    )
 {
     char              *pathPrefix;
     char              *pathComponent;
@@ -452,6 +603,7 @@ VerifyPathSearchPermissions(
     char              *accumulatedPath;
     struct S3FileInfo *fileInfo;
     int               status;
+
 
     status = 0;
 
@@ -480,12 +632,15 @@ VerifyPathSearchPermissions(
 		    status = -ENOTDIR;
 		    break;
 		}
-		/* Check permissions. The directory must be searchable
-		   by the user's gid and uid.  */
-		if( ! IsUserAccessible( fileInfo, 01 ) )
+		if( verifyExecutionBit )
 		{
-		    status = -EACCES;
-		    break;
+		    /* Check permissions. The directory must be searchable
+		       by the user's gid and uid.  */
+		    if( ! IsExecutable( fileInfo ) )
+		    {
+			status = -EACCES;
+			break;
+		    }
 		}
 	    }
 	    else
@@ -502,12 +657,28 @@ VerifyPathSearchPermissions(
 					      &pathComponent,
 					      &componentLength );
 	}
-
 	free( accumulatedPath );
 	free( pathPrefix );
     }
 
     return( status );
+}
+
+
+
+/**
+ * Verify path components' search access. All of a file's parent directories
+ * must be searchable (+x) in order to stat the file. Scan through the
+ * directories one at a time.
+ * @param path [in] Path of the file.
+ * @return 0 on success, or \a -errno on failure.
+ */
+static int
+VerifyPathSearchPermissions(
+    const char *path
+			    )
+{
+    return( ValidateDirectoryComponents( path, true ) );
 }
 
 
@@ -575,7 +746,7 @@ s3fs_getattr(
 	return( status );
     }
 
-    /* Verify that the full path has search permissions. */
+    /* Verify that the full path has search (+x) permissions. */
     status = VerifyPathSearchPermissions( path );
     if( status == 0 )
     {
@@ -615,6 +786,10 @@ s3fs_open(
     int               fh        = 0;
     struct S3FileInfo *fileInfo;
     struct OpenFlags  openFlags;
+    struct S3FileInfo *parentFi;
+
+    //    int  position;
+    char *parent;
 
     printf( "s3fs_open: %s\n", path );
 
@@ -622,6 +797,40 @@ s3fs_open(
     if( ( path == NULL ) || ( strcmp( path, "" ) == 0 ) )
     {
         status = -ENOENT;
+	return( status );
+    }
+    /* Verify that all path components but the last one are directories. */
+    status = ValidateDirectoryComponents( path, false );
+    if( status != 0 )
+    {
+	return( status );
+    }
+#if 0
+    /* Get the parent directory of the file that is to be opened. */
+    position = strlen( path );
+    while( ( 0 <= --position ) && ( path[ position ] == '/' ) );
+    while( ( 0 <= --position ) && ( path[ position ] != '/' ) );
+    if( position != 0 )
+    {
+        parent = malloc( position + sizeof( char ) );
+	strncpy( parent, path, position );
+	parent[ position ] = '\0';
+    }
+    else
+    {
+        parent = NULL;
+    }
+#endif
+    parent = GetPathPrefix( path );
+    status = S3FileStat( parent, &parentFi );
+    if( status != 0 )
+    {
+        return( -EACCES );
+    }
+    /* The parent must have search permissions. */
+    if( ! IsExecutable( parentFi ) )
+    {
+        return( -EACCES );
     }
 
     /* Allocate a file handle. */
@@ -634,31 +843,52 @@ s3fs_open(
 	status = S3FileStat( path, &fileInfo );
 	if( status != 0 )
 	{
-	    status = -EACCES;
+	    status = -ENOENT;
 	}
 	else
 	{
+	    status = -EACCES;
+
 	    fileDescriptors[ fh ] = fileInfo;
 	    Syslog( log_DEBUG, "File handle %d allocated\n", fh );
 	    /* http://sourceforge.net/apps/mediawiki/fuse/index.php?title=Fuse_file_info */
 	    SetOpenFlags( &openFlags, fi->flags );
+	    printf( "Checking flags... fi->flags = %08x\n", fi->flags );
 
+	    /* Do not follow symbolic links. */
+	    if( ( openFlags.of_NOFOLLOW ) && ( fileInfo->fileType == 'l' ) )
+	    {
+	        status = -EACCES;
+		goto open_end;
+	    }
+	    if( openFlags.of_WRONLY || openFlags.of_RDWR )
+	    {
+	        /* O_WRONLY or O_RDWR applied to a directory. */
+	        if( fileInfo->fileType == 'd' )
+	        {
+		    status = -EISDIR;
+		    goto open_end;
+		}
+		/* If a write is specified, the parent must have write
+		   permissions. */
+		if( ! IsExecutable( parentFi ) )
+		{
+		    return( -EACCES );
+		}
+	    }
 	    /* O_WRONLY is allowed if the file exists and has write
 	       permissions. (If the file doesn't exist, the O_CREAT flag
 	       must also be set. However, this flag isn't passed to this
-	       function.)
+	       function. Or? There's something about kernel 2.6 and FUSE.)
 	       See if the file exists and has write permissions. */
-	    if( openFlags.of_WRONLY )
+	    if( ( openFlags.of_WRONLY ) && IsWriteable( fileInfo ) )
 	    {
-		if( IsWriteable( fileInfo ) )
-		{
-		    status = 0;
-		}
+	        status = 0;
 	    }
 	    /* For O_RDONLY, the file must have read permissions. For
 	       O_RDWR and O_APPEND, the file must have both read and write
 	       permissions. */
-	    else if( openFlags.of_WRONLY || openFlags.of_RDWR
+	    else if( openFlags.of_RDONLY || openFlags.of_RDWR
 		     || openFlags.of_APPEND )
 	    {
 		/* Todo: if O_RDWR and O_TRUNC are set, the file will be
@@ -675,24 +905,30 @@ s3fs_open(
 		    status = -EACCES;
 		}
 	    }
-
-    printf( "s3fs_open (end): %d\n", status );
-
-	    if( status != 0 )
+	    else
 	    {
-	        /* The file info structure is released when it expires from
-		the stat cache. */
-		fileDescriptors[ fh ] = NULL;
-		fh = -1;
+	        status = -EACCES;
 	    }
 	}
     }
-
     /* All file descriptors in use. */
     else
     {
-        status = -ENFILE;
+        status = -EMFILE;
 	Syslog( log_INFO, "All file handles in use\n" );
+    }
+
+ open_end:
+    if( status != 0 )
+    {
+        /* The file info structure is released when it expires from
+	   the stat cache. */
+        fileDescriptors[ fh ] = NULL;
+	fh = -1;
+    }
+    if( parent != NULL )
+    {
+	free( parent );
     }
 
     fi->fh = fh;
@@ -805,7 +1041,8 @@ s3fs_readdir(
     else
     {
         /* Read the directory from the S3 storage. */
-        status = S3ReadDir( fileDescriptors[ dh ], dir, &s3Directory, &nFiles );
+        status = S3ReadDir( fileDescriptors[ dh ], dir, &s3Directory, &nFiles,
+			    -1 );
 	if( status == 0 )
 	{
 	    /* Copy the entire directory to into the buffer. */
@@ -888,7 +1125,7 @@ s3fs_access(
     struct S3FileInfo *fileInfo;
     int               permissions = 0;
 
-    printf( "s3fs_access %s, mask %06o\n", path, mask );
+    printf( "s3fs_access %s, mask %04o\n", path, mask );
 
     /* Verify that the path has search permissions throughout. */
     status = VerifyPathSearchPermissions( path );
@@ -1153,3 +1390,68 @@ s3fs_destroy(
 }
 #pragma GCC diagnostic pop
 
+
+
+static int
+s3fs_mkdir(
+    const char *dirname,
+    mode_t mode
+	   )
+{
+    int status;
+
+    status = S3Mkdir( dirname, mode );
+    return( status );
+}
+
+
+static int
+s3fs_unlink(
+    const char *file
+	    )
+{
+    int status;
+
+    status = S3Unlink( file );
+    return( status );
+}
+
+
+
+static int
+s3fs_rmdir(
+     const char *dirname
+	   )
+{
+    int status;
+
+    status = S3Rmdir( dirname );
+    return( status );
+}
+
+
+
+static int
+s3fs_chmod(
+    const char *path,
+    mode_t     mode
+	   )
+{
+    return( S3Chmod( path, mode ) );
+}
+
+
+
+static int
+s3fs_chown(
+    const char *path,
+    uid_t      uid,
+    gid_t      gid
+	   )
+{
+    return( S3Chown( path, uid, gid ) );
+}
+
+
+
+    /* Create a list of gid groups that the current user is a member of. */

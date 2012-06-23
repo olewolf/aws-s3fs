@@ -187,9 +187,4 @@ DecodeCommandLine(
 
 
 
-/* In daemon.c. */
-
-void Daemonize( void );
-
-
 #endif /* __AWS_S3FS_H */

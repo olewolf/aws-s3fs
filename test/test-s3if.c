@@ -463,7 +463,7 @@ static void test_S3ReadDir( const char *param )
     ReadLiveConfig( param );
     InitializeS3If( );
 
-    status = S3ReadDir( NULL, "/directory", &directory, &dirEntries );
+    status = S3ReadDir( NULL, "/directory", &directory, &dirEntries, -1 );
     if( status != 0) exit( 1 );
 
     for( i = 0; i < dirEntries; i++ )

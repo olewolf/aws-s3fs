@@ -1,7 +1,12 @@
 Authors of aws-s3fs.
 
-aws was written by Timothy Key <timkay@not.com>, and the aws-s3fs files
-that use this tool to create a FUSE file system were written by Ole Wolf
-<wolf@blazingangles.com>.
+ * The aws-s3fs files were written by Ole Wolf <wolf@blazingangles.com>,
+   with the following exceptions:
+
+ * Ulrich Drepper <drepper@gnu.ai.mit.edu> wrote the MD5 message digest
+   code which was modified for aws-s3fs by Ole Wolf.
+
+ * Paul E. Jones <paulej@packetizer.com> wrote the SHA1 message digest
+   code which was modified for aws-s3fs by Ole Wolf.
 
 For other contributions, see the ChangeLog.

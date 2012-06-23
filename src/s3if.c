@@ -40,6 +40,12 @@
 #include "statcache.h"
 
 
+/* The REST interface does not allow the creation of directories. Instead,
+   specify a bogus file within the directory that is never listed by the
+   readdir function. When stat on the directory fails, check whether this
+   file exists in the directory. */
+#define IS_S3_DIRECTORY_FILE "/.----s3--dir--do-not-delete"
+
 /* Number of concurrent CURL threads. */
 /*
 #define CURL_THREADS 5
@@ -249,9 +255,9 @@ CurlWriteHeader(
 
 
 /**
- * Callback function for CURL write where body data is expected. The function
- * keeps track of a dynamically expanding buffer that may be filled by multiple
- * callbacks. The function is called from an already mutex-locked CURL function.
+ * Callback function for CURL read where body data is expected. The function
+ * may be called several times, transferring a chunk of data each time. The
+ * function is called from an already mutex-locked CURL function.
  * @param ptr [out] Destination for the data to CURL.
  * @param size [in] The allowed size of each data block.
  * @param nmemb [in] The allowed number of data blocks.
@@ -274,7 +280,7 @@ CurlReadData(
     /* Copy a block of data to the CURL buffer. */
     accumulatedTotal = (int) curlReadBuffer->offset;
     while( ( bytesCopied <= maxWrite )
-	   && ( accumulatedTotal <= (int) curlReadBuffer->size ) )
+	   && ( accumulatedTotal < (int) curlReadBuffer->size ) )
     {
         ptr[ bytesCopied++ ] = curlReadBuffer->data[ accumulatedTotal++ ];
     }
@@ -861,18 +867,18 @@ BuildS3Request(
  * @return \a -errno for the HTTP response code.
  */
 STATIC int
-ConverHttpStatusToErrno(
+ConvertHttpStatusToErrno(
     int httpStatus
 			)
 {
     int status;
 
-    if( httpStatus == 200 )
+    if( httpStatus <= 299 )
     {
 	status = 0;
     }
     /* Redirection: consider it a "not found" error. */
-    else if( ( 300 <= httpStatus ) || ( httpStatus <= 399 ) )
+    else if( ( 300 <= httpStatus ) && ( httpStatus <= 399 ) )
     {
 	status = -ENOENT;
     }
@@ -937,6 +943,7 @@ ConverHttpStatusToErrno(
 
 
 
+#if 0
 /**
  * Extract the HTTP status code from the first string in the response header,
  * and convert it to a meaningful errno.
@@ -973,6 +980,7 @@ GetHttpStatus(
 
     return( httpStatus );
 }
+#endif
 
 
 
@@ -1001,7 +1009,7 @@ SubmitS3Request(
     char       *hostName;
     int        urlLength;
     int        status = 0;
-    int        httpStatus;
+    long       httpStatus;
 
     printf( "s3if: SubmitS3Request (%s)\n", filename );
 
@@ -1036,17 +1044,30 @@ SubmitS3Request(
     /* Submit request via CURL and wait for the response. */
     pthread_mutex_lock( &curl_mutex );
     curl_easy_reset( curl );
-    /* Set different callback functions for HEAD and GET/PUT requests. */
-    if( strcmp( httpVerb, "HEAD" ) == 0 )
+    /* Set callback function according to HTTP method. */
+    if( ( strcmp( httpVerb, "HEAD" ) == 0 )
+	|| ( strcmp( httpVerb, "DELETE" ) == 0 ) )
     {
         PrepareCurlWriteBuffers( true );
         curl_easy_setopt( curl, CURLOPT_NOBODY, 1 );
         curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, CurlWriteHeader );
+	if( strcmp( httpVerb, "DELETE" ) == 0 )
+	{
+	    curl_easy_setopt( curl, CURLOPT_CUSTOMREQUEST, "DELETE" );
+	}
     }
-    else
+    else if( strcmp( httpVerb, "GET" ) == 0 )
     {
         PrepareCurlWriteBuffers( false );
         curl_easy_setopt( curl, CURLOPT_WRITEFUNCTION, CurlWriteData );
+    }
+    else if( strcmp( httpVerb, "PUT" ) == 0 )
+    {
+        PrepareCurlWriteBuffers( true );
+        curl_easy_setopt( curl, CURLOPT_NOBODY, 1 );
+        curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, CurlWriteHeader );
+	curl_easy_setopt( curl, CURLOPT_UPLOAD, true );
+	curl_easy_setopt( curl, CURLOPT_INFILESIZE, 0 );
     }
 
     curl_easy_setopt( curl, CURLOPT_HTTPHEADER, headers );
@@ -1055,39 +1076,27 @@ SubmitS3Request(
       curl_easy_setopt( curl, CURLOPT_VERBOSE, 1 );
     */
     status = curl_easy_perform( curl );
-    if( status == 0 )
-    {
-        /* Move the response to a safe place and prepare the CURL write
-	   buffer for new data. */
-        *data                 = curlWriteBuffer;
-	*dataLength           = curlWriteBufferLength;
-	curlWriteBuffer       = NULL;
-	curlWriteBufferLength = 0;
-    }
+    /* Move the response to a safe place and prepare the CURL write
+       buffer for new data. */
+    *data                 = curlWriteBuffer;
+    *dataLength           = curlWriteBufferLength;
+    curlWriteBuffer       = NULL;
+    curlWriteBufferLength = 0;
+    curl_easy_getinfo( curl, CURLINFO_RESPONSE_CODE, &httpStatus );
     pthread_mutex_unlock( &curl_mutex );
 
     free( url );
     DeleteCurlSlistAndContents( headers );
 
     /* Report errors back if necessary. */
-    if( status != 0 )
+    if( status == 0 )
+    {
+        status = ConvertHttpStatusToErrno( httpStatus );
+    }
+    else
     {
         status = -EIO;
 	return( status );
-    }
-
-    /* Translate the HTTP request status, if any, to an errno value. */
-    if( strcmp( httpVerb, "HEAD" ) == 0 )
-    {
-        httpStatus = GetHttpStatus( *data );
-	if( httpStatus == 0 )
-	{
-	    status = 0;
-	}
-	else
-        {
-	    status = ConverHttpStatusToErrno( httpStatus );
-	}
     }
 
     return( status );
@@ -1098,7 +1107,7 @@ SubmitS3Request(
 /**
  * Submit a sequence of headers containing an S3 request and receive the
  * output in the local write buffer. The headers list is deallocated.
- * The request includes a body buffer for upload data; if no should be
+ * The request includes a body buffer for upload data; if none should be
  * uploaded, \a SubmitS3Request may be used instead. For large data,
  * use the multi-uploader.
  * @param httpVerb [in] HTTP method (GET, HEAD, etc.).
@@ -1124,9 +1133,7 @@ SubmitS3PutRequest(
     char       *hostName;
     int        urlLength;
     int        status     = 0;
-    //    int        httpStatus;
-
-    printf( "s3if: SubmitS3PutRequest (%s)\n", filename );
+    long       httpStatus;
 
     /* Determine the virtual host name. */
     hostName = GetS3HostNameByRegion( globalConfig.region,
@@ -1159,70 +1166,37 @@ SubmitS3PutRequest(
     /* Submit request via CURL and wait for the response. */
     pthread_mutex_lock( &curl_mutex );
     curl_easy_reset( curl );
-
-    /* Prepare write buffer for response. */
-    /*
-    if( strcmp( httpVerb, "HEAD" ) == 0 )
-    {
-        PrepareCurlWriteBuffers( true );
-        curl_easy_setopt( curl, CURLOPT_NOBODY, 1 );
-        curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, CurlWriteHeader );
-
-    }
-    else
-    {
-        PrepareCurlWriteBuffers( false );
-        curl_easy_setopt( curl, CURLOPT_WRITEFUNCTION, CurlWriteData );
-    }
-    */
-
-    /* Prepare read buffer for PUT requests. */
+    /* Prepare read buffer and no write buffer. */
     PrepareCurlReadBuffer( (unsigned char*) bodyData, bodyLength );
     curl_easy_setopt( curl, CURLOPT_READFUNCTION, CurlReadData );
     curl_easy_setopt( curl, CURLOPT_READDATA, &curlReadBuffer );
     curl_easy_setopt( curl, CURLOPT_UPLOAD, true );
     curl_easy_setopt( curl, CURLOPT_HTTPHEADER, headers );
     curl_easy_setopt( curl, CURLOPT_URL, url );
-      curl_easy_setopt( curl, CURLOPT_VERBOSE, 1 );
-    /*
-    */
     status = curl_easy_perform( curl );
-    if( status == 0 )
-    {
-        /* Move the response to a safe place and prepare the CURL write
-	   buffer for new data. */
-        *response             = curlWriteBuffer;
-	*responseLength       = curlWriteBufferLength;
-	curlWriteBuffer       = NULL;
-	curlWriteBufferLength = 0;
-    }
+    /* Move the response to a safe place and prepare the CURL write
+       buffer for new data. */
+    *response             = NULL;
+    *responseLength       = 0;
+    curlWriteBuffer       = NULL;
+    curlWriteBufferLength = 0;
+    curl_easy_getinfo( curl, CURLINFO_RESPONSE_CODE, &httpStatus );
     pthread_mutex_unlock( &curl_mutex );
 
     free( url );
     DeleteCurlSlistAndContents( headers );
 
     /* Report errors back if necessary. */
-    if( status != 0 )
+    if( status == 0 )
+    {
+        status = ConvertHttpStatusToErrno( httpStatus );
+    }
+    else
     {
         status = -EIO;
 	return( status );
     }
 
-    /* Translate the HTTP request status, if any, to an errno value. */
-    /*
-    if( strcmp( httpVerb, "HEAD" ) == 0 )
-    {
-        httpStatus = GetHttpStatus( *response );
-	if( httpStatus == 0 )
-	{
-	    status = 0;
-	}
-	else
-        {
-	    status = ConverHttpStatusToErrno( httpStatus );
-	}
-    }
-    */
     return( status );
 }
 
@@ -1466,9 +1440,7 @@ S3GetFileStat(
 	{
 	    headerKey   = response[ headerIdx * 2     ];
 	    headerValue = response[ headerIdx * 2 + 1 ];
-	    /*
-	    printf( "DEBUG: %s:%s\n", headerKey, headerValue );
-	    */
+
 	    if( strcmp( headerKey, "x-amz-meta-uid" ) == 0 )
 	    {
 	        if( ( status = GetHeaderInt( headerValue, &tempValue ) ) != 0 )
@@ -1499,11 +1471,13 @@ S3GetFileStat(
 	    }
 	    else if( strcmp( headerKey, "Content-Type" ) == 0 )
 	    {
-		if( strncmp( headerValue, "x-directory", 11 ) == 0 )
+		if( strncmp( headerValue,
+			     "application/x-directory", 23 ) == 0 )
 		{
 		    newFileInfo->fileType = 'd';
 		}
-		else if( strncmp( headerValue, "x-symlink", 9 ) == 0 )
+		else if( strncmp( headerValue,
+				  "application/x-symlink", 21 ) == 0 )
 		{
 		    newFileInfo->fileType = 'l';
 		}
@@ -1696,6 +1670,7 @@ S3FileStat(
 {
     int               stripIdx = 0;
     char              *filename;
+    int               secretIdx = 0;
     struct S3FileInfo *fileInfo;
     int               status;
     char              *dirname;
@@ -1712,6 +1687,15 @@ S3FileStat(
     /* Remove all trailing slashes. */
     filename = StripTrailingSlash( filename, false );
 
+    /* Prevent access to the "secret" file. */
+    secretIdx = strlen( filename ) - strlen( IS_S3_DIRECTORY_FILE );
+    if( ( 0 <= secretIdx )
+	&& ( strcmp( &filename[ secretIdx ], IS_S3_DIRECTORY_FILE ) == 0 ) )
+    {
+	free( filename );
+        return( -ENOENT );
+    }
+
     /* Attempt to read the S3FileStat from the stat cache. */
     status = 0;
     fileInfo = SearchStatEntry( filename );
@@ -1725,20 +1709,31 @@ S3FileStat(
 	   trailing slash. */
 	if( status != 0 )
 	{
-	    printf( "no. " );
 	    /* Prepare a directory name version of the file. */
 	    dirname = AddTrailingSlash( filename );
 	    status = ResolveS3FileStatCacheMiss( dirname, &fileInfo, filename );
 	    free( dirname );
-	    /* If still unsuccessful, create a "file not found" entry in
-	       the stat cache. */
+	    /* If that is also unsuccessful, attempt to stat the "secret file"
+	       in the directory. */
 	    if( status != 0 )
 	    {
-	        fileInfo = malloc( sizeof( struct S3FileInfo ) );
-		fileInfo->symlinkTarget = NULL; /* For later free() */
-		fileInfo->filenotfound  = true;
-		InsertCacheElement( filename, fileInfo,
-				    &DeleteS3FileInfoStructure );
+	        dirname = malloc( strlen( filename ) + sizeof( char )
+				  + strlen( IS_S3_DIRECTORY_FILE ) );
+		strcpy( dirname, filename );
+		strcat( dirname, IS_S3_DIRECTORY_FILE );
+		status = ResolveS3FileStatCacheMiss( dirname, &fileInfo,
+						     filename );
+		free( dirname );
+		/* If still yet unsuccessful, create a "file not found" entry
+		   in the stat cache. */
+		if( status != 0 )
+		{
+		  fileInfo = malloc( sizeof( struct S3FileInfo ) );
+		  fileInfo->symlinkTarget = NULL; /* For later free() */
+		  fileInfo->filenotfound  = true;
+		  InsertCacheElement( filename, fileInfo,
+				      &DeleteS3FileInfoStructure );
+		}
 	    }
 	}
     }
@@ -1910,7 +1905,8 @@ S3ReadDir(
     struct S3FileInfo *fi,
     const char        *dirname,
     char              ***nameArray,
-    int               *nFiles
+    int               *nFiles,
+    int               maxRead
 	  )
 {
     int        status = 0;
@@ -1933,10 +1929,13 @@ S3ReadDir(
     xmlDocPtr         xmlResponse;
     xmlNode           *rootNode;
     int               fileCounter;
+    int               fileLimit;
 
     char              **dirArray;
     int               dirIdx;
     struct curl_slist *nextEntry;
+    char              *path;
+    int               s3dirfilePos;
 
     /* Construct a base query with a prefix and a delimiter. */
 
@@ -1968,6 +1967,7 @@ S3ReadDir(
 		        + strlen( urlSafePrefix )
 			+ strlen( "/?prefix=/&delimiter=" )
 			+ strlen( delimiter )
+			+ strlen( "&max-keys=xxxxx" )
 			+ sizeof( char ) );
 
     /* Add a non-encoded trailing slash to the prefix in the query.
@@ -1981,9 +1981,14 @@ S3ReadDir(
         sprintf( queryBase, "%s?prefix=%s/&delimiter=%s",
 		 relativeRoot, urlSafePrefix, delimiter );
     }
+    if( maxRead != -1 )
+    {
+        sprintf( &queryBase[ strlen( queryBase ) ], "&max-keys=%d", maxRead );
+    }
     free( (char*) urlSafePrefix );
 
     fileCounter = 0;
+    fileLimit   = ( maxRead == -1 ) ? 999999l : maxRead;
     /* Retrieve truncated directory lists by specifying the base query plus a
        marker. */
     do
@@ -2045,29 +2050,42 @@ S3ReadDir(
 		xmlFreeDoc( xmlResponse );
 	    }
 	}
-    } while( fromFile != NULL );
+    } while( ( fromFile != NULL ) && ( fileCounter <= fileLimit ) );
 
     free( relativeRoot );
     free( (char*) prefix );
 
     /* Move the linked-list file names into an array. Add two entries for
        the directories "." and "..". */
-    dirArray = malloc( sizeof( char* ) * ( fileCounter + 2 ) );
+    fileCounter += 2;
+    dirArray = malloc( sizeof( char* ) * fileCounter );
     assert( dirArray != NULL );
     dirIdx   = 0;
     /* Fake the "." and ".." paths. */
     dirArray[ dirIdx++ ] = strdup( "." );
     dirArray[ dirIdx++ ] = strdup( ".." );
-
     while( directory )
     {
-        dirArray[ dirIdx++ ] = StripTrailingSlash( directory->data, false );
+        path = StripTrailingSlash( directory->data, false );
+	/* Don't report the IS_S3_DIRECTORY_FILE. */
+	s3dirfilePos = strlen( path )
+	               - strlen( &IS_S3_DIRECTORY_FILE[ 1 ] );
+	if( ( 0 <= s3dirfilePos )
+	    && ( strcmp( path, &IS_S3_DIRECTORY_FILE[ 1 ] ) == 0 ) )
+	{
+	    free( path );
+	    fileCounter--;
+	}
+	else
+	{
+	    dirArray[ dirIdx++ ] = path;
+	}
 	nextEntry = directory->next;
 	free( directory );
 	directory = nextEntry;
     }
     *nameArray = dirArray;
-    *nFiles    = fileCounter + 2;
+    *nFiles    = fileCounter;
 
     return( status );
 }
@@ -2105,7 +2123,7 @@ S3ReadFile(
 	if( fi->fileType == 'f' )
 	{
 	    /* Get the file contents between "offset" and the following
-	       "maxSize" bytes. */
+	       "maxSize" bytes, both included. */
 	    sprintf( range, "Range:bytes=%lld-%lld",
 		     (long long) offset, (long long) offset + maxSize - 1 );
 	    headers = curl_slist_append( headers, strdup( range ) );
@@ -2188,7 +2206,7 @@ S3ReadLink(
 		if( size <= 4096 )
 	        {
 		    /* Get the file contents; it is a rather small transfer. */
-		    sprintf( range, "Range:bytes=0-%d", (int)size );
+		    sprintf( range, "Range:bytes=0-%d", (int)size - 1 );
 		    headers = curl_slist_append( headers, strdup( range ) );
 		    headers = BuildS3Request( "GET", headers, link );
 		    status  = SubmitS3Request( "GET", headers, link,
@@ -2200,7 +2218,6 @@ S3ReadLink(
 			linkContents = realloc( linkContents, length + 1 );
 			linkContents[ length ] = '\0';
 			fi->symlinkTarget = strdup( linkContents );
-			printf( "Placing %s in symlink cache for %s.\n", fi->symlinkTarget, link );
 			*target = linkContents;
 		    }
 		}
@@ -2225,6 +2242,12 @@ S3ReadLink(
 
 
 
+/**
+ * Create HTTP headers based on the information in a S3FileInfo structure.
+ * @param fi [in] File info structure.
+ * @param headers [in] Headers that the new HTTP headers will be appended to.
+ * @return Linked list of HTTP headers.
+ */
 static struct curl_slist*
 CreateHeadersFromFileInfo(
     const struct S3FileInfo *fi,
@@ -2265,12 +2288,12 @@ CreateHeadersFromFileInfo(
     if( fi->fileType == 'd' )
     {
         headers = curl_slist_append( headers,
-		      strdup( "Content-Type:x-directory" ) );
+		      strdup( "Content-Type:application/x-directory" ) );
     }
     else if( fi->fileType == 'l')
     {
         headers = curl_slist_append( headers,
-		      strdup( "Content-Type:x-symlink" ) );
+		      strdup( "Content-Type:application/x-symlink" ) );
     }
 
     /* Update uid, gid, and permissions. */
@@ -2301,7 +2324,8 @@ CreateHeadersFromFileInfo(
 static int
 UpdateAmzHeaders(
     const char              *file,
-    const struct S3FileInfo *fi
+    const struct S3FileInfo *fi,
+    const char              *newName
 		 )
 {
     struct curl_slist *headers = NULL;
@@ -2325,10 +2349,15 @@ UpdateAmzHeaders(
     headers = CreateHeadersFromFileInfo( fi, headers );
 
     /* Update the headers. */
-    headers = BuildS3Request( "PUT", headers, file );
-    status  = SubmitS3Request( "PUT", headers, file,
+    if( newName == NULL )
+    {
+        newName = file;
+    }
+    headers = BuildS3Request( "PUT", headers, newName );
+    status  = SubmitS3Request( "PUT", headers, newName,
 			       (void**) &response, &responseLength );
     free( response );
+
     return( status );
 }
 
@@ -2357,13 +2386,19 @@ S3ModifyTimeStamps(
 	fi->atime = atime;
 	fi->mtime = mtime;
 
-	status = UpdateAmzHeaders( file, fi );
+	status = UpdateAmzHeaders( file, fi, NULL );
     }
     return( status );
 }
 
 
 
+/**
+ * Create a symbolic link.
+ * @param linkname [in] Name of the symbolic link.
+ * @param path [in] Target of the symbolic link.
+ * @return 0 on success, or \a -errno otherwise.
+ */
 int
 S3CreateLink(
     const char *linkname,
@@ -2420,7 +2455,9 @@ S3CreateLink(
 				 (unsigned char*) path, pathLength );
 
     /* We already have the FileInfo structure, so because the file will be
-       stat'ed as soon as we return, let's add it to the stat cache. */
+       stat'ed as soon as we return, let's add it to the stat cache. Delete
+       whatever might already be in the cache. */
+    DeleteStatEntry( linkname );
     InsertCacheElement( linkname, fi, &DeleteS3FileInfoStructure );
 
     return( status );
@@ -2428,7 +2465,10 @@ S3CreateLink(
 
 
 
-
+/**
+ * Shut down the S3 interface.
+ * @return Nothing.
+ */
 void
 S3Destroy(
     void
@@ -2442,3 +2482,341 @@ S3Destroy(
     /* Cleanup libxml. */
     xmlCleanupParser( );
 }
+
+
+
+/**
+ * Clean a path of unnecessary slashes.
+ * @param inpath [in] The "dirty" path with superfluous slashes.
+ * @return A path with only those slashes that are required.
+ */
+static const char*
+CleanPath(
+    const char *inpath
+	  )
+{
+    char *filename;
+    bool escaped    = false;
+    bool slashFound = false;
+    int  srcIdx;
+    int  destIdx;
+    char ch;
+
+    filename = malloc( strlen( inpath ) + sizeof( char ) );
+
+    srcIdx  = 0;
+    destIdx = 0;
+    /* Make sure there is at least one leading slash. */
+    /*
+    if( inpath[ srcIdx ] != '/' )
+    {
+	filename[ destIdx++ ] = '/';
+    }
+    */
+    /* Copy while eliminating all double-slashes. */
+    while( ( ch = inpath[ srcIdx ] ) != '\0' )
+    {
+        if( ! escaped )
+	{
+	    escaped = false;
+	    if( ( ch == '/' ) && ( ! slashFound ) )
+	    {
+	        filename[ destIdx++ ] = '/';
+	        slashFound = true;
+	    }
+	    else if( ch != '/' )
+	    {
+	        filename[ destIdx++ ] = ch;
+		slashFound = false;
+	    }
+	    if( ch == '\\' )
+	    {
+	        escaped = true;
+	    }
+	}
+	srcIdx++;
+    }
+    filename[ destIdx ] = '\0';
+    /* Remove all trailing slashes. */
+    filename = StripTrailingSlash( filename, false );
+
+    return( filename );
+}
+
+
+
+/**
+ * The S3 REST interface does not allow the creation of directories, but they
+ * may be faked. Eerything is a key, so directories do not really exist,
+ * but keys are navigated as if they were directories. This means that any
+ * file may be specified as directory/.../file, autocreating the "directories".
+ * By storing a secret file that is never listed in the "directory," it is
+ * possible to recognize the directory as a directory. I prefer that option
+ * to the use of zero-content files posing as directories. The file stat of
+ * the newly created directory will fail, but by examining the secret file
+ * the directory can be recognized with the permissions of the secret file
+ * nonetheless.
+ * @param dirname [in] Name of the directory that should be created.
+ * @param mode [in] Mode bits for the directory.
+ * @return 0 on success, or \a -errno otherwise.
+ */
+int
+S3Mkdir(
+    const char *dirname,
+    mode_t     mode
+	)
+{
+    const char        *cleanName;
+    char              *secretFile;
+    struct S3FileInfo newFi;
+    struct S3FileInfo *oldFi;
+    time_t            now = time( NULL );
+    struct curl_slist *headers = NULL;
+    char              *response;
+    int               responseLength;
+    int               status;
+
+    cleanName  = CleanPath( dirname );
+    secretFile = malloc( strlen( cleanName ) + strlen( IS_S3_DIRECTORY_FILE )
+			 + sizeof( char ) );
+    strcpy( secretFile, cleanName );
+    strcat( secretFile, IS_S3_DIRECTORY_FILE );
+
+    /* Write file metadata headers. */
+    memset( &newFi, 0, sizeof( struct S3FileInfo ) );
+    newFi.uid           = getuid( );
+    newFi.gid           = getgid( );
+    newFi.permissions   = mode;
+    newFi.fileType      = 'd';
+    newFi.atime         = now;
+    newFi.mtime         = now;
+    newFi.ctime         = now;
+
+    headers = CreateHeadersFromFileInfo( &newFi, headers );
+    headers = curl_slist_append( headers, strdup( "Expect:" ) );
+    headers = curl_slist_append( headers, strdup( "Transfer-Encoding:" ) );
+    headers = BuildS3Request( "PUT", headers, secretFile );
+    status  = SubmitS3Request( "PUT", headers, secretFile,
+			       (void**) &response, &responseLength );
+    /* Update the stat cache entry for the directory. */
+    free( secretFile );
+    oldFi = SearchStatEntry( cleanName );
+    if( oldFi != NULL )
+    {
+        memcpy( oldFi, &newFi, sizeof( struct S3FileInfo ) );
+    }
+    free( (char* )cleanName );
+
+    if( response != NULL )
+    {
+        free( response );
+    }
+
+    return( status );
+}
+
+
+
+/**
+ * Delete a file.
+ * @param filename [in] File to delete.
+ * @return 0 on success, or \a -errno on failure.
+ */
+int
+S3Unlink( const char *filename )
+{
+    const char        *cleanName;
+    struct curl_slist *headers = NULL;
+    char              *response;
+    int               responseLength;
+    int               status;
+
+    cleanName = CleanPath( filename );
+
+    /* TODO: verify that the file is not a directory (except if it's the
+       secret file). */
+
+
+    headers = BuildS3Request( "DELETE", headers, cleanName );
+    status  = SubmitS3Request( "DELETE", headers, cleanName,
+			       (void**) &response, &responseLength );
+    DeleteStatEntry( cleanName );
+    free( (char*) cleanName );
+
+    if( response != NULL )
+    {
+        free( response );
+    }
+
+    return( status );
+}
+
+
+
+static bool
+IsDirectoryEmpty(
+    const char *dirname
+		 )
+{
+    bool success;
+    char **directory;
+    int  nFiles;
+    int  status;
+    int  i;
+
+    /* Read four files so that we can account for the secret file, the ".",
+       the "..", and finally any file that makes the directory non-empty. */
+    success = false;
+    status = S3ReadDir( NULL, dirname, &directory, &nFiles, 4 );
+    if( status == 0 )
+    {
+        /* We compare against two files instead of three (where above we
+	   requested four), because the secret file is not returned. */
+        if( nFiles <= 2 )
+	{
+	    success = true;
+	}
+    }
+    /* Delete the directory array. */
+    for( i = 0; i < nFiles; i++ )
+    {
+        free( directory[ i ] );
+    }
+    free( directory );
+
+    return( success );
+}
+
+
+
+/**
+ * Remove a directory.
+ * @param dirname [in] Directory to delete.
+ * @return 0 on success, or \a -errno on failure.
+ */
+int
+S3Rmdir( const char *dirname )
+{
+    const char        *cleanName;
+    char              *secretFile;
+    struct S3FileInfo *fi;
+    struct curl_slist *headers = NULL;
+    char              *response;
+    int               responseLength;
+    int               status;
+
+    cleanName = CleanPath( dirname );
+
+    status = S3FileStat( cleanName, &fi );
+    if( status == 0 )
+    {
+        /* rmdir works only on directories. */
+        if( fi->fileType == 'd' )
+	{
+ 	    /* Determine if the directory is empty. */
+	    if( IsDirectoryEmpty( cleanName ) )
+	    {
+	         /* Delete the secret file. */
+	        secretFile = malloc( strlen( cleanName ) + 2 * sizeof( char )
+				     + strlen( IS_S3_DIRECTORY_FILE ) );
+		strcpy( secretFile, cleanName );
+		strcat( secretFile, "/" );
+		strcat( secretFile, IS_S3_DIRECTORY_FILE );
+		status = S3Unlink( secretFile );
+		if( status == 0 )
+		{
+		    headers = BuildS3Request( "DELETE", headers, cleanName );
+		    status  = SubmitS3Request( "DELETE", headers, cleanName,
+					       (void**) &response,
+					       &responseLength );
+		    DeleteStatEntry( cleanName );
+		    free( (char*) cleanName );
+		}
+		/* If the secret file cannot be removed, EACCES seems like
+		   the best errno. */
+		else
+		{
+		    status = -EACCES;
+		}
+	    }
+	    else
+	    {
+	        status = -ENOTEMPTY;
+	    }
+	}
+        else
+	{
+	    status = -ENOTDIR;
+	}
+    }
+
+    if( response != NULL )
+    {
+        free( response );
+    }
+
+    return( status );
+}
+
+
+
+/**
+ * Change permissions of a file.
+ * @param file [in/out] File whose permissions are changed.
+ * @param mode [in] New permissions (rwxrwxrwx ~ 0-7,0-7,0-7).
+ * @return 0 on success, or \a -errno on failure.
+ */
+int
+S3Chmod(
+    const char *file,
+    mode_t     mode
+	)
+{
+    struct S3FileInfo *fi;
+    int               status;
+    time_t            now = time( NULL );
+
+    status = S3FileStat( file, &fi );
+    if( status == 0 )
+    {
+	fi->mtime       = now;
+	fi->permissions = mode;
+
+	status = UpdateAmzHeaders( file, fi, NULL );
+    }
+    return( status );
+}
+
+
+
+/**
+ * Change ownership of the file.
+ * @param file [in/out] FileInfo for the file whose ownership is changed.
+ * @param uid [in] New uid, or -1 to keep the current one.
+ * @param gid [in] New gid, or -1 to keep the current one.
+ * @return 0 on success, or \a -errno on failure.
+ */
+int
+S3Chown(
+    const char *file,
+    uid_t      uid,
+    gid_t      gid
+	)
+{
+    struct S3FileInfo *fi;
+    int               status;
+    time_t            now = time( NULL );
+
+    status = S3FileStat( file, &fi );
+    if( status == 0 )
+    {
+	fi->mtime                     = now;
+	if( (int) uid != -1 ) fi->uid = uid;
+	if( (int) gid != -1 ) fi->gid = gid;
+
+	status = UpdateAmzHeaders( file, fi, NULL );
+    }
+    return( status );
+}
+
+
