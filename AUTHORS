@@ -9,4 +9,6 @@ Authors of aws-s3fs.
  * Paul E. Jones <paulej@packetizer.com> wrote the SHA1 message digest
    code which was modified for aws-s3fs by Ole Wolf.
 
+Original code may be found in src/original.
+
 For other contributions, see the ChangeLog.
