@@ -90,6 +90,12 @@ int S3Rmdir( const char *path );
 int S3Chmod( const char *path, mode_t mode );
 int S3Chown( const char *path, uid_t uid, gid_t gid );
 
+struct curl_slist* BuildS3Request( const char *httpMethod,
+				   struct curl_slist *additionalHeaders,
+				   const char *filename );
+
+int SubmitS3Request( const char *httpMethod, struct curl_slist *headers,
+		     const char *filename, void **data, int *dataLength );
 
 
 #endif /* __S3IF_H */

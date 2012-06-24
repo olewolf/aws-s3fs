@@ -70,22 +70,18 @@ static struct
 } curlThreads[ CURL_THREADS ];
 */
 
-pthread_mutex_t curl_mutex = PTHREAD_MUTEX_INITIALIZER;
-static CURL *curl = NULL;
-/* Buffers for the read/write CURL callback functions. The buffer lengths
-   indicate either the number of body data bytes, or the number of headers. */
-static void   *curlWriteBuffer;
-static size_t curlWriteBufferLength;
-static bool   curlWriteBufferIsHeaders;
-static struct CurlReadBuffer
+struct CurlWriteBuffer
+{
+    unsigned char *data;
+    size_t        size;
+};
+
+struct CurlReadBuffer
 {
     unsigned char *data;
     size_t        size;
     off_t         offset;
-} curlReadBuffer;
-
-static long int localTimezone;
-
+};
 
 struct HttpHeaders
 {
@@ -93,6 +89,11 @@ struct HttpHeaders
     char       *content;
 };
 
+
+pthread_mutex_t curl_mutex = PTHREAD_MUTEX_INITIALIZER;
+static CURL *curl = NULL;
+
+static long int localTimezone;
 
 
 /*
@@ -132,9 +133,6 @@ DeleteCurlSlistAndContents(
  * @param userdata [in] Unused.
  * @return Number of bytes copied from \a ptr.
  */
-/* Disable warning that userdata is unused. */
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
 static size_t
 CurlWriteHeader(
     char   *ptr,
@@ -151,6 +149,7 @@ CurlWriteHeader(
     char   *header;
     char   *data = NULL;
     bool   hasData = true;
+    struct CurlWriteBuffer *writeBuffer = userdata;
 
     /* Allocate room for 10 headers at a time. */
     static const int HEADER_ALLOC_AMOUNT = 10;
@@ -218,39 +217,38 @@ CurlWriteHeader(
     if( ( strlen( header ) != 0 ) || ( data != NULL ) )
     {
         /* Allocate or expand the buffer to receive the new data. */
-        if( curlWriteBuffer == NULL )
+        if( writeBuffer->data == NULL )
 	{
-	    curlWriteBufferLength = 0;
-	    curlWriteBuffer = malloc( HEADER_ALLOC_AMOUNT *
-				      2 * sizeof( char* ) );
+	    writeBuffer->size = 0;
+	    writeBuffer->data = malloc( HEADER_ALLOC_AMOUNT *
+					2 * sizeof( char* ) );
 	}
 	else
         {
 	    /* Increase pair count. */
-	    curlWriteBufferLength = curlWriteBufferLength + 1;
+	    writeBuffer->size = writeBuffer->size + 1;
 	    /* Expand the buffer by HEADER_ALLOC_AMOUNT items if necessary. */
-	    if( ( curlWriteBufferLength % HEADER_ALLOC_AMOUNT ) == 0 )
+	    if( ( writeBuffer->size % HEADER_ALLOC_AMOUNT ) == 0 )
 	    {
-		newSize = ( curlWriteBufferLength + 1 ) * HEADER_ALLOC_AMOUNT;
-		curlWriteBuffer = realloc( curlWriteBuffer,
-					   newSize * 2 * sizeof( char* ) );
-		bufIdx = curlWriteBufferLength * 2;
+		newSize = ( writeBuffer->size + 1 ) * HEADER_ALLOC_AMOUNT;
+		writeBuffer->data = realloc( writeBuffer->data,
+					     newSize * 2 * sizeof( char* ) );
+		bufIdx = writeBuffer->size * 2;
 		for( i = 0; i < HEADER_ALLOC_AMOUNT; i++ )
 		{
-		    ( (char**)curlWriteBuffer )[ bufIdx + i * 2 ] = NULL;
+		    ( (char**)writeBuffer->data )[ bufIdx + i * 2 ] = NULL;
 		}
 	    }
 	}
 
 	/* Write the key and the value into the buffer. */
-	bufIdx = curlWriteBufferLength * 2;
-	( (char**)curlWriteBuffer )[ bufIdx     ] = header;
-	( (char**)curlWriteBuffer )[ bufIdx + 1 ] = data;
+	bufIdx = writeBuffer->size * 2;
+	( (char**)writeBuffer->data )[ bufIdx     ] = header;
+	( (char**)writeBuffer->data )[ bufIdx + 1 ] = data;
     }
 
     return( toCopy );
 }
-#pragma GCC diagnostic pop
 
 
 
@@ -301,34 +299,32 @@ CurlReadData(
  * @param userdata [in] Unused.
  * @return Number of bytes copied from \a ptr.
  */
-/* Disable warning that userdata is unused. */
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
 static size_t
 CurlWriteData(
     char   *ptr,
     size_t size,
     size_t nmemb,
     void   *userdata
-	  )
+	      )
 {
+    struct CurlWriteBuffer *writeBuffer = userdata;
     size_t        toCopy = size * nmemb;
     unsigned char *destBuffer;
     int           i;
     size_t        toAllocate;
 
     /* Allocate or expand the buffer to receive the new data. */
-    if( curlWriteBuffer == NULL )
+    if( writeBuffer->data == NULL )
     {
-	curlWriteBufferLength = 0;
-        curlWriteBuffer = malloc( toCopy + sizeof( char ) );
-	destBuffer = curlWriteBuffer;
+	writeBuffer->size = 0;
+        writeBuffer->data = malloc( toCopy + sizeof( char ) );
+	destBuffer = writeBuffer->data;
     }
     else
     {
-        toAllocate = curlWriteBufferLength + toCopy + sizeof( char );
-        curlWriteBuffer = realloc( curlWriteBuffer, toAllocate );
-	destBuffer = &( (unsigned char*)curlWriteBuffer )[ curlWriteBufferLength ];
+        toAllocate = writeBuffer->size + toCopy + sizeof( char );
+        writeBuffer->data = realloc( writeBuffer->data, toAllocate );
+	destBuffer = &( (unsigned char*)writeBuffer->data )[ writeBuffer->size ];
     }
 
     /* Receive data. */
@@ -337,11 +333,10 @@ CurlWriteData(
 	*destBuffer++ = *ptr++;
     }
     *destBuffer = '\0';
-    curlWriteBufferLength = curlWriteBufferLength + toCopy + 1;
+    writeBuffer->size = writeBuffer->size + toCopy + 1;
 
     return( toCopy );
 }
-#pragma GCC diagnostic pop
 
 
 
@@ -352,6 +347,7 @@ CurlWriteData(
  * @param nEntries [in] Number of headers in the array.
  * @return Nothing.
  */
+#if 0
 STATIC void
 DeleteHeaderPairsTable(
     char** table,
@@ -372,59 +368,7 @@ DeleteHeaderPairsTable(
 	free( table );
     }
 }
-
-
-
-/**
- * Deallocate the write-back buffers if they are non-empty and prepare the
- * buffers to be filled with either headers or body data.
- * @param prepareForHeaders [in] If \a true, indicate that the buffer will
- *        be filled with headers; if \a false, the buffer will be filled with
- *        body data.
- * @return Nothing.
- */
-STATIC void
-PrepareCurlWriteBuffers(
-    bool prepareForHeaders
-		)
-{
-    if( curlWriteBufferLength != 0 )
-    {
-        /* If the write buffer contains pointers to headers, then the headers
-	   must each be deleted before the write buffer is deleted. */
-        if( curlWriteBufferIsHeaders )
-	{
-	    DeleteHeaderPairsTable( curlWriteBuffer, curlWriteBufferLength );
-	}
-	else
-	{
-	    free( curlWriteBuffer );
-	}
-    }
-
-    /* Indicate the type of the next fill. */
-    curlWriteBufferIsHeaders = prepareForHeaders;
-    curlWriteBuffer          = NULL;
-}
-
-
-
-/**
- * Prepare the read buffer with information about the pending upload.
- * @param data [in] Data to be uploaded.
- * @param size [in] Size of the data.
- * @return Nothing.
- */
-STATIC void
-PrepareCurlReadBuffer(
-    unsigned char *data,
-    size_t        size
-		       )
-{
-    curlReadBuffer.data   = data;
-    curlReadBuffer.size   = size;
-    curlReadBuffer.offset = 0l;
-}
+#endif
 
 
 
@@ -447,7 +391,7 @@ InitializeS3If(
     if( curl == NULL )
     {
 	curl = curl_easy_init( );
-	curlWriteBuffer = NULL;
+	/*	curlWriteBuffer = NULL;*/
 	/*	curlReadBuffer  = NULL;*/
     }
     pthread_mutex_unlock( &curl_mutex );
@@ -457,7 +401,7 @@ InitializeS3If(
     localtime_r( &tnow, &tm );
     localTimezone = tm.tm_gmtoff;
 
-    curlWriteBufferLength = 0;
+    /*    curlWriteBufferLength = 0;*/
 }
 
 
@@ -813,7 +757,7 @@ qsort_strcmp( const void *a, const void *b )
  * @param filename [in] The full path of the file that is accessed.
  * @return Complete HTTP header list, including an AWS signature.
  */
-STATIC struct curl_slist*
+struct curl_slist*
 BuildS3Request(
     const char        *httpMethod,
     struct curl_slist *additionalHeaders,
@@ -996,7 +940,7 @@ GetHttpStatus(
  * @param responseLength [out] Pointer to the response length.
  * @return 0 on success, or CURL error number on failure.
  */
-STATIC int
+int
 SubmitS3Request(
     const char        *httpVerb,
     struct curl_slist *headers,
@@ -1005,11 +949,12 @@ SubmitS3Request(
     int               *dataLength
 		)
 {
-    char       *url;
-    char       *hostName;
-    int        urlLength;
-    int        status = 0;
-    long       httpStatus;
+    char                   *url;
+    char                   *hostName;
+    int                    urlLength;
+    int                    status = 0;
+    long                   httpStatus;
+    struct CurlWriteBuffer writeBuffer = { NULL, 0 };
 
     printf( "s3if: SubmitS3Request (%s)\n", filename );
 
@@ -1046,24 +991,28 @@ SubmitS3Request(
     curl_easy_reset( curl );
     /* Set callback function according to HTTP method. */
     if( ( strcmp( httpVerb, "HEAD" ) == 0 )
-	|| ( strcmp( httpVerb, "DELETE" ) == 0 ) )
+	|| ( strcmp( httpVerb, "DELETE" ) == 0 )
+	|| ( strcmp( httpVerb, "POST" ) == 0 ) )
     {
-        PrepareCurlWriteBuffers( true );
         curl_easy_setopt( curl, CURLOPT_NOBODY, 1 );
         curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, CurlWriteHeader );
+	curl_easy_setopt( curl, CURLOPT_WRITEHEADER, &writeBuffer );
 	if( strcmp( httpVerb, "DELETE" ) == 0 )
 	{
 	    curl_easy_setopt( curl, CURLOPT_CUSTOMREQUEST, "DELETE" );
 	}
+	else if( strcmp( httpVerb, "POST" ) == 0 )
+	{
+	    curl_easy_setopt( curl, CURLOPT_CUSTOMREQUEST, "POST" );
+	}
     }
     else if( strcmp( httpVerb, "GET" ) == 0 )
     {
-        PrepareCurlWriteBuffers( false );
         curl_easy_setopt( curl, CURLOPT_WRITEFUNCTION, CurlWriteData );
+	curl_easy_setopt( curl, CURLOPT_WRITEDATA, &writeBuffer );
     }
     else if( strcmp( httpVerb, "PUT" ) == 0 )
     {
-        PrepareCurlWriteBuffers( true );
         curl_easy_setopt( curl, CURLOPT_NOBODY, 1 );
         curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, CurlWriteHeader );
 	curl_easy_setopt( curl, CURLOPT_UPLOAD, true );
@@ -1076,14 +1025,12 @@ SubmitS3Request(
       curl_easy_setopt( curl, CURLOPT_VERBOSE, 1 );
     */
     status = curl_easy_perform( curl );
-    /* Move the response to a safe place and prepare the CURL write
-       buffer for new data. */
-    *data                 = curlWriteBuffer;
-    *dataLength           = curlWriteBufferLength;
-    curlWriteBuffer       = NULL;
-    curlWriteBufferLength = 0;
     curl_easy_getinfo( curl, CURLINFO_RESPONSE_CODE, &httpStatus );
     pthread_mutex_unlock( &curl_mutex );
+
+    /* Return the response. */
+    *data       = writeBuffer.data;
+    *dataLength = writeBuffer.size;
 
     free( url );
     DeleteCurlSlistAndContents( headers );
@@ -1134,6 +1081,7 @@ SubmitS3PutRequest(
     int        urlLength;
     int        status     = 0;
     long       httpStatus;
+    struct CurlReadBuffer readBuffer = { bodyData, bodyLength, 0 };
 
     /* Determine the virtual host name. */
     hostName = GetS3HostNameByRegion( globalConfig.region,
@@ -1166,22 +1114,18 @@ SubmitS3PutRequest(
     /* Submit request via CURL and wait for the response. */
     pthread_mutex_lock( &curl_mutex );
     curl_easy_reset( curl );
-    /* Prepare read buffer and no write buffer. */
-    PrepareCurlReadBuffer( (unsigned char*) bodyData, bodyLength );
     curl_easy_setopt( curl, CURLOPT_READFUNCTION, CurlReadData );
-    curl_easy_setopt( curl, CURLOPT_READDATA, &curlReadBuffer );
+    curl_easy_setopt( curl, CURLOPT_READDATA, &readBuffer );
     curl_easy_setopt( curl, CURLOPT_UPLOAD, true );
     curl_easy_setopt( curl, CURLOPT_HTTPHEADER, headers );
     curl_easy_setopt( curl, CURLOPT_URL, url );
     status = curl_easy_perform( curl );
-    /* Move the response to a safe place and prepare the CURL write
-       buffer for new data. */
-    *response             = NULL;
-    *responseLength       = 0;
-    curlWriteBuffer       = NULL;
-    curlWriteBufferLength = 0;
     curl_easy_getinfo( curl, CURLINFO_RESPONSE_CODE, &httpStatus );
     pthread_mutex_unlock( &curl_mutex );
+
+    /* Indicate that there is no response data. */
+    *response             = NULL;
+    *responseLength       = 0;
 
     free( url );
     DeleteCurlSlistAndContents( headers );
@@ -1200,38 +1144,6 @@ SubmitS3PutRequest(
     return( status );
 }
 
-
-
-
-
-
-#if 0
-static int
-AllocateCurlBuffer( 
-    unsigned char **buffer,
-    int           maxBuffers
-		    )
-{
-    int allocatedBuffer;
-
-    do
-    {
-        allocatedBuffer = 0;
-        while( ( allocatedBuffer < maxBuffers )
-	       && ( writeBuffer[ allocated ] != NULL ) )
-	{
-	    allocated++;
-	}
-
-	/* Wait for a thread to end before attempting another allocation. */
-	if( allocated == maxBuffers )
-	{
-	}
-
-    } while( allocated == maxBuffers );
-
-}
-#endif
 
 
 
@@ -2476,9 +2388,6 @@ S3Destroy(
 {
     curl_easy_cleanup( curl );
     TruncateCache( 0 );
-    /* Preparing the write buffers means that the current contents are
-       freed and that no buffer is reallocated. */
-    PrepareCurlWriteBuffers( false );
     /* Cleanup libxml. */
     xmlCleanupParser( );
 }
@@ -2547,7 +2456,7 @@ CleanPath(
 
 /**
  * The S3 REST interface does not allow the creation of directories, but they
- * may be faked. Eerything is a key, so directories do not really exist,
+ * may be faked. Everything is a key, so directories do not really exist,
  * but keys are navigated as if they were directories. This means that any
  * file may be specified as directory/.../file, autocreating the "directories".
  * By storing a secret file that is never listed in the "directory," it is
