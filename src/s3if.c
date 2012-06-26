@@ -1016,6 +1016,7 @@ SubmitS3Request(
     {
         curl_easy_setopt( curl, CURLOPT_NOBODY, 1 );
         curl_easy_setopt( curl, CURLOPT_HEADERFUNCTION, CurlWriteHeader );
+	curl_easy_setopt( curl, CURLOPT_WRITEHEADER, &writeBuffer );
 	curl_easy_setopt( curl, CURLOPT_UPLOAD, true );
 	curl_easy_setopt( curl, CURLOPT_INFILESIZE, 0 );
     }
@@ -1510,11 +1511,18 @@ GetParentDir( const char *path )
     {
 	endIdx--;
     }
-    endIdx = ( endIdx == 0 ? 0 : endIdx - 1 );
-    /* Copy from the beginning of the string until the endIdx. */
-    parent = malloc( endIdx + sizeof( char ) );
-    strncpy( parent, path, endIdx );
-    parent[ endIdx ] = '\0';
+    /* If there is no parent, specify "/" as parent. */
+    if( endIdx == 0 )
+    {
+        parent = strdup( "/" );
+    }
+    else
+    {
+        /* Copy from the beginning of the string until the endIdx. */
+        parent = malloc( endIdx + sizeof( char ) );
+	strncpy( parent, path, endIdx );
+	parent[ endIdx ] = '\0';
+    }
 
     return( parent );
 }
@@ -1854,6 +1862,7 @@ S3ReadDir(
 
     const char *delimiter;
     const char *prefix;
+    char       *parentDir;
     char       *queryBase;
     const char *urlSafePrefix;
     int        toSkip = 0;
@@ -1890,9 +1899,12 @@ S3ReadDir(
        dirname if it is not already specified. The delimiter is a '/'. */
     prefix    = StripTrailingSlash( (char*) &dirname[ toSkip ], true );
     delimiter = "/";
+    parentDir = malloc( strlen( prefix ) + 2 * sizeof( char ) );
+    parentDir[ 0 ] = '/';
+    strcpy( &parentDir[ 1 ], prefix );
 
     /* Lookup in the directory cache. */
-    dirArray = (char**) LookupInDirectoryCache( prefix, &fileCounter );
+    dirArray = (char**) LookupInDirectoryCache( parentDir, &fileCounter );
     if( dirArray == NULL )
     {
         /* Create the base query. */
@@ -2032,7 +2044,7 @@ S3ReadDir(
 	    free( directory );
 	    directory = nextEntry;
 	}
-	InsertInDirectoryCache( strdup( prefix ), fileCounter,
+	InsertInDirectoryCache( strdup( parentDir ), fileCounter,
 				(const char**) dirArray );
 	pthread_mutex_unlock( &dirCache_mutex );
     }
@@ -2040,6 +2052,7 @@ S3ReadDir(
     *nFiles    = fileCounter;
     *nameArray = dirArray;
 
+    free( parentDir );
     free( (char*) prefix );
 
     return( status );
@@ -2560,7 +2573,6 @@ S3Mkdir(
     status  = SubmitS3Request( "PUT", headers, secretFile,
 			       (void**) &response, &responseLength );
     InvalidateDirectoryCacheElement( parentDir );
-    pthread_mutex_unlock( &dirCache_mutex );
     /* Update the stat cache entry for the directory. */
     free( (char*) parentDir );
     free( secretFile );
@@ -2569,6 +2581,7 @@ S3Mkdir(
     {
         memcpy( oldFi, &newFi, sizeof( struct S3FileInfo ) );
     }
+    pthread_mutex_unlock( &dirCache_mutex );
     free( (char* )cleanName );
 
     if( response != NULL )
@@ -2632,7 +2645,6 @@ IsDirectoryEmpty(
     char **directory;
     int  nFiles;
     int  status;
-    int  i;
 
     /* Read four files so that we can account for the secret file, the ".",
        the "..", and finally any file that makes the directory non-empty. */
@@ -2647,12 +2659,6 @@ IsDirectoryEmpty(
 	    success = true;
 	}
     }
-    /* Delete the directory array. */
-    for( i = 0; i < nFiles; i++ )
-    {
-        free( directory[ i ] );
-    }
-    free( directory );
 
     return( success );
 }

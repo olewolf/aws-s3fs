@@ -139,9 +139,10 @@ InsertInDirectoryCache(
        used instead. */
     if( LookupInDirectoryCacheWithoutMutex( dirname, &dummy ) == NULL )
     {
-        /* Otherwise, delete the last entry... */
+        /* Otherwise, delete the last entry, pushing all entries back... */
         DeleteLastInDirectoryCache( );
-	/* ... and insert the cache entry at the vacated position. */
+	/* ... and insert the cache entry at the vacated position at the
+	   beginning. */
 	directoryCache[ 0 ].dirname  = dirname;
 	directoryCache[ 0 ].size     = size;
 	directoryCache[ 0 ].contents = contents;
@@ -243,10 +244,10 @@ InvalidateDirectoryCacheElement(
 {
     int dummy;
 
-    pthread_mutex_unlock( &dirCache_mutex );
+    pthread_mutex_lock( &dirCache_mutex );
 
     /* If the directory is cached, finding it will move it to the front. */
-    if( LookupInDirectoryCache( dirname, &dummy ) != NULL )
+    if( LookupInDirectoryCacheWithoutMutex( dirname, &dummy ) != NULL )
     {
         /* Then delete the first entry. */
         DeleteDirectoryEntry( &directoryCache[ 0 ] );
@@ -259,7 +260,8 @@ InvalidateDirectoryCacheElement(
 
 /**
  * Free the strings allocated for a directory entry. The directory cache
- * structure otherwise remains intact, leaving the entry pointer dangling.
+ * structure otherwise remains intact, leaving an empty element inside of
+ * the cache.
  * The function is not mutex-locked.
  * @param entry [in] Directory entry.
  * @return Nothing.
@@ -289,7 +291,7 @@ DeleteDirectoryEntry(
 		}
 	    }
 	    entry->size = 0;
-	    free( (char*) entry->contents );
+	    free( (char**) entry->contents );
 	    entry->contents = NULL;
 	}
     }
