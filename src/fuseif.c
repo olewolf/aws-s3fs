@@ -159,8 +159,10 @@ static int VerifyPathSearchPermissions( const char *path );
 
 
 /**
- * Determine if a user is a member of the group with the specified gid in
- * the /etc/group list.
+ * Determine if a user has group membership for the specified gid. This
+ * is true if it is the user's own group, or if the user belongs to the
+ * group identified by this gid. The function parses the /etc/group list
+ * to determine group membership.
  * @param gid [in] Group ID that the user's membership is verified against.
  * @param myGid [in] The user's gid. 
  * @return \a true of the user is a member of the group; \a false otherwise.
@@ -590,6 +592,15 @@ GetPathPrefix(
 
 
 
+/**
+ * Determine whether each directory component of a path leading to a file
+ * is valid, and optionally has the searchable permission enabled.
+ * @param path [in] Full path that should be examined.
+ * @param verifyExecutionBit [in] If \a true, examine the execution (search)
+ *        bit for each component.
+ * @return \a true if the sequence of directory components are valid, or
+ *         \a false otherwise.
+ */
 static int
 ValidateDirectoryComponents(
     const char *path,
@@ -892,9 +903,8 @@ s3fs_open(
 		     || openFlags.of_APPEND )
 	    {
 		/* Todo: if O_RDWR and O_TRUNC are set, the file will be
-		   created if necessary. But if O_TRUNC is not passed to
-		   this function, how do we determine whether the file may
-		   be opened? (This question is answered in FUSE v.26.) */
+		   created if necessary. The O_TRUNC indicates an atomic
+		   operation in this case. */
 	        if( IsReadable( fileInfo ) )
 		{
 		    status = 0;
@@ -957,6 +967,13 @@ s3fs_opendir(
     status = S3FileStat( dir, &fileInfo );
     if( status == 0 )
     {
+        /* The path must be a directory. The O_DIRECTORY flag (if set) is
+	   ignored, because we'll check the file type either way. */
+        if( fileInfo->fileType != 'd' )
+	{
+  	    return( -ENOTDIR );
+	}
+
         /* Determine if the user may open the directory. */
         if( IsExecutable( fileInfo ) )
 	{
@@ -988,21 +1005,8 @@ s3fs_opendir(
 
 
 /**
- * Read directory based on a directory handle.
- *
- * The filesystem may choose between two modes of operation:
- *
- * 1) The readdir implementation ignores the offset parameter, and
- * passes zero to the filler function's offset.  The filler
- * function will not return '1' (unless an error happens), so the
- * whole directory is read in a single readdir operation.  This
- * works just like the old getdir() method.
- *
- * 2) The readdir implementation keeps track of the offsets of the
- * directory entries.  It uses the offset parameter and always
- * passes non-zero offset to the filler function.  When the buffer
- * is full (or an error happens) the filler function will return '1'.
- *
+ * Read directory based on a directory handle. This implementation uses the
+ * old style where the offset parameter is ignored.
  * @param dir [in] Name of the directory to read.
  * @param buffer [out] Used by the FUSE filesystem for directory contents.
  * @param filler [in/out] Call-back function that is used to fill the buffer.
@@ -1035,8 +1039,7 @@ s3fs_readdir(
     dh = fi->fh;
     if( fileDescriptors[ dh ] == NULL )
     {
-        status = -ESTALE;
-	/* Or EBADF? */
+        status = -EBADF;
     }
     else
     {
@@ -1054,9 +1057,7 @@ s3fs_readdir(
 		{
 		    status = filler( buffer, dirEntry, NULL, 0 );
 		}
-		free( dirEntry );
 	    }
-	    free( s3Directory );
 	}
     }
 
@@ -1405,6 +1406,12 @@ s3fs_mkdir(
 }
 
 
+
+/**
+ * Delete a file.
+ * @param file [in] Name of the directory to remove.
+ * @return 0 on success, or \a -errno on failure.
+ */
 static int
 s3fs_unlink(
     const char *file
@@ -1418,6 +1425,11 @@ s3fs_unlink(
 
 
 
+/**
+ * Remove a directory.
+ * @param dirname [in] Name of the directory to remove.
+ * @return 0 on success, or \a -errno on failure.
+ */
 static int
 s3fs_rmdir(
      const char *dirname
@@ -1454,4 +1466,28 @@ s3fs_chown(
 
 
 
-    /* Create a list of gid groups that the current user is a member of. */
+/**
+ * If the file does not exist, create it with the specified mode, then open
+ * it.
+ * @param path [in] Path of the file to open.
+ * @param mode [in] Open mode.
+ * @param fi [in] FUSE file info structure.
+ * @return 0 on success, or \a -errno otherwise.
+ */
+#if 0
+static int
+s3fs_create(
+    const char            *path,
+    mode_t                mode,
+    struct fuse_file_info *fi
+	    )
+{
+    /* Determine whether the file exists, and in that case whether the user
+       has access rights (including those of the parent directory) according
+       to the specified mode. */
+
+    /* Create the file if necessary. */
+
+    /* Download the file if necessary. */
+}
+#endif

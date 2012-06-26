@@ -38,6 +38,7 @@
 #include "s3if.h"
 #include "digest.h"
 #include "statcache.h"
+#include "dircache.h"
 
 
 /* The REST interface does not allow the creation of directories. Instead,
@@ -89,8 +90,9 @@ struct HttpHeaders
     char       *content;
 };
 
+static pthread_mutex_t dirCache_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-pthread_mutex_t curl_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t curl_mutex = PTHREAD_MUTEX_INITIALIZER;
 static CURL *curl = NULL;
 
 static long int localTimezone;
@@ -387,12 +389,12 @@ InitializeS3If(
     /* Initialize libxml. */
     LIBXML_TEST_VERSION
 
+    InitializeDirectoryCache( );
+
     pthread_mutex_lock( &curl_mutex );
     if( curl == NULL )
     {
 	curl = curl_easy_init( );
-	/*	curlWriteBuffer = NULL;*/
-	/*	curlReadBuffer  = NULL;*/
     }
     pthread_mutex_unlock( &curl_mutex );
 
@@ -401,7 +403,6 @@ InitializeS3If(
     localtime_r( &tnow, &tm );
     localTimezone = tm.tm_gmtoff;
 
-    /*    curlWriteBufferLength = 0;*/
 }
 
 
@@ -1492,6 +1493,34 @@ ResolveS3FileStatCacheMiss(
 
 
 
+/**
+ * Get the name of the specified file's parent directory.
+ * @param path [in] A file path.
+ * @return The parent directory of the file path.
+ */
+static char*
+GetParentDir( const char *path )
+{
+    int  endIdx;
+    char *parent;
+
+    /* Find the first slash from the end. */
+    endIdx = strlen( path ) - sizeof( char );
+    while( ( endIdx != 0 ) && ( path[ endIdx ] != '/' ) )
+    {
+	endIdx--;
+    }
+    endIdx = ( endIdx == 0 ? 0 : endIdx - 1 );
+    /* Copy from the beginning of the string until the endIdx. */
+    parent = malloc( endIdx + sizeof( char ) );
+    strncpy( parent, path, endIdx );
+    parent[ endIdx ] = '\0';
+
+    return( parent );
+}
+
+
+
 static char*
 StripTrailingSlash(
     char *filename,
@@ -1861,143 +1890,157 @@ S3ReadDir(
        dirname if it is not already specified. The delimiter is a '/'. */
     prefix    = StripTrailingSlash( (char*) &dirname[ toSkip ], true );
     delimiter = "/";
-    /* Create the base query. */
-    urlSafePrefix = EncodeUrl( prefix );
-    relativeRoot = malloc( strlen( globalConfig.bucketName )
-			   + strlen( prefix ) + 5 * sizeof( char ) );
-    relativeRoot[ 0 ] = '/';
-    relativeRoot[ 1 ] = '\0';
-    strcpy( relativeRoot, globalConfig.bucketName );
-    strcpy( relativeRoot, "/" );
-    if( strlen( prefix ) > 0 )
+
+    /* Lookup in the directory cache. */
+    dirArray = (char**) LookupInDirectoryCache( prefix, &fileCounter );
+    if( dirArray == NULL )
     {
-        strcpy( relativeRoot, prefix );
+        /* Create the base query. */
+        urlSafePrefix = EncodeUrl( prefix );
+	relativeRoot = malloc( strlen( globalConfig.bucketName )
+			       + strlen( prefix ) + 5 * sizeof( char ) );
+	relativeRoot[ 0 ] = '/';
+	relativeRoot[ 1 ] = '\0';
+	strcpy( relativeRoot, globalConfig.bucketName );
 	strcpy( relativeRoot, "/" );
-    }
-    queryBase = malloc( strlen( prefix )
-			+ sizeof( char )
-		        + strlen( urlSafePrefix )
-			+ strlen( "/?prefix=/&delimiter=" )
-			+ strlen( delimiter )
-			+ strlen( "&max-keys=xxxxx" )
-			+ sizeof( char ) );
-
-    /* Add a non-encoded trailing slash to the prefix in the query.
-       Omit the prefix if the root folder was specified. */
-    if( strlen( prefix ) == 0 )
-    {
-        sprintf( queryBase, "%s?delimiter=%s", relativeRoot, delimiter );
-    }
-    else
-    {
-        sprintf( queryBase, "%s?prefix=%s/&delimiter=%s",
-		 relativeRoot, urlSafePrefix, delimiter );
-    }
-    if( maxRead != -1 )
-    {
-        sprintf( &queryBase[ strlen( queryBase ) ], "&max-keys=%d", maxRead );
-    }
-    free( (char*) urlSafePrefix );
-
-    fileCounter = 0;
-    fileLimit   = ( maxRead == -1 ) ? 999999l : maxRead;
-    /* Retrieve truncated directory lists by specifying the base query plus a
-       marker. */
-    do
-    {
-        /* Get an XML list of directories and decode the directory contents. */
-        query = queryBase;
-	if( fromFile != NULL )
-        {
-	    urlSafeFromFile = EncodeUrl( fromFile );
-	    query = malloc( strlen( queryBase )
-			    + strlen( "&marker=" )
-			    + strlen( urlSafeFromFile )
+	if( strlen( prefix ) > 0 )
+	{
+	    strcpy( relativeRoot, prefix );
+	    strcpy( relativeRoot, "/" );
+	}
+	queryBase = malloc( strlen( prefix )
+			    + sizeof( char )
+			    + strlen( urlSafePrefix )
+			    + strlen( "/?prefix=/&delimiter=" )
+			    + strlen( delimiter )
+			    + strlen( "&max-keys=xxxxx" )
 			    + sizeof( char ) );
-	    strcpy( query, queryBase );
-	    strcat( query, "&marker=" );
-	    strcat( query, urlSafeFromFile );
-	    free( urlSafeFromFile );
-	}
-	/* query now contains the path for the S3 request. */
-	headers = BuildS3Request( "GET", NULL, relativeRoot );
-	status  = SubmitS3Request( "GET", headers, query,
-				   (void**) &xmlData, &xmlDataLength );
-	if( query != queryBase )
+
+	/* Add a non-encoded trailing slash to the prefix in the query.
+	   Omit the prefix if the root folder was specified. */
+	if( strlen( prefix ) == 0 )
 	{
-	    free( query );
+	    sprintf( queryBase, "%s?delimiter=%s", relativeRoot, delimiter );
 	}
-	if( status == 0 )
+	else
 	{
- 	    /* Decode the XML response. */
-	    xmlResponse = xmlReadMemory( xmlData, xmlDataLength,
-					 "readdir.xml", NULL, 0 );
-	    if( xmlResponse == NULL )
+	    sprintf( queryBase, "%s?prefix=%s/&delimiter=%s",
+		     relativeRoot, urlSafePrefix, delimiter );
+	}
+	if( maxRead != -1 )
+	{
+	    sprintf( &queryBase[ strlen( queryBase ) ],
+		     "&max-keys=%d", maxRead );
+	}
+	free( (char*) urlSafePrefix );
+
+	fileCounter = 0;
+	fileLimit   = ( maxRead == -1 ) ? 999999l : maxRead;
+	/* Retrieve truncated directory lists by specifying the base query plus
+	   a marker. */
+	pthread_mutex_lock( &dirCache_mutex );
+	do
+	{
+	    /* Get an XML list of directories and decode the directory
+	       contents. */
+	    query = queryBase;
+	    if( fromFile != NULL )
 	    {
-		status = -EIO;
+		urlSafeFromFile = EncodeUrl( fromFile );
+		query = malloc( strlen( queryBase )
+				+ strlen( "&marker=" )
+				+ strlen( urlSafeFromFile )
+				+ sizeof( char ) );
+		strcpy( query, queryBase );
+		strcat( query, "&marker=" );
+		strcat( query, urlSafeFromFile );
+		free( urlSafeFromFile );
 	    }
-	    else
+	    /* query now contains the path for the S3 request. */
+	    headers = BuildS3Request( "GET", NULL, relativeRoot );
+	    status  = SubmitS3Request( "GET", headers, query,
+				       (void**) &xmlData, &xmlDataLength );
+	    if( query != queryBase )
 	    {
-	        /* Begin a depth-first traversal from the root node. */
-	        rootNode = xmlDocGetRootElement( xmlResponse );
-		if( rootNode == NULL )
+	        free( query );
+	    }
+	    if( status == 0 )
+	    {
+	        /* Decode the XML response. */
+	        xmlResponse = xmlReadMemory( xmlData, xmlDataLength,
+					     "readdir.xml", NULL, 0 );
+		if( xmlResponse == NULL )
 		{
 		    status = -EIO;
 		}
 		else
 	        {
-		    /* Skip the prefix and slash... */
-		    prefixToSkip = strlen( prefix ) + 1;
-		    /* ... except at the root folder which has neither. */
-		    if( prefixToSkip == 1 )
+		    /* Begin a depth-first traversal from the root node. */
+		    rootNode = xmlDocGetRootElement( xmlResponse );
+		    if( rootNode == NULL )
 		    {
-		        prefixToSkip = 0;
+		        status = -EIO;
 		    }
-		    ReadXmlDirectory( rootNode, prefixToSkip,
-				      &directory, &fromFile, &fileCounter );
+		    else
+		    {
+			/* Skip the prefix and slash... */
+			prefixToSkip = strlen( prefix ) + 1;
+			/* ... except at the root folder which has neither. */
+			if( prefixToSkip == 1 )
+			{
+			    prefixToSkip = 0;
+			}
+			ReadXmlDirectory( rootNode, prefixToSkip,
+					  &directory, &fromFile, &fileCounter );
+		    }
+		    /*
+		      xmlCleanupParser( );
+		    */
+		    xmlFreeDoc( xmlResponse );
 		}
-		/*
-		xmlCleanupParser( );
-		*/
-		xmlFreeDoc( xmlResponse );
 	    }
-	}
-    } while( ( fromFile != NULL ) && ( fileCounter <= fileLimit ) );
+	} while( ( fromFile != NULL ) && ( fileCounter <= fileLimit ) );
 
-    free( relativeRoot );
-    free( (char*) prefix );
+	free( relativeRoot );
 
-    /* Move the linked-list file names into an array. Add two entries for
-       the directories "." and "..". */
-    fileCounter += 2;
-    dirArray = malloc( sizeof( char* ) * fileCounter );
-    assert( dirArray != NULL );
-    dirIdx   = 0;
-    /* Fake the "." and ".." paths. */
-    dirArray[ dirIdx++ ] = strdup( "." );
-    dirArray[ dirIdx++ ] = strdup( ".." );
-    while( directory )
-    {
-        path = StripTrailingSlash( directory->data, false );
-	/* Don't report the IS_S3_DIRECTORY_FILE. */
-	s3dirfilePos = strlen( path )
-	               - strlen( &IS_S3_DIRECTORY_FILE[ 1 ] );
-	if( ( 0 <= s3dirfilePos )
-	    && ( strcmp( path, &IS_S3_DIRECTORY_FILE[ 1 ] ) == 0 ) )
-	{
-	    free( path );
-	    fileCounter--;
+	/* Move the linked-list file names into an array. Add two entries for
+	   the directories "." and "..". */
+	fileCounter += 2;
+	dirArray = malloc( sizeof( char* ) * fileCounter );
+	assert( dirArray != NULL );
+	dirIdx   = 0;
+	/* Fake the "." and ".." paths. */
+	dirArray[ dirIdx++ ] = strdup( "." );
+	dirArray[ dirIdx++ ] = strdup( ".." );
+	while( directory )
+        {
+	    path = StripTrailingSlash( directory->data, false );
+	    /* Don't report the IS_S3_DIRECTORY_FILE. */
+	    s3dirfilePos = strlen( path )
+	                   - strlen( &IS_S3_DIRECTORY_FILE[ 1 ] );
+	    if( ( 0 <= s3dirfilePos )
+		&& ( strcmp( path, &IS_S3_DIRECTORY_FILE[ 1 ] ) == 0 ) )
+	    {
+		free( path );
+		fileCounter--;
+	    }
+	    else
+	    {
+		dirArray[ dirIdx++ ] = path;
+	    }
+	    nextEntry = directory->next;
+	    free( directory );
+	    directory = nextEntry;
 	}
-	else
-	{
-	    dirArray[ dirIdx++ ] = path;
-	}
-	nextEntry = directory->next;
-	free( directory );
-	directory = nextEntry;
+	InsertInDirectoryCache( strdup( prefix ), fileCounter,
+				(const char**) dirArray );
+	pthread_mutex_unlock( &dirCache_mutex );
     }
-    *nameArray = dirArray;
+
     *nFiles    = fileCounter;
+    *nameArray = dirArray;
+
+    free( (char*) prefix );
 
     return( status );
 }
@@ -2317,6 +2360,7 @@ S3CreateLink(
     const char *path
 	     )
 {
+    const char        *parentDir;
     struct S3FileInfo *fi;
     struct curl_slist *headers = NULL;
     int               pathLength;
@@ -2344,6 +2388,8 @@ S3CreateLink(
     fi->mtime         = now;
     fi->ctime         = now;
 
+    parentDir = GetParentDir( path );
+
     /* Write file metadata headers. */
     pathLength = strlen( path );
     headers = CreateHeadersFromFileInfo( fi, headers );
@@ -2362,15 +2408,17 @@ S3CreateLink(
     headers = curl_slist_append( headers, strdup( "Transfer-Encoding:" ) );
     /* Create standard headers. */
     headers = BuildS3Request( "PUT", headers, linkname );
+    pthread_mutex_lock( &dirCache_mutex );
     status = SubmitS3PutRequest( headers, linkname,
 				 (void**) &response, &responseLength,
 				 (unsigned char*) path, pathLength );
-
     /* We already have the FileInfo structure, so because the file will be
        stat'ed as soon as we return, let's add it to the stat cache. Delete
        whatever might already be in the cache. */
     DeleteStatEntry( linkname );
     InsertCacheElement( linkname, fi, &DeleteS3FileInfoStructure );
+    InvalidateDirectoryCacheElement( parentDir );
+    pthread_mutex_unlock( &dirCache_mutex );
 
     return( status );
 }
@@ -2387,6 +2435,7 @@ S3Destroy(
 	  )
 {
     curl_easy_cleanup( curl );
+    ShutdownDirectoryCache( );
     TruncateCache( 0 );
     /* Cleanup libxml. */
     xmlCleanupParser( );
@@ -2476,6 +2525,7 @@ S3Mkdir(
 	)
 {
     const char        *cleanName;
+    const char        *parentDir;
     char              *secretFile;
     struct S3FileInfo newFi;
     struct S3FileInfo *oldFi;
@@ -2490,6 +2540,7 @@ S3Mkdir(
 			 + sizeof( char ) );
     strcpy( secretFile, cleanName );
     strcat( secretFile, IS_S3_DIRECTORY_FILE );
+    parentDir = GetParentDir( cleanName );
 
     /* Write file metadata headers. */
     memset( &newFi, 0, sizeof( struct S3FileInfo ) );
@@ -2505,9 +2556,13 @@ S3Mkdir(
     headers = curl_slist_append( headers, strdup( "Expect:" ) );
     headers = curl_slist_append( headers, strdup( "Transfer-Encoding:" ) );
     headers = BuildS3Request( "PUT", headers, secretFile );
+    pthread_mutex_lock( &dirCache_mutex );
     status  = SubmitS3Request( "PUT", headers, secretFile,
 			       (void**) &response, &responseLength );
+    InvalidateDirectoryCacheElement( parentDir );
+    pthread_mutex_unlock( &dirCache_mutex );
     /* Update the stat cache entry for the directory. */
+    free( (char*) parentDir );
     free( secretFile );
     oldFi = SearchStatEntry( cleanName );
     if( oldFi != NULL )
@@ -2535,21 +2590,27 @@ int
 S3Unlink( const char *filename )
 {
     const char        *cleanName;
+    const char        *parentDir;
     struct curl_slist *headers = NULL;
     char              *response;
     int               responseLength;
     int               status;
 
     cleanName = CleanPath( filename );
+    parentDir = GetParentDir( cleanName );
 
     /* TODO: verify that the file is not a directory (except if it's the
        secret file). */
 
 
     headers = BuildS3Request( "DELETE", headers, cleanName );
+    pthread_mutex_lock( &dirCache_mutex );
     status  = SubmitS3Request( "DELETE", headers, cleanName,
 			       (void**) &response, &responseLength );
+    InvalidateDirectoryCacheElement( parentDir );
+    pthread_mutex_unlock( &dirCache_mutex );
     DeleteStatEntry( cleanName );
+    free( (char*) parentDir );
     free( (char*) cleanName );
 
     if( response != NULL )
@@ -2607,6 +2668,7 @@ int
 S3Rmdir( const char *dirname )
 {
     const char        *cleanName;
+    const char        *parentDir;
     char              *secretFile;
     struct S3FileInfo *fi;
     struct curl_slist *headers = NULL;
@@ -2615,6 +2677,7 @@ S3Rmdir( const char *dirname )
     int               status;
 
     cleanName = CleanPath( dirname );
+    parentDir = GetParentDir( dirname );
 
     status = S3FileStat( cleanName, &fi );
     if( status == 0 )
@@ -2635,10 +2698,14 @@ S3Rmdir( const char *dirname )
 		if( status == 0 )
 		{
 		    headers = BuildS3Request( "DELETE", headers, cleanName );
+		    pthread_mutex_lock( &dirCache_mutex );
 		    status  = SubmitS3Request( "DELETE", headers, cleanName,
 					       (void**) &response,
 					       &responseLength );
+		    InvalidateDirectoryCacheElement( parentDir );
 		    DeleteStatEntry( cleanName );
+		    pthread_mutex_unlock( &dirCache_mutex );
+		    free( (char*) parentDir );
 		    free( (char*) cleanName );
 		}
 		/* If the secret file cannot be removed, EACCES seems like

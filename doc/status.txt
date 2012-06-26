@@ -1,3 +1,14 @@
+2012-06-26:
+	Directory cache implemented.
+
+2012-06-25:
+	Initial work on sockets and file cache daemon.
+
+2012-06-24:
+	Global buffers in s3if.c eliminated, making the module mostly
+	reentrant.
+	Included original MD5 and SHA1 code in the package.
+
 2012-06-23:
 	Bugs fixed in permissions checking.
 	"Secret files" identify directories.

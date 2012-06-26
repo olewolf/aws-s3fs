@@ -20,10 +20,14 @@ AM_LIBS = pthread
 AM_CFLAGS = -O0 -g
 
 bin_PROGRAMS = aws-s3fs
-aws_s3fs_SOURCES = aws-s3fs.h sysdirs.h aws-s3fs.c \
+#bin_PROGRAMS = aws-s3fs aws-s3fs-queue
+aws_s3fs_SOURCES = config.h aws-s3fs.h sysdirs.h aws-s3fs.c \
 	decodecmdline.c configfile.c common.c fix-i386-cc.c config.c \
 	base64.c base64.h digest.c digest.h logger.c \
-	fuseif.c fuseif.h s3if.c s3if.h statcache.c statcache.h
+	fuseif.c fuseif.h s3if.c s3if.h statcache.c statcache.h \
+	dircache.c dircache.h
+
+#aws_s3fs_queue_SOURCES = config.h aws-s3fs.h socket.h filecache.c socket.c
 
 BUILT_SOURCES = sysdirs.h
 CLEANFILES = sysdirs.h
