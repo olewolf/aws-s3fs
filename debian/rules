@@ -55,7 +55,7 @@ sysdirs.h : sysdirs.h.src
 	dh $@ --with autotools_dev
 
 override_dh_auto_configure:
-	autoreconf --install --force
+	autoreconf --install --force --gnu
 	dh_auto_configure -- --disable-openssltest 
 
 # Tell the automake Makefile not to create the aws-s3fs cache directory

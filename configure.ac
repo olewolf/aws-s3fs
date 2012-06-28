@@ -22,6 +22,9 @@ AC_CONFIG_AUX_DIR([config])
 AC_CONFIG_MACRO_DIR([m4])
 AM_INIT_AUTOMAKE
 
+AC_SUBST([AWS_S3FS_SO_VERSION], [0:0:0])
+#AC_SUBST([AWS_S3FS_API_VERSION], [0.0.1])
+
 CFLAGS=""
 
 # Prepare autotest suite.
@@ -82,10 +85,12 @@ AC_CHECK_LIB([curl], [curl_easy_init],,
     AC_MSG_ERROR([*** curl library not found **]))
 AC_CHECK_LIB([xml2], [xmlReadMemory],,
     AC_MSG_ERROR([*** libxml2 library not found **]))
+AC_CHECK_LIB([sqlite3], [sqlite3_open],,
+    AC_MSG_ERROR([*** sqlite3 not found **]))
 
 # Check for modules.
-PKG_CHECK_MODULES([DEPS], [fuse >= 2.8 libxml-2.0 >= 2.7.0 libconfig >= 1.3 libcurl >= 7.20],,
-    AC_MSG_ERROR([*** libfuse, libconfig, libxml2, or curl source not found **]))
+PKG_CHECK_MODULES([DEPS], [fuse >= 2.8 libxml-2.0 >= 2.7.0 libconfig >= 1.3 libcurl >= 7.20 sqlite3 >= 3.7.0],,
+    AC_MSG_ERROR([*** libfuse, libconfig, libxml2, libsqlite3, or curl source not found **]))
 
 # Check for library functions.
 AC_CHECK_FUNCS([getopt_long],,
@@ -93,7 +98,7 @@ AC_CHECK_FUNCS([getopt_long],,
 AC_CHECK_FUNCS([strcasecmp strlen strcat strcpy strncpy isspace],,
     AC_MSG_ERROR([*** String handling functions not found. **]))
 AC_CHECK_FUNCS([fopen fprintf fclose getenv system lockf chdir umask dup \
-               open write close getdtablesize],,
+               open write close getdtablesize chmod],,
     AC_MSG_ERROR([*** File handling functions not found. **]))
 AC_CHECK_FUNCS([malloc free memset],,
     AC_MSG_ERROR([*** Memory allocation functions not found. **]))
@@ -102,7 +107,7 @@ AC_CHECK_FUNCS([openlog syslog closelog],,
 AC_CHECK_FUNCS([time localtime],,
     AC_MSG_ERROR([*** Time functions not found. **]))
 AC_CHECK_FUNCS([sigaction fork setsid exit perror pthread_mutex_lock \
-	       pthread_mutex_unlock],,
+	       pthread_mutex_unlock getsid getuid],,
     AC_MSG_ERROR([*** Process functions not found. **]))
 AC_CHECK_FUNCS([config_init config_lookup_bool config_lookup_string \
                config_read_file config_destroy],,
@@ -112,6 +117,10 @@ AC_CHECK_FUNCS([fuse_main],,
 AC_CHECK_FUNCS([curl_easy_init curl_easy_setopt curl_easy_perform \
 	       curl_easy_cleanup curl_slist_append],,
 AC_MSG_ERROR([*** CURL functions not found. **]))
+AC_CHECK_FUNCS([socket bind listen setsockopt getsockopt recvmsg sendmsg \
+ 	       accept socketpair],,
+AC_MSG_ERROR([*** Socket functions not found. **]))
+
 
 # Check for header files.
 AC_CHECK_HEADERS([stdio.h],,
@@ -155,6 +164,8 @@ AC_CHECK_HEADER([pthread.h],,
     AC_MSG_ERROR([*** pthread.h not found **]))
 AC_CHECK_HEADER([curl/curl.h],,
     AC_MSG_ERROR([*** curl.h not found **]))
+AC_CHECK_HEADER([sys/socket.h],,
+    AC_MSG_ERROR([*** sys/socket.h not found **]))
 CFLAGS_SAVE="$CFLAGS"
 CFLAGS="$CFLAGS -Wall -Werror $DEPS_CFLAGS"
 AC_CHECK_HEADER([libxml/tree.h], [], 
@@ -165,6 +176,8 @@ AC_INCLUDES_DEFAULT
 CFLAGS="$CFLAGS_SAVE"
 AC_DEFINE([_GNU_SOURCE], [], [Use GNU extensions])
 AC_DEFINE([FUSE_USE_VERSION], [26], [Use FUSE version 26])
+
+LT_INIT([disable-static])
 
 MAKE_DOXYGEN=false
 if @<:@ "x$ac_enable_doc" = "xyes" @:>@; then
@@ -192,7 +205,8 @@ AM_CONDITIONAL(MAKE_OPENSSL_TESTS,$MAKE_OPENSSL_TESTS)
 
 
 CFLAGS="$CFLAGS -Wall -Werror -Wextra $DEPS_CFLAGS"
-LIBS="$DEPS_LIBS $LIBS"
+LIBS_OLD="$LIBS"
+LIBS="$DEPS_LIBS"
 
 # Output files.
 AC_CONFIG_HEADERS([config.h])
@@ -205,6 +219,7 @@ $PACKAGE_NAME version $PACKAGE_VERSION:
   C Compiler......: $CC $CFLAGS
   C++ Compiler....: $CXX $CXXFLAGS $CPPFLAGS
   Linker..........: $LD $LDFLAGS $LIBS
+
 Options:
   Generate source code documentation: $ac_enable_doc
   Perform OpenSSL tests:              $ac_enable_openssltest])

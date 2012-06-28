@@ -28,6 +28,7 @@
 #include <stdbool.h>
 #include <fcntl.h>
 #include <time.h>
+#include <curl/curl.h>
 
 
 struct OpenFlags
@@ -64,6 +65,10 @@ struct S3FileInfo
     /* filenotfound is used to cache 404 errors. It obviously means that
        the entire structure contents are otherwise invalid. */
     bool             filenotfound : 1;
+	/* statonly indicates that the file has not been read from or written to;
+	   that is, only the stat information is available. This is used to
+	   avoid bothering the file cache with stat inquiries. */
+	bool             statonly : 1;
     char             *symlinkTarget;
     off_t            size;
     time_t           atime;
@@ -89,13 +94,6 @@ int S3Unlink( const char *path );
 int S3Rmdir( const char *path );
 int S3Chmod( const char *path, mode_t mode );
 int S3Chown( const char *path, uid_t uid, gid_t gid );
-
-struct curl_slist* BuildS3Request( const char *httpMethod,
-				   struct curl_slist *additionalHeaders,
-				   const char *filename );
-
-int SubmitS3Request( const char *httpMethod, struct curl_slist *headers,
-		     const char *filename, void **data, int *dataLength );
 
 
 #endif /* __S3IF_H */

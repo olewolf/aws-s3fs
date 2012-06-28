@@ -35,33 +35,41 @@
 
 struct Configuration globalConfig =
 {
-    .region = SINGAPORE,
+    .region     = SINGAPORE,
     .mountPoint = "mountdir",
     .bucketName = "bucket-name",
     .path       = "mounted-dir",
-    .keyId      = "1234",
-    .secretKey  = "5678",
+    .keyId      = "12344567891234567890",
+    .secretKey  = "1234567890123456789012345678901234567890",
     .logfile    = NULL,
     .verbose =
                   {
                       false,
                       false
 		  },
-    .logLevel   = log_DEBUG,
-    .daemonize  = false
+    .logLevel   = log_DEBUG
 };
 
 
 
-extern struct curl_slist* BuildGenericHeader( const char *httpMethod );
+extern struct curl_slist* BuildGenericHeader( enum bucketRegions region,
+											  const char *bucketName );
 extern char *GetHeaderStringValue( const char *string );
 extern int AddHeaderValueToSignString( char*, char* );
 extern struct curl_slist *CreateAwsSignature( const char *httpMethod,
     struct curl_slist *headers, const char *path );
-extern struct curl_slist *BuildS3Request( const char *httpMethod,
-    struct curl_slist *additionalHeaders, const char *filename );
-extern int SubmitS3Request( const char *httpVerb, struct curl_slist *headers,
-    const char *filename, void **out, int *len );
+extern struct curl_slist *BuildS3Request(
+    const char         *httpMethod,
+	enum bucketRegions region,
+	const char         *bucket,
+    struct curl_slist  *additionalHeaders,
+    const char         *filename );
+extern int SubmitS3Request(
+    const char         *httpVerb,
+    struct curl_slist  *headers,
+    const char         *filename,
+    void               **data,
+    int                *dataLength );
 extern int S3GetFileStat( const char *filename, struct S3FileInfo **fileInfo );
 
 static void test_BuildGenericHeader( const char *parms );
@@ -182,7 +190,8 @@ static void test_BuildGenericHeader( const char *parms )
     struct curl_slist *header;
     int i;
 
-    headers = BuildGenericHeader( "GET" );
+    headers = BuildGenericHeader( globalConfig.region,
+								  globalConfig.bucketName );
     header = headers;
     i = 1;
     while( header != NULL )
@@ -221,9 +230,9 @@ static void test_AddHeaderValueToSignString( const char *parms )
     for( i = 0; i < (int) strlen( signString ); i++ )
     {
         if( signString[ i ] == '\n' )
-	{
-	    signString[ i ] = '_';
-	}
+		{
+			signString[ i ] = '_';
+		}
     }
     printf( "2: %d %s\n", addedlen, signString );
 }
@@ -235,13 +244,13 @@ static void test_CreateAwsSignature( const char *param )
     struct curl_slist *headers = NULL;
     struct curl_slist *header;
     int i;
-    const char *path = "http://the.web.address/with.html?some=parameter";
+    const char *path = "/the-path/with.html?some=parameter";
 
     headers = curl_slist_append( headers, "Content-MD5: kahaKUW/a80945+a553" );
     headers = curl_slist_append( headers, "Content-Type: image/jpeg" );
+    headers = curl_slist_append( headers, "x-amz-also-metavariable: something else" );
     headers = curl_slist_append( headers, "X-AMZ-metavariable: Something" );
     headers = curl_slist_append( headers, "Date: Sun, Jun 17 2012 17:58:24 +0200" );
-    headers = curl_slist_append( headers, "x-amz-also-metavariable: something else" );
 
     headers = CreateAwsSignature( "HEAD", headers, path );
 
@@ -274,7 +283,8 @@ static void test_BuildS3Request( const char *param )
     headers = curl_slist_append( headers, "Content-Type: image/jpeg" );
     headers = curl_slist_append( headers, "x-amz-metavariable: something" );
     headers = curl_slist_append( headers, "x-amz-also-metavariable: something else" );
-    headers = BuildS3Request( method, headers, path );
+    headers = BuildS3Request( method, globalConfig.region,
+							  globalConfig.bucketName, headers, path );
 
     currentHeader= headers;
     while( currentHeader != NULL )
@@ -297,8 +307,8 @@ static void test_SubmitS3RequestHead( const char *param )
 
     InitializeS3If( );
 
-    headers = BuildS3Request( "HEAD", NULL, "/README" );
-    i = SubmitS3Request( "HEAD", headers, "/README", (void**)&curlOut, &outLength );
+    i = SubmitS3Request( "HEAD", headers,
+						 "/README", (void**)&curlOut, &outLength );
 
     free( globalConfig.keyId );
     free( globalConfig.secretKey );
@@ -332,8 +342,9 @@ static void test_SubmitS3RequestData( const char *param )
     ReadLiveConfig( param );
     InitializeS3If( );
 
-    headers = BuildS3Request( "GET", NULL, "/" );
-    i = SubmitS3Request( "GET", headers, "/?prefix=directory/&delimiter=/", (void**)&curlOut, &outLength );
+    i = SubmitS3Request( "GET",
+						 headers, "/?delimiter=/&prefix=directory/",
+						 (void**)&curlOut, &outLength );
 
     free( globalConfig.keyId );
     free( globalConfig.secretKey );

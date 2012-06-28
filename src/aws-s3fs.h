@@ -36,9 +36,11 @@
 /* Maximum number of open files. */
 #define MAX_FILE_DESCRIPTORS 16
 
+#define SOCKET_NAME LOCALSTATEDIR "aws-s3fs.sock"
 
-/* Make room for 20,000 files in the stat cache. */
-#define MAX_STAT_CACHE_SIZE 20000l
+
+/* Make room for 5,000 files in the stat cache. */
+#define MAX_STAT_CACHE_SIZE 5000l
 
 /* Default, system-wide aws-s3fs.conf file. */
 #define DEFAULT_CONFIG_FILENAME SYSCONFDIR "/aws-s3fs.conf"
@@ -48,6 +50,9 @@
 
 /* Chache dir. */
 #define CACHE_DIR LOCALSTATEDIR "/cache/aws-s3fs"
+
+/* Name of the shared library. */
+#define AWS_S3FS_LIB "aws-s3fs." VERSION ".so.0"
 
 
 /** Default configuration values. */

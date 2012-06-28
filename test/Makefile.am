@@ -37,7 +37,8 @@ test_hash_SOURCES= $(SHAREDTESTSOURCE) test-hash.c ../src/digest.c \
 	../src/base64.c ../src/base64.h
 test_s3if_SOURCES= $(SHAREDTESTSOURCE) test-s3if.c ../src/s3if.c \
 	../src/digest.c ../src/digest.h ../src/statcache.h ../src/statcache.c \
-	../src/logger.c ../src/base64.c ../src/base64.h
+	../src/logger.c ../src/base64.c ../src/base64.h ../src/dircache.c \
+	../src/dircache.h ../src/s3comms.h ../src/s3comms.c
 
 
 SHAREDTESTSOURCE = dispatch.c src/aws-s3fs.h shared.c testfunctions.h

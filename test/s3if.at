@@ -38,7 +38,7 @@ AT_CLEANUP
 
 AT_SETUP([CreateAwsSignature])
 AT_CHECK([test-s3if CreateAwsSignature], [], [stdout])
-AT_CHECK([grep '^6: Authorization: AWS 1234:4K+65IpNCl76PkenKrfuWKcZW7k=$' stdout], [], [ignore])
+AT_CHECK([grep '^6: Authorization: AWS 12344567891234567890:noa/8EWqa2xZE44IF6yH32IOI38=$' stdout], [], [ignore])
 AT_CLEANUP
 
 AT_SETUP([BuildS3Request])
