@@ -29,6 +29,7 @@
 #include <stdbool.h>
 #include <syslog.h>
 #include "sysdirs.h"
+#include "s3comms.h"
 
 
 #define DEFAULT_TMP_DIR "/tmp"
@@ -63,12 +64,6 @@
 #define DEFAULT_SECRET_KEY "secretkey"
 #define DEFAULT_LOG_FILE   "/var/log/aws-s3fs.log"
 #define DEFAULT_VERBOSE    false
-
-
-enum bucketRegions {
-    US_STANDARD = 0, OREGON, NORTHERN_CALIFORNIA, IRELAND,
-    SINGAPORE, TOKYO, SAO_PAULO
-};
 
 
 struct ConfigurationBoolean {

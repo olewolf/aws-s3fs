@@ -1,9 +1,23 @@
-#!/bin/bash
+#!/bin/sh
+# postrm script for #PACKAGE#
+#
 
-# Post-removal script for aws-s3fs.
 
 set -e
 
-if [ "$1" = "remove" ]; then
+
+case "$1" in
+    purge|remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
     rm -rf @localstatedir@/cache/aws-s3fs >/dev/null 2>&1
-fi
+	ldconfig
+    ;;
+
+    *)
+        echo "postrm called with unknown argument \`$1'" >&2
+        exit 1
+    ;;
+esac
+
+#DEBHELPER#
+
+exit 0

@@ -26,6 +26,7 @@ debian/aws-s3fs/*
 debian/files
 debian/postinst
 debian/postrm
+debian/*.debhelper
 
 doc/man/aws-s3fs.1
 doc/man/aws-s3fs.conf.5
@@ -34,6 +35,7 @@ doc/main.doc
 
 src/aws-s3fs
 src/sysdirs.h
+src/.libs/*
 
 test/atconfig
 test/atlocal

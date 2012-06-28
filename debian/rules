@@ -55,13 +55,18 @@ sysdirs.h : sysdirs.h.src
 	dh $@ --with autotools_dev
 
 override_dh_auto_configure:
-	autoreconf --install --force --gnu
+	autoreconf --install --force
 	dh_auto_configure -- --disable-openssltest 
 
 # Tell the automake Makefile not to create the aws-s3fs cache directory
 # during install as this is handled by postinst.
 override_dh_auto_build:
 	OMITCACHECREATION=1 dh_auto_build --
+
+# Don't install the .la libtool file.
+override_dh_auto_install:
+	find "${libdir}" -type f -name \*.la -delete;
+	dh_auto_install --
 
 override_dh_auto_clean:
 	rm -rf doc/doxygen

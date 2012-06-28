@@ -29,9 +29,9 @@
 #include <string.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <pthread.h>
 #include <curl/curl.h>
 #include <time.h>
-#include <pthread.h>
 #include <libxml/parser.h>
 #include <dlfcn.h>
 #include "aws-s3fs.h"
@@ -69,7 +69,10 @@ static pthread_mutex_t cache_mutex = PTHREAD_MUTEX_INITIALIZER;
 static long int localTimezone;
 
 /* Handle for the digest and S3 communications lib. */
+#ifndef AUTOTEST
 static void *libHandle;
+#endif
+STATIC S3COMM *s3comm;
 
 
 /**
@@ -113,8 +116,11 @@ InitializeS3If(
 
 	/* Load functions for digests, signing, and sending and receiving
 	 * messages to S3. */
+#ifndef AUTOTEST
 	libHandle = dlopen( AWS_S3FS_LIB, RTLD_LAZY );
-	s3fs_InitializeLibrary( );
+	s3comm    = s3_open( globalConfig.region, globalConfig.bucketName,
+						 globalConfig.keyId, globalConfig.secretKey );
+#endif
 
     /* Initialize libxml. */
     LIBXML_TEST_VERSION
@@ -215,84 +221,6 @@ GetHeaderInt(
     }
     return( success );
 }
-
-
-
-/**
- * Submit a sequence of headers containing an S3 request and receive the
- * output in the local write buffer. The headers list is deallocated.
- * The request may include PUT requests, as long as there is no body data
- * to put.
- * @param httpVerb [in] HTTP method (GET, HEAD, etc.).
- * @param headers [in/out] The CURL list of headers with the S3 request.
- * @param filename [in] Full path name of the file that is accessed.
- * @param response [out] Pointer to the response data.
- * @param responseLength [out] Pointer to the response length.
- * @return 0 on success, or CURL error number on failure.
- */
-STATIC int
-SubmitS3Request(
-    const char         *httpVerb,
-    struct curl_slist  *headers,
-    const char         *filename,
-    void               **data,
-    int                *dataLength
-                )
-{
-	enum bucketRegions region;
-	const char         *bucket;
-	int                status;
-
-	region = globalConfig.region;
-	bucket = globalConfig.bucketName;
-
-	status = s3fs_SubmitS3Request( httpVerb, region, bucket, headers, filename,
-								   data, dataLength );
-	return( status );
-}
-
-
-
-/**
- * Submit a sequence of headers containing an S3 request and receive the
- * output in the local write buffer. The headers list is deallocated.
- * The request includes a body buffer for upload data; if none should be
- * uploaded, \a SubmitS3Request may be used instead. For large data,
- * use the multi-uploader.
- * @param httpVerb [in] HTTP method (GET, HEAD, etc.).
- * @param region [in] The region where the bucket is located.
- * @param bucket [in] Name of the bucket.
- * @param headers [in/out] The CURL list of headers with the S3 request.
- * @param filename [in] Full path name of the file that is accessed.
- * @param response [out] Pointer to the response data.
- * @param responseLength [out] Pointer to the response length.
- * @param bodyData [in] Pointer to the upload data.
- * @param bodyLength [in] Size of the upload data.
- * @return 0 on success, or CURL error number on failure.
- */
-int
-SubmitS3PutRequest(
-    struct curl_slist  *headers,
-    const char         *filename,
-    void               **response,
-    int                *responseLength,
-    unsigned char      *bodyData,
-    size_t             bodyLength
-		)
-{
-	enum bucketRegions region;
-	const char         *bucket;
-	int                status;
-
-	region = globalConfig.region;
-	bucket = globalConfig.bucketName;
-	status = s3fs_SubmitS3PutRequest( headers, region, bucket, filename,
-									  response, responseLength,
-									  bodyData, bodyLength );
-	return( status );
-}
-
-
 
 
 
@@ -450,8 +378,8 @@ S3GetFileStat(
     /* (None required.) */
 
     /* Make request via curl and wait for response. */
-    status = SubmitS3Request( "HEAD", headers, filename,
-			      (void**)&response, &length );
+    status = s3_SubmitS3Request( s3comm, "HEAD", headers, filename,
+								   (void**)&response, &length );
     if( status == 0 )
     {
         /* Prepare an S3 File Info structure. */
@@ -1110,8 +1038,8 @@ S3ReadDir(
 				free( urlSafeFromFile );
 			}
 			/* query now contains the path for the S3 request. */
-			status = SubmitS3Request( "GET", headers, query,
-									  (void**) &xmlData, &xmlDataLength );
+			status = s3_SubmitS3Request( s3comm, "GET", headers, query,
+										   (void**) &xmlData, &xmlDataLength );
 			if( query != queryBase )
 			{
 				free( query );
@@ -1235,8 +1163,8 @@ S3ReadFile(
 	    sprintf( range, "Range:bytes=%lld-%lld",
 		     (long long) offset, (long long) offset + maxSize - 1 );
 	    headers = curl_slist_append( headers, strdup( range ) );
-	    status  = SubmitS3Request( "GET", headers, path,
-				       (void**) &contents, &receivedSize );
+	    status  = s3_SubmitS3Request( s3comm, "GET", headers, path,
+										(void**) &contents, &receivedSize );
 	    if( status == 0 )
 	    {
 	        /* Copy the contents to the destination and free the local
@@ -1315,8 +1243,8 @@ S3ReadLink(
 		    /* Get the file contents; it is a rather small transfer. */
 		    sprintf( range, "Range:bytes=0-%d", (int)size - 1 );
 		    headers = curl_slist_append( headers, strdup( range ) );
-		    status  = SubmitS3Request( "GET", headers, link,
-					       (void**) &linkContents,
+		    status  = s3_SubmitS3Request( s3comm, "GET", headers, link,
+											(void**) &linkContents,
 					       &length );
 		    if( status == 0 )
 		    {
@@ -1459,8 +1387,8 @@ UpdateAmzHeaders(
     {
         newName = file;
     }
-    status  = SubmitS3Request( "PUT", headers, newName,
-			       (void**) &response, &responseLength );
+    status  = s3_SubmitS3Request( s3comm, "PUT", headers, newName,
+									(void**) &response, &responseLength );
     free( response );
 
     return( status );
@@ -1558,9 +1486,9 @@ S3CreateLink(
     headers = curl_slist_append( headers, strdup( "Transfer-Encoding:" ) );
     /* Create standard headers. */
     LockCaches( );
-    status = SubmitS3PutRequest( headers, linkname,
-				 (void**) &response, &responseLength,
-				 (unsigned char*) path, pathLength );
+    status = s3_SubmitS3PutRequest( s3comm, headers, linkname,
+									  (void**) &response, &responseLength,
+									  (unsigned char*) path, pathLength );
     /* We already have the FileInfo structure, so because the file will be
        stat'ed as soon as we return, let's add it to the stat cache. Delete
        whatever might already be in the cache. */
@@ -1587,7 +1515,11 @@ S3Destroy(
     TruncateCache( 0 );
     /* Cleanup libxml. */
     xmlCleanupParser( );
+#ifndef AUTOTEST
+	/* Close the S3 communications library. */
+	s3_close( s3comm );
 /*	dlclose( libHandle );*/
+#endif
 }
 
 
@@ -1705,8 +1637,8 @@ S3Mkdir(
     headers = curl_slist_append( headers, strdup( "Expect:" ) );
     headers = curl_slist_append( headers, strdup( "Transfer-Encoding:" ) );
     LockCaches( );
-    status  = SubmitS3Request( "PUT", headers, secretFile,
-			       (void**) &response, &responseLength );
+    status  = s3_SubmitS3Request( s3comm, "PUT", headers, secretFile,
+									(void**) &response, &responseLength );
     InvalidateDirectoryCacheElement( parentDir );
     /* Update the stat cache entry for the directory. */
     free( (char*) parentDir );
@@ -1748,8 +1680,8 @@ S3Unlink( const char *filename )
     parentDir = GetParentDir( cleanName );
 
     LockCaches( );
-    status  = SubmitS3Request( "DELETE", headers, cleanName,
-			       (void**) &response, &responseLength );
+    status  = s3_SubmitS3Request( s3comm, "DELETE", headers, cleanName,
+									(void**) &response, &responseLength );
     InvalidateDirectoryCacheElement( parentDir );
     DeleteStatEntry( cleanName );
     UnlockCaches( );
@@ -1840,9 +1772,9 @@ S3Rmdir( const char *dirname )
 		if( status == 0 )
 		{
 		    LockCaches( );
-		    status  = SubmitS3Request( "DELETE", headers, cleanName,
-					       (void**) &response,
-					       &responseLength );
+		    status = s3_SubmitS3Request( s3comm, "DELETE", headers, cleanName,
+										   (void**) &response,
+										   &responseLength );
 		    InvalidateDirectoryCacheElement( parentDir );
 		    DeleteStatEntry( cleanName );
 		    UnlockCaches( );

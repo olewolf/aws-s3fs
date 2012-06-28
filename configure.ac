@@ -87,9 +87,11 @@ AC_CHECK_LIB([xml2], [xmlReadMemory],,
     AC_MSG_ERROR([*** libxml2 library not found **]))
 AC_CHECK_LIB([sqlite3], [sqlite3_open],,
     AC_MSG_ERROR([*** sqlite3 not found **]))
+AC_CHECK_LIB([glib-2.0], [g_slist_append],,
+    AC_MSG_ERROR([*** glib2 not found **]))
 
 # Check for modules.
-PKG_CHECK_MODULES([DEPS], [fuse >= 2.8 libxml-2.0 >= 2.7.0 libconfig >= 1.3 libcurl >= 7.20 sqlite3 >= 3.7.0],,
+PKG_CHECK_MODULES([DEPS], [fuse >= 2.8 libxml-2.0 >= 2.7.0 libconfig >= 1.3 libcurl >= 7.20 sqlite3 >= 3.7.0 glib-2.0 >= 2.30.0],,
     AC_MSG_ERROR([*** libfuse, libconfig, libxml2, libsqlite3, or curl source not found **]))
 
 # Check for library functions.
@@ -168,6 +170,11 @@ AC_CHECK_HEADER([sys/socket.h],,
     AC_MSG_ERROR([*** sys/socket.h not found **]))
 CFLAGS_SAVE="$CFLAGS"
 CFLAGS="$CFLAGS -Wall -Werror $DEPS_CFLAGS"
+AC_CHECK_HEADER([glib-2.0/glib.h], [], 
+AC_MSG_ERROR([*** glib-2.0/glib.h not found **]),
+[
+AC_INCLUDES_DEFAULT
+])
 AC_CHECK_HEADER([libxml/tree.h], [], 
 AC_MSG_ERROR([*** libxml/tree.h not found **]),
 [

@@ -1,14 +1,29 @@
 #!/bin/sh
-
-# Postinstallation script for aws-s3fs.
+#
+# postinst script for #PACKAGE#.
+#
 
 set -e
 
-if [ "$1" = "configure" ]; then
+
+case "$1" in
+    configure)
     CACHEDIR="@localstatedir@/cache/aws-s3fs"
     mkdir -p $CACHEDIR
     chmod 777 $CACHEDIR
     chmod +t $CACHEDIR
-fi
+	ldconfig
+    ;;
+
+    abort-upgrade|abort-remove|abort-deconfigure)
+    ;;
+
+    *)
+        echo "postinst called with unknown argument \`$1'" >&2
+        exit 1
+    ;;
+esac
+
+#DEBHELPER#
 
 exit 0

@@ -25,19 +25,47 @@
 
 #include <config.h>
 #include <curl/curl.h>
-#include "aws-s3fs.h"
+#include "base64.h"
+#include "digest.h"
+#include <pthread.h>
+
+enum bucketRegions
+{
+    US_STANDARD = 0,
+	OREGON,
+	NORTHERN_CALIFORNIA,
+	IRELAND,
+    SINGAPORE,
+	TOKYO,
+	SAO_PAULO
+};
 
 
-void s3fs_InitializeLibrary( void );
+typedef struct
+{
+	enum bucketRegions region;
+	char               *bucket;
+	char               *keyId;
+	char               *secretKey;
+	CURL               *curl;
+	pthread_mutex_t    curl_mutex;
+} S3COMM;
 
-int s3fs_SubmitS3Request( const char *httpVerb, enum bucketRegions region,
-						  const char *bucket, struct curl_slist *headers,
-						  const char *filename, void **data, int *dataLength );
-int s3fs_SubmitS3PutRequest( struct curl_slist *headers,
-							 enum bucketRegions region, const char *bucket,
-							 const char *filename, void **response,
-							 int *responseLength, unsigned char *bodyData,
-							 size_t bodyLength );
+
+
+
+S3COMM *s3_open( enum bucketRegions region, const char *bucket,
+				 const char *keyId, const char *secretKey );
+void s3_close( S3COMM *handle );
+
+
+int s3_SubmitS3Request( S3COMM *handle, const char *httpVerb,
+						struct curl_slist *headers, const char *filename,
+						void **data, int *dataLength );
+int s3_SubmitS3PutRequest( S3COMM *handle, struct curl_slist *headers,
+						   const char *filename, void **response,
+						   int *responseLength, unsigned char *bodyData,
+						   size_t bodyLength );
 
 
 #endif /* __S3_COMMS_H */

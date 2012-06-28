@@ -31,9 +31,9 @@
 #include <pthread.h>
 #include <curl/curl.h>
 #include <errno.h>
+#include <glib.h>
+#include <assert.h>
 #include "s3comms.h"
-#include "digest.h"
-#include "base64.h"
 
 
 #ifdef AUTOTEST
@@ -61,9 +61,9 @@ struct CurlReadBuffer
 };
 
 
-/* For locking CURL. */
-static pthread_mutex_t curl_mutex = PTHREAD_MUTEX_INITIALIZER;
-static CURL *curl = NULL;
+/* For keeping track of processes using the library. */
+static pthread_mutex_t handles_mutex = PTHREAD_MUTEX_INITIALIZER;
+static GSList *handles = NULL;
 
 
 
@@ -73,10 +73,10 @@ static CURL *curl = NULL;
  */
 static inline void
 LockCurl(
-    void
-	 )
+    pthread_mutex_t *mutex
+        )
 {
-    pthread_mutex_lock( &curl_mutex );
+    pthread_mutex_lock( mutex );
 }
 
 
@@ -86,24 +86,80 @@ LockCurl(
  */
 static inline void
 UnlockCurl(
-    void
-	   )
+    pthread_mutex_t *mutex
+	       )
 {
-    pthread_mutex_unlock( &curl_mutex );
+    pthread_mutex_unlock( mutex );
 }
 
 
 
-void s3fs_InitializeLibrary( 
-	void
-   	                        )
+/**
+ * Create a handle in the library in order to use the S3 functions.
+ * (The hashing functions do not require this handle.)
+ * @param region [in] The region in which the bucket resides.
+ * @param bucket [in] The name of the bucket.
+ * @param keyId [in] Your Amazon Access Key ID.
+ * @param secretKey [in] Your secret Amazon key.
+ * @return Handle or \a NULL if an error occurred.
+ */
+S3COMM*
+s3_open( 
+	enum bucketRegions region,
+	const char         *bucket,
+	const char         *keyId,
+	const char         *secretKey
+          )
 {
-    LockCurl( );
-    if( curl == NULL )
-    {
-		curl = curl_easy_init( );
-    }
-    UnlockCurl( );
+	S3COMM *newInstance;
+	const pthread_mutex_t defaultMutex = PTHREAD_MUTEX_INITIALIZER;
+
+	/* Create a new instance, including a new CURL session. */
+	newInstance = malloc( sizeof( S3COMM ) );
+	newInstance->curl = curl_easy_init( );
+	if( newInstance->curl != NULL )
+	{
+		newInstance->region     = region;
+		newInstance->bucket     = strdup( bucket );
+		newInstance->keyId      = strdup( keyId );
+		newInstance->secretKey  = strdup( secretKey );
+		memcpy( &newInstance->curl_mutex, &defaultMutex,
+				sizeof( pthread_mutex_t ) );
+
+		pthread_mutex_lock( &handles_mutex );
+		handles = g_slist_append( handles, newInstance );
+		pthread_mutex_unlock( &handles_mutex );
+	}
+	else
+	{
+		free( newInstance );
+		newInstance = NULL;
+	}
+
+	return( newInstance );
+}
+
+
+
+/**
+ * Release a handle.
+ * @param handle [in] The handle that should be released.
+ * @return Nothing.
+ */
+void
+s3_close(
+	S3COMM *handle
+           ) 
+{
+	pthread_mutex_lock( &handles_mutex );
+	handles = g_slist_remove( handles, handle );
+	pthread_mutex_unlock( &handles_mutex );
+
+	free( handle->bucket );
+	free( handle->keyId );
+	free( handle->secretKey );
+	curl_easy_cleanup( handle->curl );
+	free( handle );
 }
 
 
@@ -255,7 +311,7 @@ CurlReadData(
     size_t size,
     size_t nmemb,
     void   *userdata
-	     )
+             )
 {
     struct CurlReadBuffer *curlReadBuffer = userdata;
     int maxWrite    = (int) ( size * nmemb );
@@ -415,8 +471,8 @@ AddHeaderValueToSignString(
  */
 static char*
 GetS3HostNameByRegion(
-    enum bucketRegions region,
-    const char         *bucket
+	enum bucketRegions region,
+	const char         *bucket
 		      )
 {
     /* Amazon host names for various regions, ordered according to the
@@ -443,7 +499,7 @@ GetS3HostNameByRegion(
     hostname = malloc( toAlloc );
     assert( hostname != NULL );
 
-    if( globalConfig.region != US_STANDARD )
+    if( region != US_STANDARD )
     {
         sprintf( hostname, "%s.%s.amazonaws.com",
 				 bucket, amazonHost[ region ] );
@@ -458,6 +514,13 @@ GetS3HostNameByRegion(
 
 
 
+/**
+ * Remove any query parameters from the path that are not accepted by the S3,
+ * and sort the remaining ones alphabetically. This is required for signing the
+ * S3 request.
+ * @param path [in] Intended URL for the S3.
+ * @return Path that is valid for signing.
+ */
 static const char*
 SignablePath(
 	const char *path
@@ -509,10 +572,14 @@ SignablePath(
  */
 STATIC struct curl_slist*
 CreateAwsSignature(
-    const char        *httpMethod,	   
-    struct curl_slist *headers,
-    const char        *path
-		   )
+    const char         *httpMethod,	   
+    struct curl_slist  *headers,
+	enum bucketRegions region,
+	const char         *bucket,
+    const char         *path,
+	const char         *keyId,
+	const char         *secretKey
+		           )
 {
     char              messageToSign[ 4096 ];
     char              amzHeaders[ 2048 ];
@@ -603,10 +670,10 @@ CreateAwsSignature(
 
 	/* Remove all sub-resources that are not required from the path. */
 	signablePath = SignablePath( path );
-	if( globalConfig.region != US_STANDARD )
+	if( region != US_STANDARD )
 	{
 		sprintf( &messageToSign[ strlen( messageToSign ) ],
-				 "/%s%s", globalConfig.bucketName, signablePath );
+				 "/%s%s", bucket, signablePath );
 	}
 	else
 	{
@@ -618,11 +685,11 @@ CreateAwsSignature(
     /* Sign the message and add the Authorization header. */
     signature = HMAC( (const unsigned char*) messageToSign,
 					  strlen( messageToSign ),
-					  (const char*) globalConfig.secretKey,
+					  (const char*) secretKey,
 					  HASH_SHA1, HASHENC_BASE64 );
     awsHeader = malloc( 100 );
     sprintf( awsHeader, "Authorization: AWS %s:%s",
-			 globalConfig.keyId, signature );
+			 keyId, signature );
     free( (char*) signature );
     headers = curl_slist_append( headers, strdup( awsHeader ) );
     return headers;
@@ -658,13 +725,11 @@ DeleteCurlSlistAndContents(
  */
 STATIC struct curl_slist*
 BuildGenericHeader(
-	enum bucketRegions region,
-	const char         *bucketName
+	const char *hostname
 	               )
 {
     struct curl_slist *headers = NULL;
     char              headbuf[ 512 ];
-    char              *hostName;
     time_t            now;
     struct tm         tnow;
     char              *locale;
@@ -673,9 +738,7 @@ BuildGenericHeader(
     char *date;
     char *userAgent;
 
-	hostName = GetS3HostNameByRegion( region, bucketName );
-	sprintf( headbuf, "Host: %s", hostName );
-	free( hostName );
+	sprintf( headbuf, "Host: %s", hostname );
     host = strdup( headbuf );
     headers = curl_slist_append( headers, host );
 
@@ -721,9 +784,9 @@ qsort_strcmp( const void *a, const void *b )
  */
 STATIC struct curl_slist*
 BuildS3Request(
+	S3COMM             *instance,
     const char         *httpMethod,
-	enum bucketRegions region,
-	const char         *bucket,
+	const char         *hostname,
     struct curl_slist  *additionalHeaders,
     const char         *filename
                )
@@ -735,7 +798,7 @@ BuildS3Request(
     int               i;
 
     /* Build basic headers. */
-    allHeaders = BuildGenericHeader( region, bucket );
+    allHeaders = BuildGenericHeader( hostname );
 
     /* Add any additional headers, if any, in sorted order. */
     currentHeader = additionalHeaders;
@@ -759,7 +822,10 @@ BuildS3Request(
     curl_slist_free_all( additionalHeaders );
 
     /* Add a signature header. */
-    allHeaders = CreateAwsSignature( httpMethod, allHeaders, filename );
+    allHeaders = CreateAwsSignature( httpMethod, allHeaders,
+									 instance->region, instance->bucket,
+									 filename,
+									 instance->keyId, instance->secretKey );
 
     return( allHeaders );
 }
@@ -775,7 +841,7 @@ BuildS3Request(
 static int
 ConvertHttpStatusToErrno(
     int httpStatus
-			)
+	                     )
 {
     int status;
 
@@ -864,40 +930,39 @@ ConvertHttpStatusToErrno(
  * @return 0 on success, or CURL error number on failure.
  */
 int
-s3fs_SubmitS3Request(
+s3_SubmitS3Request(
+	S3COMM             *instance,
     const char         *httpVerb,
-	enum bucketRegions region,
-	const char         *bucket,
     struct curl_slist  *headers,
     const char         *filename,
     void               **data,
     int                *dataLength
-                )
+	                )
 {
     char                   *url;
     char                   *hostName;
     int                    urlLength;
     int                    status = 0;
     long                   httpStatus;
+	CURL                   *curl       = instance->curl;
     struct CurlWriteBuffer writeBuffer = { NULL, 0 };
-
-    headers = BuildS3Request( httpVerb, region, bucket, headers, filename );
 
     printf( "s3if: SubmitS3Request (%s)\n", filename );
 
     /* Determine the virtual host name. */
-    hostName = GetS3HostNameByRegion( region, bucket );
+    hostName = GetS3HostNameByRegion( instance->region, instance->bucket );
+
     /* Determine the length of the URL. */
     urlLength = strlen( hostName )
                 + strlen( "https://" )
-                + strlen( bucket ) + sizeof( char )
+                + strlen( instance->bucket ) + sizeof( char )
                 + strlen( filename )
                 + sizeof( char )
                 + sizeof( char );
     /* Build the full URL, adding a '/' to the host if the filename does not
        include it as its leading character. */
     url = malloc( urlLength );
-    if( globalConfig.region != US_STANDARD )
+    if( instance->region != US_STANDARD )
     {
         sprintf( url, "https://%s%s%s", hostName,
 				 filename[ 0 ] == '/' ? "" : "/",
@@ -906,14 +971,16 @@ s3fs_SubmitS3Request(
     else
     {
         sprintf( url, "https://%s/%s%s%s", hostName,
-				 globalConfig.bucketName,
+				 instance->bucket,
 				 filename[ 0 ] == '/' ? "" : "/",
 				 filename );
     }
+
+    headers = BuildS3Request( instance, httpVerb, hostName, headers, filename );
     free( hostName );
 
     /* Submit request via CURL and wait for the response. */
-    LockCurl( );
+    LockCurl( &instance->curl_mutex );
     curl_easy_reset( curl );
     /* Set callback function according to HTTP method. */
     if( ( strcmp( httpVerb, "HEAD" ) == 0 )
@@ -953,7 +1020,7 @@ s3fs_SubmitS3Request(
     */
     status = curl_easy_perform( curl );
     curl_easy_getinfo( curl, CURLINFO_RESPONSE_CODE, &httpStatus );
-    UnlockCurl( );
+    UnlockCurl( &instance->curl_mutex );
 
     /* Return the response. */
     *data       = writeBuffer.data;
@@ -996,10 +1063,9 @@ s3fs_SubmitS3Request(
  * @return 0 on success, or CURL error number on failure.
  */
 int
-s3fs_SubmitS3PutRequest(
+s3_SubmitS3PutRequest(
+	S3COMM             *instance,
     struct curl_slist  *headers,
-	enum bucketRegions region,
-	const char         *bucket,
     const char         *filename,
     void               **response,
     int                *responseLength,
@@ -1012,40 +1078,39 @@ s3fs_SubmitS3PutRequest(
     int        urlLength;
     int        status     = 0;
     long       httpStatus;
+	CURL                  *curl      = instance->curl;
     struct CurlReadBuffer readBuffer = { bodyData, bodyLength, 0 };
 
 
-    headers = BuildS3Request( "HEAD", region, bucket, headers, filename );
-
     /* Determine the virtual host name. */
-    hostName = GetS3HostNameByRegion( region, bucket );
+    hostName = GetS3HostNameByRegion( instance->region, instance->bucket );
     /* Determine the length of the URL. */
     urlLength = strlen( hostName )
                 + strlen( "https://" )
-                + strlen( bucket ) + sizeof( char )
+                + strlen( instance->bucket ) + sizeof( char )
                 + strlen( filename )
                 + sizeof( char )
                 + sizeof( char );
     /* Build the full URL, adding a '/' to the host if the filename does not
        include it as its leading character. */
     url = malloc( urlLength );
-    if( globalConfig.region != US_STANDARD )
+    if( instance->region != US_STANDARD )
     {
         sprintf( url, "https://%s%s%s", hostName,
-		 filename[ 0 ] == '/' ? "" : "/",
-		 filename );
+				 filename[ 0 ] == '/' ? "" : "/",
+				 filename );
     }
     else
     {
-        sprintf( url, "https://%s/%s%s%s", hostName,
-		 globalConfig.bucketName,
-		 filename[ 0 ] == '/' ? "" : "/",
-		 filename );
+        sprintf( url, "https://%s/%s%s%s", hostName, instance->bucket,
+				 filename[ 0 ] == '/' ? "" : "/",
+				 filename );
     }
+    headers = BuildS3Request( instance, "HEAD", hostName, headers, filename );
     free( hostName );
 
     /* Submit request via CURL and wait for the response. */
-    UnlockCurl( );
+    LockCurl( &instance->curl_mutex );
     curl_easy_reset( curl );
     curl_easy_setopt( curl, CURLOPT_READFUNCTION, CurlReadData );
     curl_easy_setopt( curl, CURLOPT_READDATA, &readBuffer );
@@ -1054,7 +1119,7 @@ s3fs_SubmitS3PutRequest(
     curl_easy_setopt( curl, CURLOPT_URL, url );
     status = curl_easy_perform( curl );
     curl_easy_getinfo( curl, CURLINFO_RESPONSE_CODE, &httpStatus );
-    UnlockCurl( );
+    UnlockCurl( &instance->curl_mutex );
 
     /* Indicate that there is no response data. */
     *response             = NULL;

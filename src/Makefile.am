@@ -20,7 +20,7 @@ AM_LIBS = pthread
 AM_CFLAGS = -O0 -g
 
 bin_PROGRAMS = aws-s3fs
-aws_s3fs_LDADD = libaws-s3fs-@VERSION@.la
+aws_s3fs_LDADD = aws-s3fs.la
 #bin_PROGRAMS = aws-s3fs aws-s3fs-queue
 aws_s3fs_SOURCES = config.h aws-s3fs.h sysdirs.h aws-s3fs.c \
 	decodecmdline.c configfile.c common.c fix-i386-cc.c config.c \
@@ -29,21 +29,18 @@ aws_s3fs_SOURCES = config.h aws-s3fs.h sysdirs.h aws-s3fs.c \
 
 #aws_s3fs_queue_SOURCES = config.h aws-s3fs.h socket.h filecache.c socket.c
 
-#noinst_LTLIBRARIES = libaws-s3fs-@VERSION@.la
-lib_LTLIBRARIES = libaws-s3fs-@VERSION@.la
-libaws_s3fs_@VERSION@_la_SOURCES = sysdirs.h digest.h digest.c \
+lib_LTLIBRARIES = aws-s3fs.la
+aws_s3fs_la_SOURCES = sysdirs.h digest.h digest.c \
 	base64.h base64.c s3comms.h s3comms.c
-libaws_s3fs_@VERSION@_la_LDFLAGS = -version-info $(AWS_S3FS_SO_VERSION)
+aws_s3fs_la_LDFLAGS = -module -shared -version-info $(AWS_S3FS_SO_VERSION)
 
 ## For debugging: libaws_s3fs_@AWS_S3FS_API_VERSION@_la_LDFLAGS = -version-info $(AWS_S3FS_SO_VERSION) -all-static
-##library_includedir=$(includedir)/aws-s3fs-0.1/aws-s3fs
-##library_include_HEADERS = aws-s3fs/foo.h aws-s3fs/bar.h
-
+library_includedir=$(includedir)/aws-s3fs
+library_include_HEADERS = s3comms.h base64.h digest.h
 
 
 BUILT_SOURCES = sysdirs.h
 CLEANFILES = sysdirs.h
-
 
 sysdirs.h : sysdirs.h.src
 	prefix="${prefix}"; \
@@ -77,3 +74,7 @@ sysdirs.h : sysdirs.h.src
 	done; \
 	cp $$TMPFILE2 $@
 
+
+# Don't install the .la version that libtool creates.
+install-exec-hook:
+	find $(DESTDIR)$(libdir) -type f -name \*.la -delete
