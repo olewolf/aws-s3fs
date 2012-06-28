@@ -21,12 +21,16 @@ m4/libtool.m4
 m4/lt*.m4
 
 debian/aws-*.log
+debian/aws-s3fs-dev/
+debian/aws-s3fs/
+debian/libaws-s3fs0/*
+debian/libaws-*.log
 debian/*.substvars
-debian/aws-s3fs/*
 debian/files
 debian/postinst
 debian/postrm
 debian/*.debhelper
+debian/tmp/*
 
 doc/man/aws-s3fs.1
 doc/man/aws-s3fs.conf.5

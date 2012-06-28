@@ -16,10 +16,16 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 ACLOCAL_AMFLAGS = -I m4
+
+EXTRA_DIST = aws-s3fs.pc.in
+
 SUBDIRS = src data doc test
 
 metadocsdir = $(docdir)
 nobase_dist_metadocs_DATA = README NEWS AUTHORS ChangeLog
+
+pkgconfigdir = $(libdir)/pkgconfig
+pkgconfig_DATA = aws-s3fs.pc
 
 install-data-hook:
 	if [ -f $(docdir)/ChangeLog ]; then \

@@ -10,10 +10,35 @@ Standards-Version: 3.9.3
 Homepage: https://github.com/olewolf/aws-s3fs/wiki
 
 Package: aws-s3fs
+Section: utils
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends},
- curl (>= 7.20), libfuse2 (>= 2.8.4), libconfig8 (>= 1.3), libxml2 (>= 2.7.0),
- libsqlite3-0 (>= 3.7.0)
-Description: FUSE module to mount an Amazon S3 bucket using the aws utility
+ libcurl3 (>= 7.20), libfuse2 (>= 2.8.4), libconfig8 (>= 1.3),
+ libxml2 (>= 2.7.0), libsqlite3-0 (>= 3.7.0), libaws-s3fs0 (= ${binary:Version})
+Description: FUSE module to mount an Amazon S3 bucket
  aws-s3fs is a transparent FUSE filesystem for reading and writing files
  stored in an Amazon S3 cloud bucket.
+
+Package: aws-s3fs-dev
+Section: libdevel
+Architecture: any
+Pre-Depends: dpkg (>= 1.15.6)
+Depends: ${shlibs:Depends}, ${misc:Depends}, libaws-s3fs0 (= ${binary:Version})
+Description: FUSE module to mount an Amazon S3 bucket
+ aws-s3fs is a transparent FUSE filesystem for reading and writing files
+ stored in an Amazon S3 cloud bucket.
+ .
+ This package provides the necessary files to compile programs which use
+ aws-s3fs.
+
+Package: libaws-s3fs0
+Architecture: any
+Pre-Depends: ${misc:Pre-Depends}, dpkg (>= 1.15.6)
+Depends: ${shlibs:Depends}, ${misc:Depends},
+ libcurl (>= 7.20), libfuse2 (>= 2.8.4), libconfig8 (>= 1.3),
+ libxml2 (>= 2.7.0), libsqlite3-0 (>= 3.7.0)
+Description: FUSE module to mount an Amazon S3 bucket
+ aws-s3fs is a transparent FUSE filesystem for reading and writing files
+ stored in an Amazon S3 cloud bucket.
+ .
+ The package provides shared library files for aws-s3fs.

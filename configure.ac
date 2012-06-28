@@ -15,15 +15,22 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+AC_PREREQ([2.68])
 
-AC_INIT([aws-s3fs], [0.1], [wolf@blazingangles.com])
+m4_include([m4/version.m4])
+
+AC_INIT([aws-s3fs], [_AWS_S3FS_VERSION], [wolf@blazingangles.com])
 AC_CONFIG_SRCDIR([src/aws-s3fs.c])
 AC_CONFIG_AUX_DIR([config])
 AC_CONFIG_MACRO_DIR([m4])
 AM_INIT_AUTOMAKE
 
-AC_SUBST([AWS_S3FS_SO_VERSION], [0:0:0])
-#AC_SUBST([AWS_S3FS_API_VERSION], [0.0.1])
+LIBAWS_S3FS_CURRENT=_LIBAWS_S3FS_CURRENT
+LIBAWS_S3FS_REVISION=_LIBAWS_S3FS_REVISION
+LIBAWS_S3FS_AGE=_LIBAWS_S3FS_AGE
+AC_SUBST([LIBAWS_S3FS_CURRENT])
+AC_SUBST([LIBAWS_S3FS_REVISION])
+AC_SUBST([LIBAWS_S3FS_AGE])
 
 CFLAGS=""
 
@@ -39,7 +46,7 @@ AC_ARG_ENABLE([openssltest],
     AS_HELP_STRING([--disable-openssltest], [Skip OpenSSL tests]),
 	[ac_enable_openssltest=$enableval], [ac_enable_openssltest=auto])
 
-AC_CANONICAL_HOST
+#AC_CANONICAL_SYSTEM
 AC_GNU_SOURCE
 
 # Check for programs.
@@ -66,6 +73,9 @@ AC_PATH_PROGS(PSCAN, pscan)
 AC_HEADER_STDC
 AC_C_CONST
 AC_C_INLINE
+AC_TYPE_UINT32_T
+AC_TYPE_UINT8_T
+AC_TYPE_SIZE_T
 AC_FUNC_MALLOC
 AC_FUNC_REALLOC
 AC_FUNC_FORK
@@ -218,7 +228,7 @@ LIBS="$DEPS_LIBS"
 # Output files.
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_FILES([Makefile src/Makefile data/Makefile doc/Makefile doc/man/Makefile test/Makefile])
-AC_OUTPUT([doc/main.doc debian/postinst debian/postrm])
+AC_OUTPUT([doc/main.doc debian/libaws-s3fs0.postinst debian/libaws-s3fs0.postrm aws-s3fs.pc])
 
 AC_MSG_NOTICE([
 $PACKAGE_NAME version $PACKAGE_VERSION:

@@ -1,1 +1,3 @@
 data/aws-s3fs.conf /etc
+/usr/share/man
+/usr/bin
