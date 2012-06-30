@@ -1,3 +1,16 @@
+2012-07-30:
+    Added CONNECT request to the filecache.
+	Added CACHE request to the filecache.
+	Server/multiclient communication established.
+
+2012-07-29:
+	Work on filecache.
+
+2012-07-28:
+	Prepared debian files for library, binary, and development files.
+	Separated S3 communication further from S3/FUSE functions.
+	Made library multi-user.
+
 2012-07-27:
 	Work on file cache client.
 	Put shared functions into dynamically linkable library.

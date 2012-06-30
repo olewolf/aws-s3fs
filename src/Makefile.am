@@ -19,25 +19,36 @@ AM_LIBS = pthread
 #AM_CFLAGS = -O2 -g
 AM_CFLAGS = -O0 -g
 
-bin_PROGRAMS = aws-s3fs
-aws_s3fs_LDADD = libaws-s3fs0.la
-#bin_PROGRAMS = aws-s3fs aws-s3fs-queue
-aws_s3fs_SOURCES = config.h aws-s3fs.h sysdirs.h aws-s3fs.c \
-	decodecmdline.c configfile.c common.c fix-i386-cc.c config.c \
-	logger.c dircache.h dircache.c s3comms.h \
-	fuseif.c fuseif.h s3if.c s3if.h statcache.c statcache.h
+#bin_PROGRAMS = aws-s3fs aws-s3fs-queue test-client
+bin_PROGRAMS = aws-s3fs test-client test-server
 
-#aws_s3fs_queue_SOURCES = config.h aws-s3fs.h socket.h filecache.c socket.c
+HDR = config.h sysdirs.h s3comms.h fuseif.h s3if.h statcache.h filecache.h \
+	  socket.h aws-s3fs.h dircache.h
+
+aws_s3fs_LDADD = libaws-s3fs0.la
+aws_s3fs_SOURCES = $(HDR) sysdirs.h aws-s3fs.c \
+	decodecmdline.c configfile.c common.c fix-i386-cc.c config.c \
+	logger.c dircache.c fuseif.c s3if.c statcache.c socket.c \
+	filecacheclient.c
+
+#aws_s3fs_queue_LDADD = libaws-s3fs0.la
+#aws_s3fs_queue_SOURCES = config.h aws-s3fs.h socket.h filecache.c socket.c \
+	filecachedb.c
+
+test_client_SOURCES = config.h socket.h filecache.c socket.c filecachedb.c \
+	test-client.c
+
+test_server_SOURCES = config.h aws-s3fs.h socket.h filecache.c socket.c \
+	filecachedb.c test-server.c
+
 
 lib_LTLIBRARIES = libaws-s3fs0.la
 libaws_s3fs0_la_SOURCES = sysdirs.h digest.h digest.c \
 	base64.h base64.c s3comms.h s3comms.c
-libaws_s3fs0_la_LDFLAGS = -version-info $(LIBAWS_S3FS_CURRENT):$(LIBAWS_S3FS_REVISION):$(LIBAWS_S3FS_AGE) $(AM_LDFLAGS)
-
+libaws_s3fs0_la_LDFLAGS = -shared -version-info $(LIBAWS_S3FS_CURRENT):$(LIBAWS_S3FS_REVISION):$(LIBAWS_S3FS_AGE) $(AM_LDFLAGS)
 library_includedir=$(includedir)/aws-s3fs
 library_include_HEADERS = s3comms.h base64.h digest.h
 # -module 
-
 ## For debugging: libaws_s3fs_@AWS_S3FS_API_VERSION@_la_LDFLAGS = -version-info $(AWS_S3FS_SO_VERSION) -all-static
 
 

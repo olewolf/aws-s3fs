@@ -453,7 +453,6 @@ SetOpenFlags( struct OpenFlags *openFlags, int flags )
     openFlags->of_NDELAY    = ( flags & O_NDELAY ) ? true : false;
     openFlags->of_SYNC      = ( flags & O_SYNC ) ? true : false;
     openFlags->of_TRUNC     = ( flags & O_TRUNC ) ? true : false;
-    /* Not supported in S3FS, because they don't make sense on S3. */
     openFlags->of_NOCTTY    = ( flags & O_NOCTTY ) ? true : false;
     openFlags->of_ASYNC     = ( flags & O_ASYNC ) ? true : false;
     openFlags->of_NOFOLLOW  = ( flags & O_NOFOLLOW ) ? true : false;
@@ -796,10 +795,9 @@ s3fs_open(
     int               status    = 0;
     int               fh        = 0;
     struct S3FileInfo *fileInfo;
-    struct OpenFlags  openFlags;
+    struct OpenFlags  *openFlags;
     struct S3FileInfo *parentFi;
 
-    //    int  position;
     char *parent;
 
     printf( "s3fs_open: %s\n", path );
@@ -808,37 +806,23 @@ s3fs_open(
     if( ( path == NULL ) || ( strcmp( path, "" ) == 0 ) )
     {
         status = -ENOENT;
-	return( status );
+		return( status );
     }
     /* Verify that all path components but the last one are directories. */
     status = ValidateDirectoryComponents( path, false );
     if( status != 0 )
     {
-	return( status );
+		return( status );
     }
-#if 0
-    /* Get the parent directory of the file that is to be opened. */
-    position = strlen( path );
-    while( ( 0 <= --position ) && ( path[ position ] == '/' ) );
-    while( ( 0 <= --position ) && ( path[ position ] != '/' ) );
-    if( position != 0 )
-    {
-        parent = malloc( position + sizeof( char ) );
-	strncpy( parent, path, position );
-	parent[ position ] = '\0';
-    }
-    else
-    {
-        parent = NULL;
-    }
-#endif
+	/* The parent directory  must be searchable to allow file access, so stat
+	   the parent directory to find its properties. */
     parent = GetPathPrefix( path );
     status = S3FileStat( parent, &parentFi );
     if( status != 0 )
     {
         return( -EACCES );
     }
-    /* The parent must have search permissions. */
+    /* Determine whether the parent has search permissions. */
     if( ! IsExecutable( parentFi ) )
     {
         return( -EACCES );
@@ -850,96 +834,100 @@ s3fs_open(
     {
         status = -EACCES;
 
-	/* The file stat cache provides information about the file. */
-	status = S3FileStat( path, &fileInfo );
-	if( status != 0 )
-	{
-	    status = -ENOENT;
-	}
-	else
-	{
-	    status = -EACCES;
-
-	    fileDescriptors[ fh ] = fileInfo;
-	    Syslog( log_DEBUG, "File handle %d allocated\n", fh );
-	    /* http://sourceforge.net/apps/mediawiki/fuse/index.php?title=Fuse_file_info */
-	    SetOpenFlags( &openFlags, fi->flags );
-	    printf( "Checking flags... fi->flags = %08x\n", fi->flags );
-
-	    /* Do not follow symbolic links. */
-	    if( ( openFlags.of_NOFOLLOW ) && ( fileInfo->fileType == 'l' ) )
-	    {
-	        status = -EACCES;
-		goto open_end;
-	    }
-	    if( openFlags.of_WRONLY || openFlags.of_RDWR )
-	    {
-	        /* O_WRONLY or O_RDWR applied to a directory. */
-	        if( fileInfo->fileType == 'd' )
-	        {
-		    status = -EISDIR;
-		    goto open_end;
-		}
-		/* If a write is specified, the parent must have write
-		   permissions. */
-		if( ! IsExecutable( parentFi ) )
+		/* The file stat cache provides information about the file. */
+		status = S3FileStat( path, &fileInfo );
+		if( status != 0 )
 		{
-		    return( -EACCES );
+			status = -ENOENT;
 		}
-	    }
-	    /* O_WRONLY is allowed if the file exists and has write
-	       permissions. (If the file doesn't exist, the O_CREAT flag
-	       must also be set. However, this flag isn't passed to this
-	       function. Or? There's something about kernel 2.6 and FUSE.)
-	       See if the file exists and has write permissions. */
-	    if( ( openFlags.of_WRONLY ) && IsWriteable( fileInfo ) )
-	    {
-	        status = 0;
-	    }
-	    /* For O_RDONLY, the file must have read permissions. For
-	       O_RDWR and O_APPEND, the file must have both read and write
-	       permissions. */
-	    else if( openFlags.of_RDONLY || openFlags.of_RDWR
-		     || openFlags.of_APPEND )
-	    {
-		/* Todo: if O_RDWR and O_TRUNC are set, the file will be
-		   created if necessary. The O_TRUNC indicates an atomic
-		   operation in this case. */
-	        if( IsReadable( fileInfo ) )
+		else
 		{
-		    status = 0;
+			status = -EACCES;
+
+			fileDescriptors[ fh ] = fileInfo;
+			Syslog( log_DEBUG, "File handle %d allocated\n", fh );
+			openFlags = &fileInfo->openFlags;
+			SetOpenFlags( openFlags, fi->flags );
+
+			/* Do not follow symbolic links. */
+			if( ( openFlags->of_NOFOLLOW ) && ( fileInfo->fileType == 'l' ) )
+			{
+				status = -EACCES;
+				goto open_end;
+			}
+			if( openFlags->of_WRONLY || openFlags->of_RDWR )
+			{
+				/* O_WRONLY or O_RDWR applied to a directory. */
+				if( fileInfo->fileType == 'd' )
+				{
+					status = -EISDIR;
+					goto open_end;
+				}
+				/* If a write is specified, the parent must have write
+				   permissions. */
+				if( ! IsExecutable( parentFi ) )
+				{
+					return( -EACCES );
+				}
+			}
+			/* O_WRONLY is allowed if the file exists and has write
+			   permissions. (If the file doesn't exist, the O_CREAT flag
+			   must also be set. However, this flag isn't passed to this
+			   function. Or? There's something about kernel 2.6 and FUSE.)
+			   See if the file exists and has write permissions. */
+			if( ( openFlags->of_WRONLY ) && IsWriteable( fileInfo ) )
+			{
+				status = 0;
+			}
+			/* For O_RDONLY, the file must have read permissions. For
+			   O_RDWR and O_APPEND, the file must have both read and write
+			   permissions. */
+			else if( openFlags->of_RDONLY || openFlags->of_RDWR
+					 || openFlags->of_APPEND )
+			{
+				/* Todo: if O_RDWR and O_TRUNC are set, the file will be
+				   created if necessary. The O_TRUNC indicates an atomic
+				   operation in this case. */
+				if( IsReadable( fileInfo ) )
+				{
+					status = 0;
+				}
+				if( ( openFlags->of_RDWR || openFlags->of_APPEND )
+					&& ( ! IsWriteable( fileInfo ) ) )
+				{
+					status = -EACCES;
+				}
+			}
+			else
+			{
+				status = -EACCES;
+			}
 		}
-		if( ( openFlags.of_RDWR || openFlags.of_APPEND )
-		    && ( ! IsWriteable( fileInfo ) ) )
-	        {
-		    status = -EACCES;
-		}
-	    }
-	    else
-	    {
-	        status = -EACCES;
-	    }
-	}
     }
     /* All file descriptors in use. */
     else
     {
         status = -EMFILE;
-	Syslog( log_INFO, "All file handles in use\n" );
+		Syslog( log_INFO, "All file handles in use\n" );
     }
 
  open_end:
+    if( parent != NULL )
+    {
+		free( parent );
+    }
+
     if( status != 0 )
     {
         /* The file info structure is released when it expires from
-	   the stat cache. */
+		   the stat cache. */
         fileDescriptors[ fh ] = NULL;
-	fh = -1;
+		fh = -1;
     }
-    if( parent != NULL )
-    {
-	free( parent );
-    }
+	else
+	{
+		status = S3Open( path );
+	}
 
     fi->fh = fh;
     return status;

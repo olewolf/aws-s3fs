@@ -33,13 +33,13 @@
 #include <curl/curl.h>
 #include <time.h>
 #include <libxml/parser.h>
-#include <dlfcn.h>
 #include "aws-s3fs.h"
 #include "s3if.h"
 #include "digest.h"
 #include "statcache.h"
 #include "dircache.h"
 #include "s3comms.h"
+#include "filecache.h"
 
 
 /* The REST interface does not allow the creation of directories. Instead,
@@ -69,9 +69,6 @@ static pthread_mutex_t cache_mutex = PTHREAD_MUTEX_INITIALIZER;
 static long int localTimezone;
 
 /* Handle for the digest and S3 communications lib. */
-#ifndef AUTOTEST
-static void *libHandle;
-#endif
 STATIC S3COMM *s3comm;
 
 
@@ -109,7 +106,7 @@ void
 void
 InitializeS3If(
     void
-	       )
+	          )
 {
     time_t    tnow;
     struct tm tm;
@@ -117,9 +114,8 @@ InitializeS3If(
 	/* Load functions for digests, signing, and sending and receiving
 	 * messages to S3. */
 #ifndef AUTOTEST
-	libHandle = dlopen( AWS_S3FS_LIB, RTLD_LAZY );
-	s3comm    = s3_open( globalConfig.region, globalConfig.bucketName,
-						 globalConfig.keyId, globalConfig.secretKey );
+	s3comm = s3_open( globalConfig.region, globalConfig.bucketName,
+					  globalConfig.keyId, globalConfig.secretKey );
 #endif
 
     /* Initialize libxml. */
@@ -184,14 +180,14 @@ GetHttpStatus(
     {
         /* Find the HTTP status code. */
         i = strlen( "HTTP/1.1 " );
-	if( strncmp( httpReply, "HTTP/1.1 ", i ) == 0 )
-	{
-	    while( ( ( ch = httpReply[ i ] ) != '\0' ) && ( ! isdigit( ch ) ) )
-	    {
-		i++;
-	    }
-	    httpStatus = atoi( &httpReply[ i ] );
-	}
+		if( strncmp( httpReply, "HTTP/1.1 ", i ) == 0 )
+		{
+			while( ( ( ch = httpReply[ i ] ) != '\0' ) && ( ! isdigit( ch ) ) )
+			{
+				i++;
+			}
+			httpStatus = atoi( &httpReply[ i ] );
+		}
     }
 
     return( httpStatus );
@@ -217,7 +213,7 @@ GetHeaderInt(
     /* Convert the value. Possible errors are EILSEQ or ERANGE. */
     if( sscanf( string, "%Ld", value ) == EOF )
     {
-	success = -errno;
+		success = -errno;
     }
     return( success );
 }
@@ -246,7 +242,7 @@ GetHeaderTime(
     char      chNext;
     int       val;
     const char *months[ ] = { "jan", "feb", "mar", "apr", "may", "jun",
-			      "jul", "aug", "sep", "oct", "nov", "dec" };
+							  "jul", "aug", "sep", "oct", "nov", "dec" };
 
     memset( &tm, 0, sizeof( struct tm ) );
     *value  = 0l;
@@ -256,22 +252,22 @@ GetHeaderTime(
 
 #define DECODE_TIME_FIND_ALPHA( src, index, character ) \
     while( ( ( (character) = (src)[index] ) != '\0' )   \
-	   && ( ! isalpha( character ) ) )              \
+		   && ( ! isalpha( character ) ) )              \
         (index)++;                                      \
     if( character == '\0' ) return -EILSEQ
-
+	
 #define DECODE_TIME_FIND_DIGIT( src, index, character ) \
     while( ( ( (character) = (src)[index] ) != '\0' )   \
-	   && ( ! isdigit( character ) ) )              \
+		   && ( ! isdigit( character ) ) )              \
         (index)++;                                      \
     if( character == '\0' ) return -EILSEQ
 
 #define DECODE_TIME_GET_DOUBLEDIGIT( string, idx, value, max )	\
-    ch = ((string)[ idx ]);                             \
-    chNext = ((string)[ (idx) + 1 ]);                   \
+    ch = ((string)[ idx ]);										\
+    chNext = ((string)[ (idx) + 1 ]);									\
     if( ( ! isdigit( ch ) ) || ( ! isdigit( chNext ) ) ) return( -EILSEQ ); \
-    (value) = ch - '0';					\
-    (value) = (value) * 10 + chNext - '0';		\
+    (value) = ch - '0';													\
+    (value) = (value) * 10 + chNext - '0';								\
     if( (value) >= (max) ) return( -ERANGE )
 
     /* Decode day of month. */
@@ -312,10 +308,10 @@ GetHeaderTime(
     for( i = 0; i < 3; i++ )
     {
         if( ! isdigit( ch = string[ ++idx ] ) )
-	{
-	    return( -EILSEQ );
-	}
-	val = val * 10 + ch - '0';
+		{
+			return( -EILSEQ );
+		}
+		val = val * 10 + ch - '0';
     }
     if( val < 1900 )
     {
@@ -361,7 +357,7 @@ STATIC int
 S3GetFileStat(
     const char        *filename,
     struct S3FileInfo **fileInfo
-	      )
+	         )
 {
     struct curl_slist *headers = NULL;
     struct S3FileInfo *newFileInfo = NULL;
@@ -379,124 +375,124 @@ S3GetFileStat(
 
     /* Make request via curl and wait for response. */
     status = s3_SubmitS3Request( s3comm, "HEAD", headers, filename,
-								   (void**)&response, &length );
+								 (void**)&response, &length );
     if( status == 0 )
     {
         /* Prepare an S3 File Info structure. */
         newFileInfo = malloc( sizeof (struct S3FileInfo ) );
-	assert( newFileInfo != NULL );
-	/* Set default values. */
-	memset( newFileInfo, 0, sizeof( struct S3FileInfo ) );
-	newFileInfo->filenotfound = false;
-	newFileInfo->fileType    = 'f';
-	newFileInfo->permissions = 0644;
-	/* A trailing slash in the filename indicates that it is a directory. */
-	if( filename[ strlen( filename ) - 1 ] == '/' )
-	{
-	    newFileInfo->fileType    = 'd';
-	    newFileInfo->permissions = 0755;
-	}
-	newFileInfo->uid = getuid( );
-	newFileInfo->gid = getgid( );
-	newFileInfo->symlinkTarget = NULL;
-	/* Translate header values to S3 File Info values. */
-	for( headerIdx = 0; headerIdx < length; headerIdx++ )
-	{
-	    headerKey   = response[ headerIdx * 2     ];
-	    headerValue = response[ headerIdx * 2 + 1 ];
+		assert( newFileInfo != NULL );
+		/* Set default values. */
+		memset( newFileInfo, 0, sizeof( struct S3FileInfo ) );
+		newFileInfo->filenotfound = false;
+		newFileInfo->fileType    = 'f';
+		newFileInfo->permissions = 0644;
+		/* A trailing slash in the filename indicates that it is a directory. */
+		if( filename[ strlen( filename ) - 1 ] == '/' )
+		{
+			newFileInfo->fileType    = 'd';
+			newFileInfo->permissions = 0755;
+		}
+		newFileInfo->uid = getuid( );
+		newFileInfo->gid = getgid( );
+		newFileInfo->symlinkTarget = NULL;
+		/* Translate header values to S3 File Info values. */
+		for( headerIdx = 0; headerIdx < length; headerIdx++ )
+		{
+			headerKey   = response[ headerIdx * 2     ];
+			headerValue = response[ headerIdx * 2 + 1 ];
 
-	    if( strcmp( headerKey, "x-amz-meta-uid" ) == 0 )
-	    {
-	        if( ( status = GetHeaderInt( headerValue, &tempValue ) ) != 0 )
-		{
-		    break;
+			if( strcmp( headerKey, "x-amz-meta-uid" ) == 0 )
+			{
+				if( ( status = GetHeaderInt( headerValue, &tempValue ) ) != 0 )
+				{
+					break;
+				}
+				newFileInfo->uid = tempValue;
+			}
+			else if( strcmp( headerKey, "x-amz-meta-gid" ) == 0 )
+			{
+				if( ( status = GetHeaderInt( headerValue, &tempValue ) ) != 0 )
+				{
+					break;
+				}
+				newFileInfo->gid = tempValue;
+			}
+			else if( strcmp( headerKey, "x-amz-meta-mode" ) == 0 )
+			{
+				if( ( status = GetHeaderInt( headerValue, &tempValue ) ) != 0 )
+				{
+					break;
+				}
+				mode = tempValue;
+				newFileInfo->permissions = mode & 0777;
+				newFileInfo->exeUid      = ( mode & S_ISUID ) ? true : false;
+				newFileInfo->exeGid      = ( mode & S_ISGID ) ? true : false;
+				newFileInfo->sticky      = ( mode & S_ISVTX ) ? true : false;
+			}
+			else if( strcmp( headerKey, "Content-Type" ) == 0 )
+			{
+				if( strncmp( headerValue,
+							 "application/x-directory", 23 ) == 0 )
+				{
+					newFileInfo->fileType = 'd';
+				}
+				else if( strncmp( headerValue,
+								  "application/x-symlink", 21 ) == 0 )
+				{
+					newFileInfo->fileType = 'l';
+				}
+			}
+			else if( strcmp( headerKey, "Content-Length" ) == 0 )
+			{
+				if( ( status = GetHeaderInt( headerValue, &tempValue ) ) != 0 )
+				{
+					break;
+				}
+				newFileInfo->size = tempValue;
+			}
+			else if( strcmp( headerKey, "x-amz-meta-atime" ) == 0 )
+			{
+				if( ( status =
+					  GetHeaderTime( headerValue, &newFileInfo->atime ) ) != 0 )
+				{
+					break;
+				}
+			}
+			else if( strcmp( headerKey, "x-amz-meta-ctime" ) == 0 )
+			{
+				if( ( status =
+					  GetHeaderTime( headerValue, &newFileInfo->ctime ) ) != 0 )
+				{
+					break;
+				}
+			}
+			/* For s3fs compatibility. However, there is already a
+			   "Last-Modified" header, which contains this data. Use that
+			   instead if possible. */
+			else if( strcmp( headerKey, "x-amz-meta-mtime" ) == 0 )
+			{
+				/* Do not override the Last-Modified header. */
+				if( newFileInfo->mtime != 0l )
+				{
+					if( ( status =
+						  GetHeaderTime( headerValue, &newFileInfo->mtime ) )
+						!= 0 )
+					{
+						break;
+					}
+				}
+			}
+			else if( strcmp( headerKey, "Last-Modified" ) == 0 )
+			{
+				/* Last-Modified overrides the x-amz-meta-mtime header. */
+				if( ( status =
+					  GetHeaderTime( headerValue, &newFileInfo->mtime ) ) != 0 )
+				{
+					break;
+				}
+			}
 		}
-		newFileInfo->uid = tempValue;
-	    }
-	    else if( strcmp( headerKey, "x-amz-meta-gid" ) == 0 )
-	    {
-	        if( ( status = GetHeaderInt( headerValue, &tempValue ) ) != 0 )
-		{
-		    break;
-		}
-		newFileInfo->gid = tempValue;
-	    }
-	    else if( strcmp( headerKey, "x-amz-meta-mode" ) == 0 )
-	    {
-	        if( ( status = GetHeaderInt( headerValue, &tempValue ) ) != 0 )
-		{
-		    break;
-		}
-		mode = tempValue;
-		newFileInfo->permissions = mode & 0777;
-		newFileInfo->exeUid      = ( mode & S_ISUID ) ? true : false;
-		newFileInfo->exeGid      = ( mode & S_ISGID ) ? true : false;
-		newFileInfo->sticky      = ( mode & S_ISVTX ) ? true : false;
-	    }
-	    else if( strcmp( headerKey, "Content-Type" ) == 0 )
-	    {
-		if( strncmp( headerValue,
-			     "application/x-directory", 23 ) == 0 )
-		{
-		    newFileInfo->fileType = 'd';
-		}
-		else if( strncmp( headerValue,
-				  "application/x-symlink", 21 ) == 0 )
-		{
-		    newFileInfo->fileType = 'l';
-		}
-	    }
-	    else if( strcmp( headerKey, "Content-Length" ) == 0 )
-	    {
-	        if( ( status = GetHeaderInt( headerValue, &tempValue ) ) != 0 )
-		{
-		    break;
-		}
-		newFileInfo->size = tempValue;
-	    }
-	    else if( strcmp( headerKey, "x-amz-meta-atime" ) == 0 )
-	    {
-  	        if( ( status =
-		      GetHeaderTime( headerValue, &newFileInfo->atime ) ) != 0 )
-		{
-		    break;
-		}
-	    }
-	    else if( strcmp( headerKey, "x-amz-meta-ctime" ) == 0 )
-	    {
-  	        if( ( status =
-		      GetHeaderTime( headerValue, &newFileInfo->ctime ) ) != 0 )
-		{
-		    break;
-		}
-	    }
-	    /* For s3fs compatibility. However, there is already a
-	       "Last-Modified" header, which contains this data. Use that
-	       instead if possible. */
-	    else if( strcmp( headerKey, "x-amz-meta-mtime" ) == 0 )
-	    {
-	        /* Do not override the Last-Modified header. */
-	        if( newFileInfo->mtime != 0l )
-		{
-		      if( ( status =
-			    GetHeaderTime( headerValue, &newFileInfo->mtime ) )
-			  != 0 )
-		      {
-			  break;
-		      }
-		}
-	    }
-	    else if( strcmp( headerKey, "Last-Modified" ) == 0 )
-	    {
-	        /* Last-Modified overrides the x-amz-meta-mtime header. */
-	        if( ( status =
-		      GetHeaderTime( headerValue, &newFileInfo->mtime ) ) != 0 )
-		{
-		    break;
-		}
-	    }
-	}
-	free( response );
+		free( response );
     }
 
     if( status == 0 )
@@ -506,9 +502,9 @@ S3GetFileStat(
     else
     {
         if( newFileInfo != NULL )
-	{
- 	    free( newFileInfo );
-	}
+		{
+			free( newFileInfo );
+		}
     }
     return( status );
 }
@@ -528,7 +524,7 @@ ResolveS3FileStatCacheMiss(
     const char        *filename,
     struct S3FileInfo **fi,
     const char        *hashAs
-			   )
+	                      )
 {
     int               status;
     struct S3FileInfo *newFileInfo = NULL;
@@ -538,7 +534,7 @@ ResolveS3FileStatCacheMiss(
     if( status == 0 )
     {
         InsertCacheElement( hashAs, newFileInfo, &DeleteS3FileInfoStructure );
-	*fi = newFileInfo;
+		*fi = newFileInfo;
     }
     return( status );
 }
@@ -546,7 +542,8 @@ ResolveS3FileStatCacheMiss(
 
 
 /**
- * Get the name of the specified file's parent directory.
+ * Get the name of the specified file's parent directory. This is primarily
+ * used to determine the permissions of the parent directory.
  * @param path [in] A file path.
  * @return The parent directory of the file path.
  */
@@ -560,7 +557,7 @@ GetParentDir( const char *path )
     endIdx = strlen( path ) - sizeof( char );
     while( ( endIdx != 0 ) && ( path[ endIdx ] != '/' ) )
     {
-	endIdx--;
+		endIdx--;
     }
     /* If there is no parent, specify "/" as parent. */
     if( endIdx == 0 )
@@ -571,8 +568,8 @@ GetParentDir( const char *path )
     {
         /* Copy from the beginning of the string until the endIdx. */
         parent = malloc( endIdx + sizeof( char ) );
-	strncpy( parent, path, endIdx );
-	parent[ endIdx ] = '\0';
+		strncpy( parent, path, endIdx );
+		parent[ endIdx ] = '\0';
     }
 
     return( parent );
@@ -580,11 +577,19 @@ GetParentDir( const char *path )
 
 
 
+/**
+ * Remove any occurrences of '/' after a filename.
+ * @param filename [in/out] File path that may end with one or more slashes.
+ * @param makeCopy [in] If \a true, return a copy of the file path (without
+ *        the trailing slashes). If \a false, remove the slash in the
+ *        original string.
+ * @return Filename without trailing slashes.
+ */
 static char*
 StripTrailingSlash(
     char *filename,
     bool makeCopy
-		   )
+	              )
 {
     char *dirname;
     int  dirnameLength;
@@ -592,13 +597,13 @@ StripTrailingSlash(
     if( makeCopy )
     {
         if( filename == NULL )
-	{
-	    dirname = strdup( "" );
-	}
-	else
-	{
-	    dirname = strdup( filename );
-	}
+		{
+			dirname = strdup( "" );
+		}
+		else
+		{
+			dirname = strdup( filename );
+		}
     }
     else
     {
@@ -608,15 +613,15 @@ StripTrailingSlash(
     /* Strip all trailing slashes. */
     if( dirname != NULL )
     {
-	dirnameLength = strlen( dirname );
-	while( --dirnameLength != 0 )
-	{
-	    if( dirname[ dirnameLength ] != '/' )
-	    {
-		break;
-	    }
-	    dirname[ dirnameLength ] = '\0';
-	}
+		dirnameLength = strlen( dirname );
+		while( --dirnameLength != 0 )
+		{
+			if( dirname[ dirnameLength ] != '/' )
+			{
+				break;
+			}
+			dirname[ dirnameLength ] = '\0';
+		}
     }
 
     return dirname;
@@ -624,10 +629,15 @@ StripTrailingSlash(
 
 
 
+/**
+ * Add a trailing slash after a filename unless there already is one.
+ * @param filename [in] Filename path.
+ * @return Filename path with an appended '/'.
+ */
 static char*
 AddTrailingSlash(
     const char *filename
-		 )
+	            )
 {
     char *dirname;
     int  filenameLength;
@@ -635,15 +645,15 @@ AddTrailingSlash(
     if( filename == NULL )
     {
         filenameLength = 0;
-	dirname = malloc( 2 * sizeof( char ) );
-	dirname[ 0 ] = '/';
-	dirname[ 1 ] = '\0';
+		dirname = malloc( 2 * sizeof( char ) );
+		dirname[ 0 ] = '/';
+		dirname[ 1 ] = '\0';
     }
     else
     {
-	filenameLength = strlen( filename );
-	dirname = malloc( filenameLength + 2 * sizeof( char ) );
-	strncpy( dirname, filename, filenameLength );
+		filenameLength = strlen( filename );
+		dirname = malloc( filenameLength + 2 * sizeof( char ) );
+		strncpy( dirname, filename, filenameLength );
     }
     /* Add trailing slash if necessary. */
     if( ( filenameLength != 0 ) && ( dirname[ filenameLength - 1 ] != '/' ) )
@@ -770,10 +780,15 @@ S3FileStat(
 
 
 
+/**
+ * Create a URL safe version of a raw URL.
+ * @param url [in] Raw URL that is to be URL-encoded.
+ * @return URL-safe version of the URL.
+ */
 STATIC char*
 EncodeUrl(
     const char *url
-	  )
+	      )
 {
     const char const *hexChar = "0123456789ABCDEF";
     char       *safeUrl;
@@ -792,22 +807,22 @@ EncodeUrl(
 
 	/* Safe characters. */
         if( isalnum( ch ) || ( ch == '-' ) ||
-	    ( ch == '_' ) || ( ch == '.' ) || ( ch == '~' ) )
+			( ch == '_' ) || ( ch == '.' ) || ( ch == '~' ) )
         {
-	    *safeUrlPtr++ = ch;
-	}
-	/* Space becomes +. */
-	else if( ch == ' ' )
-	{
-	    *safeUrlPtr++ = '+';
-	}
-	/* Other characters are hex-encoded. */
-	else
-	{
-	    *safeUrlPtr++ = '%';
-	    *safeUrlPtr++ = hexChar[ ( ch >> 4 ) & 0x0f ];
-	    *safeUrlPtr++ = hexChar[   ch        & 0x0f ];
-	}
+			*safeUrlPtr++ = ch;
+		}
+		/* Space becomes +. */
+		else if( ch == ' ' )
+		{
+			*safeUrlPtr++ = '+';
+		}
+		/* Other characters are hex-encoded. */
+		else
+		{
+			*safeUrlPtr++ = '%';
+			*safeUrlPtr++ = hexChar[ ( ch >> 4 ) & 0x0f ];
+			*safeUrlPtr++ = hexChar[   ch        & 0x0f ];
+		}
     }
     *safeUrlPtr = '\0';
 
@@ -817,7 +832,7 @@ EncodeUrl(
 
 
 /**
- * Recursive function that goes through an XML file and adds the contents of
+ * Recursive function that parses an XML file and adds the contents of
  * all occurrences of <key> to a linked list. In addition, if the function
  * encounters a <marker> node, it records its contents.
  * @param node [in] Current XML node.
@@ -836,7 +851,7 @@ ReadXmlDirectory(
     struct curl_slist **directory,
     char              **marker,
     int               *nFiles
-		 )
+ 	            )
 {
     xmlNode    *currentNode;
     char       *direntry;
@@ -849,63 +864,77 @@ ReadXmlDirectory(
     for( currentNode = node; currentNode; currentNode = currentNode->next )
     {
         if( currentNode->type == XML_ELEMENT_NODE )
-	{
-	    /* "Key" and "Prefix" mark file or directory names,
-	       respectively. */
-	    nodeName =  (char*) currentNode->name;
-	    nodeValue = (char*) xmlNodeGetContent( currentNode );
-	    if( ( strcmp( nodeName, "Key" ) == 0 ) ||
-		( strcmp( nodeName, "Prefix" ) == 0 ) )
-	    {
-	        /* Strip the prefix from the path and add the directory. */
-	        if( strcmp( &nodeValue[ prefixLength ], "" ) != 0 )
 		{
-		    direntry = malloc( strlen( nodeValue )
-				       - prefixLength
-				       + 2 * sizeof( char ) );
-		    strcpy( direntry, &nodeValue[ prefixLength ] );
-		    *directory = curl_slist_append( *directory, direntry );
-		    (*nFiles)++;
+			/* "Key" and "Prefix" mark file or directory names,
+			   respectively. */
+			nodeName =  (char*) currentNode->name;
+			nodeValue = (char*) xmlNodeGetContent( currentNode );
+			if( ( strcmp( nodeName, "Key" ) == 0 ) ||
+				( strcmp( nodeName, "Prefix" ) == 0 ) )
+			{
+				/* Strip the prefix from the path and add the directory. */
+				if( strcmp( &nodeValue[ prefixLength ], "" ) != 0 )
+				{
+					direntry = malloc( strlen( nodeValue )
+									   - prefixLength
+									   + 2 * sizeof( char ) );
+					strcpy( direntry, &nodeValue[ prefixLength ] );
+					*directory = curl_slist_append( *directory, direntry );
+					(*nFiles)++;
+				}
+			}
+			/* Record marker names that might be encountered. */
+			else if( strcmp( nodeName, "NextMarker" ) == 0 )
+			{
+				if( strlen( nodeValue ) != 0 )
+				{	
+					if( *marker != NULL )
+					{
+						free( *marker );
+					}
+					*marker = malloc( strlen( nodeValue ) + sizeof( char ) );
+					strcpy( *marker, nodeValue );
+				}
+			}
+			/* If this is the last entry, clear the "marker" data to
+			   indicate that the directory chunk loop may end. (IsTruncated
+			   is actually redundant, because the presence of "NextMarker"
+			   implies that the directory listing was truncated.) */
+			else if( strcmp( nodeName, "IsTruncated" ) == 0 )
+			{
+				if( strcmp( nodeValue, "false" ) == 0 )
+				{
+					if( *marker != NULL )
+					{
+						free( *marker );
+						*marker = NULL;
+					}
+				}
+			}
 		}
-	    }
-	    /* Record marker names that might be encountered. */
-	    else if( strcmp( nodeName, "NextMarker" ) == 0 )
-	    {
-	        if( strlen( nodeValue ) != 0 )
-		{	
-		    if( *marker != NULL )
-		    {
-		        free( *marker );
-		    }
-		    *marker = malloc( strlen( nodeValue ) + sizeof( char ) );
-		    strcpy( *marker, nodeValue );
-		}
-	    }
-	    /* If this is the last entry, clear the "marker" data to
-	       indicate that the directory chunk loop may end. (IsTruncated
-	       is actually redundant, because the presence of "NextMarker"
-	       implies that the directory listing was truncated.) */
-	    else if( strcmp( nodeName, "IsTruncated" ) == 0 )
-	    {
-	        if( strcmp( nodeValue, "false" ) == 0 )
-		{
-		    if( *marker != NULL )
-		    {
-		        free( *marker );
-			*marker = NULL;
-		    }
-		}
-	    }
-        }
-
-	ReadXmlDirectory( currentNode->children, prefixLength,
-			  directory, marker, nFiles );
+		
+		ReadXmlDirectory( currentNode->children, prefixLength,
+						  directory, marker, nFiles );
     }
 }
 #pragma GCC diagnostic pop
 
 
 
+/**
+ * Read the contents of a directory and place it in the directory cache, then
+ * return the directory contents. If the directory is already in the cache,
+ * mark it as least recently used.
+ * @param fi [in] File info for the directory.
+ * @param dirname [in] Path name of the directory.
+ * @param nameArray [out] Pointer to where the directory contents (an array
+ *        of strings) is stored.
+ * @param nFiles [out] The number of files in the directory, including '.'
+ *        and "..".
+ * @param maxRead [in] The maximum number of directory entries to read. If -1,
+ *        read the entire directory.
+ * @return 0 on success, or \a -errno on failure.
+ */
 /* Disable warning that fi is unused. */
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
@@ -916,7 +945,7 @@ S3ReadDir(
     char              ***nameArray,
     int               *nFiles,
     int               maxRead
-	  )
+	     )
 {
     int        status = 0;
 
@@ -1128,8 +1157,171 @@ S3ReadDir(
 #pragma GCC diagnostic pop
 
 
+/**
+ * Convert an OpenFlags structure to the value that is accepted by the open( )
+ * function.
+ * @param openFlags [in] Pointer to an OpenFlags structure.
+ * @return Value for the open( ) function.
+ */
+int
+ConvertOpenFlagsToValue(
+	const struct OpenFlags *openFlags
+	                   )
+{
+    #define SET_OFLAGS( flag ) if( openFlags->of_##flag ) oFlags |= O_##flag
 
-/** Read data from an open file
+	int oFlags = O_RDONLY;
+	SET_OFLAGS( WRONLY );
+	SET_OFLAGS( RDWR );
+	SET_OFLAGS( CREAT );
+	SET_OFLAGS( APPEND );
+	SET_OFLAGS( EXCL );
+	SET_OFLAGS( DIRECT );
+	SET_OFLAGS( DIRECTORY );
+	SET_OFLAGS( LARGEFILE );
+	SET_OFLAGS( NOATIME );
+	SET_OFLAGS( NONBLOCK );
+	SET_OFLAGS( NDELAY );
+	SET_OFLAGS( SYNC );
+	SET_OFLAGS( TRUNC );
+	SET_OFLAGS( NOCTTY );
+	SET_OFLAGS( ASYNC );
+	SET_OFLAGS( NOFOLLOW );
+
+	return( oFlags );
+}
+
+
+
+/**
+ * Create a file. The function assumes that the FUSE interface has already
+ * determined that file access is allowed according to the open flags.
+ * @param path [in] Path name of the file.
+ * @param permissions [in] File permissions, if the file is to be created.
+ * @return 0 on success, or \a -errno on failure.
+ */
+int
+S3Create(
+	const char *path,
+	mode_t     permissions
+	     )
+{
+	struct S3FileInfo *fi;
+	int               status;
+	char              *localname;
+
+	status = S3FileStat( path, &fi );
+	if( status == 0 )
+	{
+		status = OpenCacheFile( path, fi->uid, fi->gid,
+								fi->permissions, time( NULL ), &localname );
+		if( status == 0 )
+		{
+			/* Delete the local file first. */
+			LockCaches( );
+			if( fi->openFlags.of_TRUNC || fi->openFlags.of_CREAT )
+			{
+				unlink( localname );
+			}
+			/* Create the file with the specified open and permissions flags. */
+			status = creat( localname,
+							permissions );
+			UnlockCaches( );
+
+			if( 0 <= status )
+			{
+				fi->localFd = status;
+				/* Set access time to now. */
+				fi->atime = time( NULL );
+				status = 0;
+			}
+			free( localname );
+		}
+	}
+
+	return( status );
+}
+
+
+
+/**
+ * Open a file. The function assumes that the FUSE interface has already
+ * determined that file access is allowed according to the open flags.
+ * @param path [in] Path name of the file.
+ * @return 0 on success, or \a -errno on failure.
+ */
+int
+S3Open(
+	const char *path
+	  )
+{
+	struct S3FileInfo *fi;
+	int               status;
+	char              *localname;
+
+	status = S3FileStat( path, &fi );
+	if( status == 0 )
+	{
+		status = OpenCacheFile( path, fi->uid, fi->gid, fi->permissions,
+								fi->mtime, &localname );
+		if( status == 0 )
+		{
+			LockCaches( );
+			if( fi->openFlags.of_TRUNC || fi->openFlags.of_CREAT )
+			{
+				unlink( localname );
+			}
+			status = open( localname,
+						   ConvertOpenFlagsToValue( &fi->openFlags ) );
+			UnlockCaches( );
+
+			if( 0 <= status )
+			{
+				fi->localFd = status;
+				/* Set access time to now. */
+				fi->atime = time( NULL );
+				status = 0;
+			}
+			free( localname );
+		}
+	}
+
+	return( status );
+}
+
+
+
+/**
+ * Close an open file and signal to the caches that the file is ready for
+ * synchronization.
+ * @param path [in] File path.
+ * @return 0 on success, or \a -errno on failure.
+ */
+int
+S3Close(
+	const char *path
+	   )
+{
+	struct S3FileInfo *fi;
+	int               success = -EIO;
+
+	success = S3FileStat( path, &fi );
+	if( success == 0 )
+	{
+		success = close( fi->localFd );
+		fi->localFd = -1;
+	}
+
+	CloseCacheFile( path );
+
+	return( success );
+}
+
+
+
+/**
+ * Read data from an open file. If the file is not cached, the read stalls
+ * until the entire file has been downloaded.
  * @param path [in] Full file path.
  * @param buf [out] Destination buffer for the file contents.
  * @param maxSize [in] Maximum number of octets to read.
@@ -1144,39 +1336,55 @@ S3ReadFile(
     size_t     maxSize,
     off_t      offset,
     size_t     *actuallyRead
-	   )
+	       )
 {
     struct S3FileInfo *fi;
     int               status;
+
+    status = S3FileStat( path, &fi );
+    if( status == 0 )
+    {
+		if( fi->fileType == 'f' )
+		{
+			/* Queue file for download and wait. */
+			status = DownloadCacheFile( path );
+			/* Turn over the file read to the local read function now
+			   that the file is stored locally. */
+			if( status == 0 )
+			{
+				status = pread( fi->localFd, buf, maxSize, offset );
+				if( 0 <= status )
+				{
+					*actuallyRead = status;
+				}
+			}
+
+#if 0
     int               receivedSize;
     char              *contents;
     struct curl_slist *headers = NULL;
     char              range[ 50 ];
 
-    status = S3FileStat( path, &fi );
-    if( status == 0 )
-    {
-	if( fi->fileType == 'f' )
-	{
-	    /* Get the file contents between "offset" and the following
-	       "maxSize" bytes, both included. */
-	    sprintf( range, "Range:bytes=%lld-%lld",
-		     (long long) offset, (long long) offset + maxSize - 1 );
-	    headers = curl_slist_append( headers, strdup( range ) );
-	    status  = s3_SubmitS3Request( s3comm, "GET", headers, path,
-										(void**) &contents, &receivedSize );
-	    if( status == 0 )
-	    {
-	        /* Copy the contents to the destination and free the local
-		   buffer. */
-	        memcpy( buf, contents, receivedSize );
-		*actuallyRead = receivedSize;
-		free( contents );
-	    }
-	}
-	else
-	{
-	    status = -EIO;
+			/* Get the file contents between "offset" and the following
+			   "maxSize" bytes, both included. */
+			sprintf( range, "Range:bytes=%lld-%lld",
+					 (long long) offset, (long long) offset + maxSize - 1 );
+			headers = curl_slist_append( headers, strdup( range ) );
+			status  = s3_SubmitS3Request( s3comm, "GET", headers, path,
+										  (void**) &contents, &receivedSize );
+			if( status == 0 )
+			{
+				/* Copy the contents to the destination and free the local
+				   buffer. */
+				memcpy( buf, contents, receivedSize );
+				*actuallyRead = receivedSize;
+				free( contents );
+			}
+#endif
+		}
+		else
+		{
+			status = -ENOENT;
         }
     }
 
@@ -1219,7 +1427,7 @@ int
 S3ReadLink(
     const char *link,
     char       **target
-	   )
+	       )
 {
     struct S3FileInfo *fi;
     int               status;
@@ -1232,43 +1440,43 @@ S3ReadLink(
     status = S3FileStat( link, &fi );
     if( status == 0 )
     {
-	if( fi->fileType == 'l' )
-	{
-	    /* Read the target if it is not already in the cache. */
-	    if( fi->symlinkTarget == NULL )
-	    {
-	        size = fi->size;
-		if( size <= 4096 )
-	        {
-		    /* Get the file contents; it is a rather small transfer. */
-		    sprintf( range, "Range:bytes=0-%d", (int)size - 1 );
-		    headers = curl_slist_append( headers, strdup( range ) );
-		    status  = s3_SubmitS3Request( s3comm, "GET", headers, link,
-											(void**) &linkContents,
-					       &length );
-		    if( status == 0 )
-		    {
-			/* Zero-terminate and return. */
-			linkContents = realloc( linkContents, length + 1 );
-			linkContents[ length ] = '\0';
-			fi->symlinkTarget = strdup( linkContents );
-			*target = linkContents;
-		    }
+		if( fi->fileType == 'l' )
+		{
+			/* Read the target if it is not already in the cache. */
+			if( fi->symlinkTarget == NULL )
+			{
+				size = fi->size;
+				if( size <= 4096 )
+				{
+					/* Get the file contents; it is a rather small transfer. */
+					sprintf( range, "Range:bytes=0-%d", (int)size - 1 );
+					headers = curl_slist_append( headers, strdup( range ) );
+					status  = s3_SubmitS3Request( s3comm, "GET", headers, link,
+												  (void**) &linkContents,
+												  &length );
+					if( status == 0 )
+					{
+						/* Zero-terminate and return. */
+						linkContents = realloc( linkContents, length + 1 );
+						linkContents[ length ] = '\0';
+						fi->symlinkTarget = strdup( linkContents );
+						*target = linkContents;
+					}
+				}
+				else
+				{
+					status = -ENAMETOOLONG;
+				}
+			}
+			else
+			{
+				*target = strdup( fi->symlinkTarget );
+			}
 		}
 		else
 		{
-		    status = -ENAMETOOLONG;
+			status = -EISNAM;
 		}
-	    }
-	    else
-	    {
-	        *target = strdup( fi->symlinkTarget );
-	    }
-	}
-	else
-	{
-	    status = -EISNAM;
-	}
     }
 
     return( status );
@@ -1286,48 +1494,48 @@ static struct curl_slist*
 CreateHeadersFromFileInfo(
     const struct S3FileInfo *fi,
     struct curl_slist       *headers
-			)
+	                     )
 {
     char       timeHeader[ 50 ];
     struct tm  tm;
     const char *tFormat = "%s:%s, %d %s %d %02d:%02d:%02d GMT";
     const char *wdays[ ] = { "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" };
     const char *months[ ] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-			      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+							  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
     char       tmpHdr[ 30 ];
 
     /* Update time stamps. */
     localtime_r( &fi->atime, &tm );
     sprintf( timeHeader, tFormat, "x-amz-meta-atime",
-	     wdays[ tm.tm_wday ],
-	     tm.tm_mday, months[ tm.tm_mon ], tm.tm_year + 1900,
-	     tm.tm_hour, tm.tm_min, tm.tm_sec );
+			 wdays[ tm.tm_wday ],
+			 tm.tm_mday, months[ tm.tm_mon ], tm.tm_year + 1900,
+			 tm.tm_hour, tm.tm_min, tm.tm_sec );
     headers = curl_slist_append( headers, strdup( timeHeader ) );
     localtime_r( &fi->mtime, &tm );
     sprintf( timeHeader, tFormat, "Last-Modified",
-	     wdays[ tm.tm_wday ],
-	     tm.tm_mday, months[ tm.tm_mon ], tm.tm_year + 1900,
-	     tm.tm_hour, tm.tm_min, tm.tm_sec );
+			 wdays[ tm.tm_wday ],
+			 tm.tm_mday, months[ tm.tm_mon ], tm.tm_year + 1900,
+			 tm.tm_hour, tm.tm_min, tm.tm_sec );
     headers = curl_slist_append( headers, strdup( timeHeader ) );
     /*
-    localtime_r( &fi->ctime, &tm );
-    sprintf( timeHeader, tFormat, "Created",
-	     wdays[ tm.tm_wday ],
-	     tm.tm_mday, months[ tm.tm_mon ], tm.tm_year + 1900,
-	     tm.tm_hour, tm.tm_min, tm.tm_sec );
-    headers = curl_slist_append( headers, strdup( timeHeader ) );
+	  localtime_r( &fi->ctime, &tm );
+	  sprintf( timeHeader, tFormat, "Created",
+	  wdays[ tm.tm_wday ],
+	  tm.tm_mday, months[ tm.tm_mon ], tm.tm_year + 1900,
+	  tm.tm_hour, tm.tm_min, tm.tm_sec );
+	  headers = curl_slist_append( headers, strdup( timeHeader ) );
     */
 
     /* Rewrite file type header. */
     if( fi->fileType == 'd' )
     {
         headers = curl_slist_append( headers,
-		      strdup( "Content-Type:application/x-directory" ) );
+						 strdup( "Content-Type:application/x-directory" ) );
     }
     else if( fi->fileType == 'l')
     {
         headers = curl_slist_append( headers,
-		      strdup( "Content-Type:application/x-symlink" ) );
+						 strdup( "Content-Type:application/x-symlink" ) );
     }
 
     /* Update uid, gid, and permissions. */
@@ -1339,9 +1547,9 @@ CreateHeadersFromFileInfo(
     headers = curl_slist_append( headers, strdup( tmpHdr ) );
     /* Update s-uid bit, s-gid bit, and sticky bit. */
     sprintf( tmpHdr, "x-amz-meta-modex:%d",
-	     ( fi->exeUid ? S_ISUID : 0 )
-	     | ( fi->exeGid ? S_ISGID : 0 )
-	     | ( fi->sticky ? S_ISVTX : 0 ) );
+			 ( fi->exeUid ? S_ISUID : 0 )
+			 | ( fi->exeGid ? S_ISGID : 0 )
+			 | ( fi->sticky ? S_ISVTX : 0 ) );
     headers = curl_slist_append( headers, strdup( tmpHdr ) );
 
     return( headers );
@@ -1360,7 +1568,7 @@ UpdateAmzHeaders(
     const char              *file,
     const struct S3FileInfo *fi,
     const char              *newName
-		 )
+	             )
 {
     struct curl_slist *headers = NULL;
     char              *copySourceHdr;
@@ -1371,9 +1579,9 @@ UpdateAmzHeaders(
     /* Replace the file by copy-source. Unfortunately, this implies a complete
        rewrite of the amz headers. */
     copySourceHdr = malloc( strlen( file )
-			    + strlen( globalConfig.bucketName )
-			    + strlen( "x-amz-copy-source:" )
-			    + sizeof (char ) );
+							+ strlen( globalConfig.bucketName )
+							+ strlen( "x-amz-copy-source:" )
+							+ sizeof (char ) );
     strcpy( copySourceHdr, "x-amz-copy-source:" );
     strcat( copySourceHdr, globalConfig.bucketName );
     strcat( copySourceHdr, file );
@@ -1388,7 +1596,7 @@ UpdateAmzHeaders(
         newName = file;
     }
     status  = s3_SubmitS3Request( s3comm, "PUT", headers, newName,
-									(void**) &response, &responseLength );
+								  (void**) &response, &responseLength );
     free( response );
 
     return( status );
@@ -1416,10 +1624,10 @@ S3ModifyTimeStamps(
     status = S3FileStat( file, &fi );
     if( status == 0 )
     {
-	fi->atime = atime;
-	fi->mtime = mtime;
+		fi->atime = atime;
+		fi->mtime = mtime;
 
-	status = UpdateAmzHeaders( file, fi, NULL );
+		status = UpdateAmzHeaders( file, fi, NULL );
     }
     return( status );
 }
@@ -1473,7 +1681,7 @@ S3CreateLink(
     headers = CreateHeadersFromFileInfo( fi, headers );
     /* Calculate the MD5 checksum of the data and write Content-MD5 header. */
     DigestBuffer( (const unsigned char*) path, pathLength,
-		  md5sum, HASH_MD5, HASHENC_BASE64 );
+				  md5sum, HASH_MD5, HASHENC_BASE64 );
     md5sum[ 24 ] = '\0';
     sprintf( md5header, "Content-MD5: %s", md5sum );
     headers = curl_slist_append( headers, strdup( md5header ) );
@@ -1487,8 +1695,8 @@ S3CreateLink(
     /* Create standard headers. */
     LockCaches( );
     status = s3_SubmitS3PutRequest( s3comm, headers, linkname,
-									  (void**) &response, &responseLength,
-									  (unsigned char*) path, pathLength );
+									(void**) &response, &responseLength,
+									(unsigned char*) path, pathLength );
     /* We already have the FileInfo structure, so because the file will be
        stat'ed as soon as we return, let's add it to the stat cache. Delete
        whatever might already be in the cache. */
@@ -1509,7 +1717,7 @@ S3CreateLink(
 void
 S3Destroy(
     void
-	  )
+	      )
 {
     ShutdownDirectoryCache( );
     TruncateCache( 0 );
@@ -1518,7 +1726,6 @@ S3Destroy(
 #ifndef AUTOTEST
 	/* Close the S3 communications library. */
 	s3_close( s3comm );
-/*	dlclose( libHandle );*/
 #endif
 }
 
@@ -1532,7 +1739,7 @@ S3Destroy(
 static const char*
 CleanPath(
     const char *inpath
-	  )
+	     )
 {
     char *filename;
     bool escaped    = false;
@@ -1556,24 +1763,24 @@ CleanPath(
     while( ( ch = inpath[ srcIdx ] ) != '\0' )
     {
         if( ! escaped )
-	{
-	    escaped = false;
-	    if( ( ch == '/' ) && ( ! slashFound ) )
-	    {
-	        filename[ destIdx++ ] = '/';
-	        slashFound = true;
-	    }
-	    else if( ch != '/' )
-	    {
-	        filename[ destIdx++ ] = ch;
-		slashFound = false;
-	    }
-	    if( ch == '\\' )
-	    {
-	        escaped = true;
-	    }
-	}
-	srcIdx++;
+		{
+			escaped = false;
+			if( ( ch == '/' ) && ( ! slashFound ) )
+			{
+				filename[ destIdx++ ] = '/';
+				slashFound = true;
+			}
+			else if( ch != '/' )
+			{
+				filename[ destIdx++ ] = ch;
+				slashFound = false;
+			}
+			if( ch == '\\' )
+			{
+				escaped = true;
+			}
+		}
+		srcIdx++;
     }
     filename[ destIdx ] = '\0';
     /* Remove all trailing slashes. */
@@ -1603,7 +1810,7 @@ int
 S3Mkdir(
     const char *dirname,
     mode_t     mode
-	)
+	    )
 {
     const char        *cleanName;
     const char        *parentDir;
@@ -1618,7 +1825,7 @@ S3Mkdir(
 
     cleanName  = CleanPath( dirname );
     secretFile = malloc( strlen( cleanName ) + strlen( IS_S3_DIRECTORY_FILE )
-			 + sizeof( char ) );
+						 + sizeof( char ) );
     strcpy( secretFile, cleanName );
     strcat( secretFile, IS_S3_DIRECTORY_FILE );
     parentDir = GetParentDir( cleanName );
@@ -1638,7 +1845,7 @@ S3Mkdir(
     headers = curl_slist_append( headers, strdup( "Transfer-Encoding:" ) );
     LockCaches( );
     status  = s3_SubmitS3Request( s3comm, "PUT", headers, secretFile,
-									(void**) &response, &responseLength );
+								  (void**) &response, &responseLength );
     InvalidateDirectoryCacheElement( parentDir );
     /* Update the stat cache entry for the directory. */
     free( (char*) parentDir );
@@ -1681,7 +1888,7 @@ S3Unlink( const char *filename )
 
     LockCaches( );
     status  = s3_SubmitS3Request( s3comm, "DELETE", headers, cleanName,
-									(void**) &response, &responseLength );
+								  (void**) &response, &responseLength );
     InvalidateDirectoryCacheElement( parentDir );
     DeleteStatEntry( cleanName );
     UnlockCaches( );
@@ -1721,11 +1928,11 @@ IsDirectoryEmpty(
     if( status == 0 )
     {
         /* We compare against two files instead of three (where above we
-	   requested four), because the secret file is not returned. */
+		   requested four), because the secret file is not returned. */
         if( nFiles <= 2 )
-	{
-	    success = true;
-	}
+		{
+			success = true;
+		}
     }
 
     return( success );
@@ -1758,45 +1965,45 @@ S3Rmdir( const char *dirname )
     {
         /* rmdir works only on directories. */
         if( fi->fileType == 'd' )
-	{
- 	    /* Determine if the directory is empty. */
-	    if( IsDirectoryEmpty( cleanName ) )
-	    {
-	         /* Delete the secret file. */
-	        secretFile = malloc( strlen( cleanName ) + 2 * sizeof( char )
-				     + strlen( IS_S3_DIRECTORY_FILE ) );
-		strcpy( secretFile, cleanName );
-		strcat( secretFile, "/" );
-		strcat( secretFile, IS_S3_DIRECTORY_FILE );
-		status = S3Unlink( secretFile );
-		if( status == 0 )
 		{
-		    LockCaches( );
-		    status = s3_SubmitS3Request( s3comm, "DELETE", headers, cleanName,
-										   (void**) &response,
-										   &responseLength );
-		    InvalidateDirectoryCacheElement( parentDir );
-		    DeleteStatEntry( cleanName );
-		    UnlockCaches( );
-		    free( (char*) parentDir );
-		    free( (char*) cleanName );
+			/* Determine if the directory is empty. */
+			if( IsDirectoryEmpty( cleanName ) )
+			{
+				/* Delete the secret file. */
+				secretFile = malloc( strlen( cleanName ) + 2 * sizeof( char )
+									 + strlen( IS_S3_DIRECTORY_FILE ) );
+				strcpy( secretFile, cleanName );
+				strcat( secretFile, "/" );
+				strcat( secretFile, IS_S3_DIRECTORY_FILE );
+				status = S3Unlink( secretFile );
+				if( status == 0 )
+				{
+					LockCaches( );
+					status = s3_SubmitS3Request( s3comm, "DELETE", headers,
+												 cleanName, (void**) &response,
+												 &responseLength );
+					InvalidateDirectoryCacheElement( parentDir );
+					DeleteStatEntry( cleanName );
+					UnlockCaches( );
+					free( (char*) parentDir );
+					free( (char*) cleanName );
+				}
+				/* If the secret file cannot be removed, EACCES seems like
+				   the best errno. */
+				else
+				{
+					status = -EACCES;
+				}
+			}
+			else
+			{
+				status = -ENOTEMPTY;
+			}
 		}
-		/* If the secret file cannot be removed, EACCES seems like
-		   the best errno. */
-		else
-		{
-		    status = -EACCES;
-		}
-	    }
-	    else
-	    {
-	        status = -ENOTEMPTY;
-	    }
-	}
         else
-	{
-	    status = -ENOTDIR;
-	}
+		{
+			status = -ENOTDIR;
+		}
     }
 
     if( response != NULL )
@@ -1829,11 +2036,11 @@ S3Chmod(
     if( status == 0 )
     {
         LockCaches( );
-	fi->mtime       = now;
-	fi->permissions = mode;
-
-	status = UpdateAmzHeaders( file, fi, NULL );
-	UnlockCaches( );
+		fi->mtime       = now;
+		fi->permissions = mode;
+		
+		status = UpdateAmzHeaders( file, fi, NULL );
+		UnlockCaches( );
     }
     return( status );
 }
@@ -1862,12 +2069,12 @@ S3Chown(
     if( status == 0 )
     {
         LockCaches( );
-	fi->mtime                     = now;
-	if( (int) uid != -1 ) fi->uid = uid;
-	if( (int) gid != -1 ) fi->gid = gid;
+		fi->mtime                     = now;
+		if( (int) uid != -1 ) fi->uid = uid;
+		if( (int) gid != -1 ) fi->gid = gid;
 
-	status = UpdateAmzHeaders( file, fi, NULL );
-	UnlockCaches( );
+		status = UpdateAmzHeaders( file, fi, NULL );
+		UnlockCaches( );
     }
     return( status );
 }

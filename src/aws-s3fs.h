@@ -37,7 +37,7 @@
 /* Maximum number of open files. */
 #define MAX_FILE_DESCRIPTORS 16
 
-#define SOCKET_NAME LOCALSTATEDIR "aws-s3fs.sock"
+#define SOCKET_NAME LOCALSTATEDIR "/aws-s3fs.sock"
 
 
 /* Make room for 5,000 files in the stat cache. */

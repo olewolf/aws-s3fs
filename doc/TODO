@@ -1,3 +1,7 @@
+* Add an authorization against S3 to the CONNECT request in the filecache.
+
+* Use petgwuid() instead of "manually" parsing the passwd and group files.
+
 * Add BitTorrents support.
 
 * Add a status option indicating cache state and other things.
@@ -5,8 +9,6 @@
 * Add reduced-reduncancy storage option.
 
 * Add storage encryption option.
-
-* Add file caching system.
 
 * Recheck thread safety. Some files exit with exit(), but beyond that:
   - logging.c OK
