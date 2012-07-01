@@ -29,6 +29,7 @@
 #include "aws-s3fs.h"
 #include "statcache.h"
 #include "s3if.h"
+#include "filecache.h"
 
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 

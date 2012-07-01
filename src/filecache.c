@@ -52,6 +52,8 @@ struct CacheClientConnection
 	int       connectionHandle;
 	pthread_t thread;
 	pid_t     pid;
+	uid_t     uid;
+	gid_t     gid;
 	char      *bucket;
 	char      keyId[ 21 ];
 	char      secretKey[ 41 ];
@@ -60,23 +62,32 @@ struct CacheClientConnection
 
 static struct
 {
-	GRegex *keyIdAndSecretKey;
-	GRegex *openOptions;
+	GRegex *connectAuth;
+	GRegex *createFileOptions;
+	GRegex *createDirOptions;
 	GRegex *trimString;
+	GRegex *rename;
 } regexes;
 
 
 static void CompileRegexes( void );
 static void FreeRegexes( void );
-static void* ReceiveRequests( void* );
-static void* ClientConnectionsListener( void* );
+static void *ReceiveRequests( void* );
+static void *ClientConnectionsListener( void* );
 static int CommandDispatcher( struct CacheClientConnection *clientConnection,
 							  const char *message );
+static char *TrimString( char *original );
 
-static int ClientConnects(	struct CacheClientConnection *clientConnection,
-							const char *request );
-static int ClientRequestsDownload(
+static int ClientConnects( struct CacheClientConnection *clientConnection,
+						   const char *request );
+static int ClientRequestsCaching(
 	struct CacheClientConnection *clientConnection, const char *request );
+static int ClientRequestsMkdir(
+    struct CacheClientConnection *clientConnection, const char *request );
+
+
+//static int ClientRequestsDownload(
+//	struct CacheClientConnection *clientConnection, const char *request );
 
 
 
@@ -225,6 +236,9 @@ ReceiveRequests(
 					SO_PEERCRED, &credentials, &credentialsLength );
 		printf( "uid: %d, gid: %d, pid: %d\n", (int) credentials.uid,
 				(int) credentials.gid, (int) credentials.pid );
+		clientConnection->uid = credentials.uid;
+		clientConnection->gid = credentials.gid;
+		clientConnection->pid = credentials.pid;
 		end = CommandDispatcher( clientConnection, message );
 		free( (char*) message );
 	} while( ! end );
@@ -261,7 +275,8 @@ CommandDispatcher(
 									   const char *message );
 	} dispatchTable[ ] =
 		{
-			{ "CACHE",   ClientRequestsDownload },
+			{ "CACHE",   ClientRequestsCaching },
+			{ "MKDIR",   ClientRequestsMkdir },
 			{ "CONNECT", ClientConnects },
 			{ NULL, NULL }
 		};
@@ -293,31 +308,6 @@ CommandDispatcher(
 
 
 
-
-
-
-
-
-
-
-
-/**
- * Mark a file as dirty in the cache. This function must be called whenever
- * the local host writes to a file in the cache, and whenever the remote host
- * writes to one of its files and the file is cached.
- * 
- * @return Nothing.
- */
-
-
-
-
-
-
-
-
-
-
 /**
  * Create a local filename for the S3 file and create a database entry
  * with the two file names and the S3 file attributes.
@@ -343,7 +333,7 @@ CreateLocalFile(
     char          *localname;
     int           fileHd;
     sqlite3_int64 id;
-
+	bool          exists;
 
     assert( path != NULL );
 
@@ -352,10 +342,8 @@ CreateLocalFile(
 						+ sizeof( char ) );
 	strcpy( localname, CACHE_INPROGRESS );
 	strcat( localname, template );
-
-    /* Create and open a temporary file, and close it immediately in order to
-	   create a uniquely named file. */
-    fileHd = mkstemp( localname );
+    /* Create a uniquely named, empty file. */
+	fileHd = mkstemp( localname );
     close( fileHd );
 
     /* Keep the non-redundant part of the local filename. */
@@ -363,11 +351,71 @@ CreateLocalFile(
 						 + sizeof( char ) );
     strcpy( *localfile,
 			&localname[ strlen( localname ) - strlen( template ) ] );
-    free( localname );
 
     /* Insert the filename combo into the database. */
 	id = Query_CreateLocalFile( path, uid, gid, permissions,
-								mtime, *localfile );
+								mtime, *localfile, &exists );
+	/* Delete the unique file if the file was already in the database. */
+	if( exists )
+	{
+		unlink( localname );
+	}
+    free( localname );
+
+    return( id );
+}
+
+
+
+/**
+ * Create a local directory where downloaded files or newly created files
+ * are stored. The local directory serves to mimic ownership and permissions
+ * of the S3 parent directory.
+ * @param path [in] Directory path on the S3 storage.
+ * @param uid [in] uid of the directory.
+ * @param gid [in] gid of the directory.
+ * @param permissions [in] Permission flags of the directory.
+ * @param localdir [out] Pointer to the name of the local directory.
+ * @return Database id of the directory entry in the database.
+ */
+static sqlite3_int64
+CreateLocalDir(
+    const char *path,
+    int        uid,
+    int        gid,
+    int        permissions,
+    char       **localdir
+	            )
+{
+	const char    *template = "XXXXXX";
+    char          *localname;
+    sqlite3_int64 id;
+	bool          alreadyExists;
+
+    assert( path != NULL );
+
+    /* Construct a template for the filename. */
+    localname = malloc( strlen( CACHE_INPROGRESS ) + strlen( template )
+						+ sizeof( char ) );
+	strcpy( localname, CACHE_INPROGRESS );
+	strcat( localname, template );
+    /* Create a uniquely named directory. */
+	(void) mkdtemp( localname );
+    /* Keep the non-redundant part of the local directory name. */
+	*localdir = malloc( strlen( localname ) - strlen( template )
+						+ sizeof( char ) );
+    strcpy( *localdir,
+			&localname[ strlen( localname ) - strlen( template ) ] );
+
+    /* Insert the filename combo into the database. */
+	id = Query_CreateLocalDir( path, uid, gid, permissions, *localdir,
+							   &alreadyExists );
+	/* Delete the temporary directory if it had already been inserted. */
+	if( alreadyExists )
+	{
+		rmdir( localname );
+	}
+    free( localname );
 
     return( id );
 }
@@ -446,29 +494,32 @@ ClientConnectionsListener(
  * @param request [in] Connection request parameters.
  * @return 0 on success, or \a -errno on failure.
  */
-int
+static int
 ClientConnects(
     struct CacheClientConnection *clientConnection,
 	const char                   *request
 	          )
 {
+	char       *bucket;
 	char       *keyId;
 	char       *secretKey;
 	GMatchInfo *matchInfo;
 	int        status = -EINVAL;
 
 	/* Grep the key and secret key. */
-	g_regex_ref( regexes.keyIdAndSecretKey );
-	if( g_regex_match( regexes.keyIdAndSecretKey, request, 0, &matchInfo ) )
+	g_regex_ref( regexes.connectAuth );
+	if( g_regex_match( regexes.connectAuth, request, 0, &matchInfo ) )
 	{
-		keyId     = g_match_info_fetch( matchInfo, 1 );
-		secretKey = g_match_info_fetch( matchInfo, 2 );
+		bucket    = g_match_info_fetch( matchInfo, 1 );
+		keyId     = g_match_info_fetch( matchInfo, 2 );
+		secretKey = g_match_info_fetch( matchInfo, 3 );
 		g_match_info_free( matchInfo );
 
 		/* Store the keys in the client connection info structure, and return
 		   a success message if the keys have the correct length. */
 		if( ( strlen( keyId ) == 20 ) && ( strlen( secretKey ) == 40 ) )
 		{
+			clientConnection->bucket = bucket;
 			strncpy( clientConnection->keyId, keyId,
 					 sizeof( clientConnection->keyId ) );
 			strncpy( clientConnection->secretKey, secretKey,
@@ -479,13 +530,13 @@ ClientConnects(
 		}
 		else
 		{
+			g_free( bucket );
 			status = -EKEYREJECTED;
 		}
 		g_free( keyId );
 		g_free( secretKey );
-
 	}
-	g_regex_unref( regexes.keyIdAndSecretKey );
+	g_regex_unref( regexes.connectAuth );
 
 	if( status != 0 )
 	{
@@ -499,20 +550,19 @@ ClientConnects(
 
 
 /**
- * The client sends a connect message passing the key ID and the secret key.
- * The CacheClientConnection structure for the client is updated with these
- * keys.
- * The server responds with CONNECTED or ERROR.
+ * The client sends a caching request message for a file and the filecache
+ * server adds the file to the download queue. The thread is blocked until the
+ * file has been downloaded.
  * @param clientConnection [in/out] CacheClientConnection structure for the
  *        client.
  * @param request [in] Connection request parameters.
  * @return 0 on success, or \a -errno on failure.
  */
-int
+static int
 ClientRequestsCaching(
     struct CacheClientConnection *clientConnection,
 	const char                   *request
-	                 )
+	                  )
 {
 	int         status;
 
@@ -532,8 +582,8 @@ ClientRequestsCaching(
 	char       *reply;
 
 	/* Extract uid, gid, permissions, mtime, and filename. */
-	g_regex_ref( regexes.openOptions );
-	if( g_regex_match( regexes.openOptions, request, 0, &matchInfo ) )
+	g_regex_ref( regexes.createFileOptions );
+	if( g_regex_match( regexes.createFileOptions, request, 0, &matchInfo ) )
 	{
 		uidStr         = g_match_info_fetch( matchInfo, 1 );
 		gidStr         = g_match_info_fetch( matchInfo, 2 );
@@ -541,7 +591,6 @@ ClientRequestsCaching(
 		mtimeStr       = g_match_info_fetch( matchInfo, 4 );
 		path           = g_match_info_fetch( matchInfo, 5 );
 		g_match_info_free( matchInfo );
-		g_regex_unref( regexes.openOptions );
 		/* Create numeric values for uid, gid, permissions, and mtime. */
 		uid         = atoi( uidStr );
 		gid         = atoi( gidStr );
@@ -552,10 +601,7 @@ ClientRequestsCaching(
 		g_free( permissionsStr );
 		g_free( mtimeStr );
 		/* Trim the filename. */
-		g_regex_ref( regexes.trimString );
-		filename = g_regex_replace( regexes.trimString, path,
-									-1, 0, "", 0, NULL );
-		g_free( path );
+		filename = TrimString( path );
 
 		/* Create a local file for the filename and return the name. */
 		if( CreateLocalFile( filename, uid, gid, permissions,
@@ -572,6 +618,7 @@ ClientRequestsCaching(
 		{
 			status = -EIO;
 		}
+		free( filename );
 	}
 	else
 	{
@@ -579,13 +626,14 @@ ClientRequestsCaching(
 		SendMessageToClient( clientConnection->connectionHandle,
 			"ERROR: cannot open file for caching" );
 	}
-	g_regex_unref( regexes.trimString );
+	g_regex_unref( regexes.createFileOptions );
 
 	return( status );
 }
 
 
 
+#if 0
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 static int
@@ -605,19 +653,108 @@ ClientRequestsDownload(
 
 	/* Otherwise, enqueue for download. */
 
-	SendClientMessage( clientConnection->connectionHandle, "OK" );
+	SendMessageToClient( clientConnection->connectionHandle, "OK" );
 	return( 0 );
 }
 #pragma GCC diagnostic pop
+#endif
 
 
 
+static int
+ClientRequestsMkdir(
+    struct CacheClientConnection *clientConnection,
+	const char                   *request
+	                    )
+{
+	int         status;
+
+	GMatchInfo *matchInfo;
+	gchar      *uidStr;
+	gchar      *gidStr;
+	gchar      *permissionsStr;
+	gchar      *path;
+
+	int        uid;
+	int        gid;
+	int        permissions;
+	char       *dirname;
+	char       *localdir;
+	char       *reply;
+
+	/* Extract uid, gid, permissions, mtime, and directory name. */
+	g_regex_ref( regexes.createDirOptions );
+	if( g_regex_match( regexes.createDirOptions, request, 0, &matchInfo ) )
+	{
+		uidStr         = g_match_info_fetch( matchInfo, 1 );
+		gidStr         = g_match_info_fetch( matchInfo, 2 );
+		permissionsStr = g_match_info_fetch( matchInfo, 3 );
+		path           = g_match_info_fetch( matchInfo, 4 );
+		g_match_info_free( matchInfo );
+		/* Create numeric values for uid, gid, and permissions. */
+		uid         = atoi( uidStr );
+		gid         = atoi( gidStr );
+		permissions = atoi( permissionsStr );
+		g_free( uidStr );
+		g_free( gidStr );
+		g_free( permissionsStr );
+		/* Trim the directory name. */
+		dirname = TrimString( path );
+
+		/* Create a local name for the directory and return the name. */
+		if( CreateLocalDir( dirname, uid, gid, permissions, &localdir ) )
+		{
+			reply = malloc( strlen( "CREATED " ) + sizeof( localdir )
+							+ sizeof( char ) );
+			sprintf( reply, "CREATED %s", localdir );
+			SendMessageToClient( clientConnection->connectionHandle, reply );
+			free( reply );
+			status = 0;
+		}
+		else
+		{
+			status = -EIO;
+		}
+		free( dirname );
+	}		
+	else
+	{
+		status = -EINVAL;
+	}
+	g_regex_unref( regexes.createDirOptions );
+
+	if( status != 0 )
+	{
+		SendMessageToClient( clientConnection->connectionHandle,
+							 "ERROR: cannot create directory" );
+	}
+
+	return( status );
+}
 
 
 
+/**
+ * Remove whitespace before and after a string. The original string memory
+ * is released.
+ * @param original [in/out] String with possibly leading and/or trailing
+ *        whitespace.
+ * @return String without leading and trailing whitespace.
+ */
+static char*
+TrimString(
+	char *original
+	       )
+{
+	char *trimmed;
 
-
-
+	g_regex_ref( regexes.trimString );
+	trimmed = g_regex_replace( regexes.trimString, original,
+							   -1, 0, "", 0, NULL );
+	g_free( original );
+	g_regex_unref( regexes.trimString );
+	return( trimmed );
+}
 
 
 
@@ -630,39 +767,51 @@ CompileRegexes(
     void
 	           )
 {
-	/* Grep "keyid:secretkey" from the parameter string. */
-	const char *keyIdAndSecretKey =
-		"^\\s*([a-zA-Z0-9\\+/=]{20})\\s*:\\s*([a-zA-Z0-9\\+/=]{40})";
+	/* Grep "bucket:keyid:secretkey" from the parameter string. */
+	const char *connectAuth =
+		"^\\s*([a-zA-Z0-9-\\+_])+\\s*:\\s*([a-zA-Z0-9\\+/=]{20})\\s*:\\s*([a-zA-Z0-9\\+/=]{40})";
 
-	/* Grep num:num:num:num:string */
-	const char *openOptions =
+	/* Grep uid:gid:perm:mtime:string */
+	const char *createFileOptions =
 		"([0-9]{1,5})\\s*:\\s*([0-9]{1,5})\\s*:\\s*([0-9]{1,3})\\s*:\\s*"
 		"([0-9]{1,20})\\s*:\\s*(.+)";
 
+	/* Grep uid:gid:perm:string */
+	const char *createDirOptions =
+		"([0-9]{1,5})\\s*:\\s*([0-9]{1,5})\\s*:\\s*([0-9]{1,3})\\s*:\\s*(.+)";
+
     /* Replace leading and trailing spaces. */
 	const char *trimString = "^[\\s]+|[\\s]+$";
+
+	/* Rename a file or directory. */
+	const char *rename = "(FILE|DIR)\\s*(.+)";
 
 	/* Compile regular expressions. */
     #define COMPILE_REGEX_JOINER( x, y ) x.y
     #define COMPILE_REGEX( regex ) COMPILE_REGEX_JOINER( regexes, regex ) = \
 			g_regex_new( regex, G_REGEX_OPTIMIZE, G_REGEX_MATCH_NOTEMPTY, NULL )
 
-	COMPILE_REGEX( keyIdAndSecretKey );
-	COMPILE_REGEX( openOptions );
+	COMPILE_REGEX( connectAuth );
+	COMPILE_REGEX( createFileOptions );
+	COMPILE_REGEX( createDirOptions );
 	COMPILE_REGEX( trimString );
+	COMPILE_REGEX( rename );
 }
 
 
 
+/**
+ * Release the allocations in the regular expressions.
+ * @return Nothing.
+ */
 static void
 FreeRegexes(
 	void
 	        )
 {
-	g_regex_unref( regexes.keyIdAndSecretKey );
+	g_regex_unref( regexes.connectAuth );
+	g_regex_unref( regexes.createFileOptions );
+	g_regex_unref( regexes.createDirOptions );
 	g_regex_unref( regexes.trimString );
-	g_regex_unref( regexes.openOptions );
-
+	g_regex_unref( regexes.rename );
 }
-
-

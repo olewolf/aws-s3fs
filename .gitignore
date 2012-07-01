@@ -13,9 +13,11 @@ Makefile.in
 config.*
 configure
 aclocal.m4
-config/*
 stamp-h1
 libtool
+aws-s3fs.pc
+
+config/*
 
 m4/libtool.m4
 m4/lt*.m4
@@ -25,6 +27,8 @@ debian/aws-s3fs-dev/
 debian/aws-s3fs/
 debian/libaws-s3fs0/*
 debian/libaws-*.log
+debian/libaws-s3fs0.postinst
+debian/libaws-s3fs0.postrm
 debian/*.substvars
 debian/files
 debian/postinst
@@ -40,6 +44,8 @@ doc/main.doc
 src/aws-s3fs
 src/sysdirs.h
 src/.libs/*
+src/*.lo
+src/*.la
 
 test/atconfig
 test/atlocal
