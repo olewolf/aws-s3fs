@@ -1,3 +1,7 @@
+2012-07-02:
+	Enabled threads to block the SIGPIPE signal that occurs if the client
+	disconnects.
+
 2012-07-01:
 	Temporary file and directory creation requests implemented.
 	Work begun on the download queue.
