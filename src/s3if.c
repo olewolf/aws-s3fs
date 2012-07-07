@@ -111,6 +111,9 @@ InitializeS3If(
     time_t    tnow;
     struct tm tm;
 
+	/* Initialize CURL. */
+	curl_global_init( CURL_GLOBAL_ALL );
+
 	/* Load functions for digests, signing, and sending and receiving
 	 * messages to S3. */
 #ifndef AUTOTEST
@@ -1727,6 +1730,7 @@ S3Destroy(
 	/* Close the S3 communications library. */
 	s3_close( s3comm );
 #endif
+	curl_global_cleanup( );
 }
 
 

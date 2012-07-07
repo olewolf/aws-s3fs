@@ -51,6 +51,9 @@ static struct
 	sqlite3_stmt *findParent;
     sqlite3_stmt *incrementSubscription;
     sqlite3_stmt *decrementSubscription;
+	sqlite3_stmt *download;
+	sqlite3_stmt *allOwners;
+	sqlite3_stmt *deleteTransfer;
 } cacheDatabase;
 
 
@@ -76,9 +79,8 @@ static sqlite3_int64 FindParent( const char *path, char *localname );
 
 /* Compile an SQL source entry and add the byte-code to the cacheDatabase
    structure. */
-#define CREATESTRUCTELEMENT( x, y ) x.y
 #define COMPILESQL( stmt ) CompileSqlStatement( cacheDb, stmt##Sql,   \
-                           CREATESTRUCTELEMENT( &cacheDatabase, stmt ) )
+												&cacheDatabase.stmt )
 
 
 
@@ -128,6 +130,9 @@ ShutdownFileCacheDatabase(
 	CLEAR_QUERY( findFile );
 	CLEAR_QUERY( incrementSubscription );
 	CLEAR_QUERY( decrementSubscription );
+	CLEAR_QUERY( download );
+	CLEAR_QUERY( allOwners );
+	CLEAR_QUERY( deleteTransfer );
 
     sqlite3_close( cacheDatabase.cacheDb );
 }
@@ -171,6 +176,7 @@ CreateDatabase(
 		   the last time the file was synchronized with the remote host. */
         "CREATE TABLE IF NOT EXISTS files(                     \
             id INTEGER PRIMARY KEY,                            \
+            bucket VARCHAR( 128 ) NOT NULL,                    \
             remotename VARCHAR( 4096 ) NOT NULL UNIQUE,        \
             localname VARCHAR( 6 ) NOT NULL,                   \
             subscriptions INT NOT NULL DEFAULT \'1\',          \
@@ -188,7 +194,8 @@ CreateDatabase(
 		/* The `users` table contains users and their keys. */
 		"CREATE TABLE IF NOT EXISTS users(                 \
             uid INTEGER UNIQUE NOT NULL,                   \
-            key VARCHAR( 61 ) NOT NULL                     \
+            keyid VARCHAR( 21 ) NOT NULL,                  \
+            secretkey VARCHAR( 41 ) NOT NULL               \
         ); "
         "CREATE INDEX IF NOT EXISTS id ON users( uid ); "
 
@@ -265,6 +272,25 @@ CompileStandardQueries(
         "UPDATE files SET subscriptions = subscriptions - 1   \
          WHERE remotename = ?;";
 
+	const char *const downloadSql =
+		"SELECT files.bucket, files.remotename, files.localname,  \
+                users.keyid, users.secretkey                      \
+        FROM transfers                                            \
+            LEFT JOIN files ON transfers.file = files.id          \
+            LEFT JOIN users ON transfers.owner = users.uid        \
+        WHERE files.id = ?;";
+
+	const char *const allOwnersSql =
+		"SELECT files.uid, files.gid, files.permissions, files.localname,  \
+                parents.uid, parents.gid, parents.localname                \
+         FROM parents                                                      \
+             LEFT JOIN files ON files.parent = parents.id                  \
+         WHERE files.id = ?;";
+
+	const char *const deleteTransferSql =
+		"DELETE FROM transfers WHERE file = ?;";
+
+
     COMPILESQL( fileStat );
     COMPILESQL( newFile );
     COMPILESQL( newParent );
@@ -272,6 +298,9 @@ CompileStandardQueries(
     COMPILESQL( findFile );
     COMPILESQL( incrementSubscription );
     COMPILESQL( decrementSubscription );
+	COMPILESQL( download );
+	COMPILESQL( allOwners );
+	COMPILESQL( deleteTransfer );
 }
 
 
@@ -586,4 +615,166 @@ FindParent(
 	UnlockCache( );
 
 	return( parentId );
+}
+
+
+
+bool
+Query_GetDownload(
+	sqlite3_int64 fileId,
+	char          **bucket,
+	char          **remotePath,
+	char          **localPath,
+	char          **keyId,
+    char          **secretKey
+	              )
+{
+	bool         status = false;
+	int          rc;
+    sqlite3_stmt *filenamesQuery = cacheDatabase.download;
+	const char   *resBucket     = "";
+	const char   *resLocalname  = "";
+	const char   *resRemotename = "";
+	const char   *resKeyId      = "";
+	const char   *resSecretKey  = "";
+
+
+	LockCache( );
+    BIND_QUERY( rc, int( filenamesQuery, 1, fileId ), );
+	if( rc == SQLITE_OK )
+    {
+		while( ( rc = sqlite3_step( filenamesQuery ) ) == SQLITE_ROW )
+		{
+			resBucket     = (const char*)
+				            sqlite3_column_text( filenamesQuery, 0 );
+			resRemotename = (const char*)
+				            sqlite3_column_text( filenamesQuery, 1 );
+			resLocalname  = (const char*)
+				            sqlite3_column_text( filenamesQuery, 2 );
+			resKeyId      = (const char*)
+				            sqlite3_column_text( filenamesQuery, 3 );
+			resSecretKey  = (const char*)
+				            sqlite3_column_text( filenamesQuery, 4 );
+			status     = true;
+		}
+		if( rc != SQLITE_DONE )
+		{
+			status = false;
+			fprintf( stderr,
+					 "Select statement didn't finish with DONE (%i): %s\n",
+					 rc, sqlite3_errmsg( cacheDatabase.cacheDb ) );
+		}
+	}
+	else
+	{
+        fprintf( stderr, "Can't prepare select query (%i): %s\n",
+				 rc, sqlite3_errmsg( cacheDatabase.cacheDb ) );
+    }
+
+	*bucket     = strdup( resBucket );
+	*localPath  = strdup( resLocalname );
+	*remotePath = strdup( resRemotename );
+	*keyId      = strdup( resKeyId );
+	*secretKey  = strdup( resSecretKey );
+
+	RESET_QUERY( download );
+	UnlockCache( );
+
+	return( status );
+}
+
+
+
+bool
+Query_GetOwners(
+	sqlite3_int64 fileId,
+	char          **parentname,
+	uid_t         *parentUid,
+	gid_t         *parentGid,
+	char          **filename,
+	uid_t         *uid,
+	gid_t         *gid,
+	int           *permissions
+	            )
+{
+	bool         status = false;
+	int          rc;
+    sqlite3_stmt *ownersQuery   = cacheDatabase.allOwners;
+	char         *resParentname = "";
+	char         *resFilename   = "";
+
+	LockCache( );
+    BIND_QUERY( rc, int( ownersQuery, 1, fileId ), );
+	if( rc == SQLITE_OK )
+    {
+		while( ( rc = sqlite3_step( ownersQuery ) ) == SQLITE_ROW )
+		{
+			*uid          = sqlite3_column_int( ownersQuery, 0 );
+			*gid          = sqlite3_column_int( ownersQuery, 1 );
+			*permissions  = sqlite3_column_int( ownersQuery, 2 );
+			resFilename   = (char*) sqlite3_column_text( ownersQuery, 3 );
+			*parentUid    = sqlite3_column_int( ownersQuery, 4 );
+			*parentGid    = sqlite3_column_int( ownersQuery, 5 );
+			resParentname = (char*) sqlite3_column_text( ownersQuery, 6 );
+			status        = true;
+		}
+		if( rc != SQLITE_DONE )
+		{
+			status = false;
+			fprintf( stderr,
+					 "Select statement didn't finish with DONE (%i): %s\n",
+					 rc, sqlite3_errmsg( cacheDatabase.cacheDb ) );
+		}
+	}
+	else
+	{
+        fprintf( stderr, "Can't prepare select query (%i): %s\n",
+				 rc, sqlite3_errmsg( cacheDatabase.cacheDb ) );
+    }
+
+	*parentname = strdup( resParentname );
+	*filename   = strdup( resFilename );
+
+	RESET_QUERY( allOwners );
+	UnlockCache( );
+
+	return( status );
+}
+
+
+
+bool
+Query_DeleteTransfer(
+	sqlite3_int64 fileId
+	                 )
+{
+	bool         status = false;
+	int          rc;
+    sqlite3_stmt *deleteQuery   = cacheDatabase.deleteTransfer;
+
+	LockCache( );
+    BIND_QUERY( rc, int( deleteQuery, 1, fileId ), );
+	if( rc == SQLITE_OK )
+    {
+		if( ( rc = sqlite3_step( deleteQuery ) ) == SQLITE_ROW )
+		{
+			status = true;
+		}
+		else
+		{
+			status = false;
+			fprintf( stderr,
+					 "Select statement didn't finish with DONE (%i): %s\n",
+					 rc, sqlite3_errmsg( cacheDatabase.cacheDb ) );
+		}
+	}
+	else
+	{
+        fprintf( stderr, "Can't prepare select query (%i): %s\n",
+				 rc, sqlite3_errmsg( cacheDatabase.cacheDb ) );
+    }
+	RESET_QUERY( deleteTransfer );
+	UnlockCache( );
+
+	return( status );
 }

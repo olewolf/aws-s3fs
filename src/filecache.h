@@ -25,6 +25,7 @@
 
 #include <sqlite3.h>
 #include <stdbool.h>
+#include <glib-2.0/glib.h>
 
 
 #undef CACHE_DIR
@@ -35,6 +36,20 @@
 
 #define CACHE_DATABASE CACHE_DIR "/cache.sl3"
 #define CACHE_FILES    CACHE_DIR "/files/"
+
+
+struct RegularExpressions
+{
+	GRegex *connectAuth;
+	GRegex *createFileOptions;
+	GRegex *createDirOptions;
+	GRegex *trimString;
+	GRegex *rename;
+	GRegex *hostname;
+	GRegex *regionPart;
+};
+
+extern struct RegularExpressions regexes;
 
 
 void InitializeFileCache( void );
@@ -48,6 +63,7 @@ const char *SendCacheRequest( const char *message );
 const char *ReceiveCacheReply( void );
 
 
+
 /* Database */
 void ShutdownFileCacheDatabase( void );
 void InitializeFileCacheDatabase( void );
@@ -57,6 +73,12 @@ sqlite3_int64 Query_CreateLocalFile( const char *path, int uid, int gid,
 sqlite3_int64 Query_CreateLocalDir( const char *path, int uid, int gid,
 									int permissions, char *localdir,
 									bool *alreadyExists );
+bool Query_GetDownload( sqlite3_int64 fileId, char **bucket, char **remotepath,
+						char **localfile, char **keyId, char **secretKey );
+bool Query_GetOwners( sqlite3_int64 fileId, char **parentdir,
+					  uid_t *parentUid, gid_t *parentGid, char **filename,
+					  uid_t *uid, gid_t *gid, int *permissions );
+bool Query_DeleteTransfer( sqlite3_int64 fileId );
 
 
 #endif /* __FILECACHE_H */

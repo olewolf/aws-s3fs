@@ -63,14 +63,7 @@ struct CacheClientConnection
 };
 
 
-static struct
-{
-	GRegex *connectAuth;
-	GRegex *createFileOptions;
-	GRegex *createDirOptions;
-	GRegex *trimString;
-	GRegex *rename;
-} regexes;
+struct RegularExpressions regexes;
 
 
 static void CompileRegexes( void );
@@ -660,8 +653,6 @@ ClientConnectionsListener(
 
 
 
-
-
 /**
  * The client sends a connect message passing the key ID and the secret key.
  * The CacheClientConnection structure for the client is updated with these
@@ -684,7 +675,7 @@ ClientConnects(
 	GMatchInfo *matchInfo;
 	int        status = -EINVAL;
 
-	/* Grep the key and secret key. */
+	/* Grep the bucket, the key, and the secret key. */
 	g_regex_ref( regexes.connectAuth );
 	if( g_regex_match( regexes.connectAuth, request, 0, &matchInfo ) )
 	{
@@ -964,9 +955,14 @@ CompileRegexes(
 	/* Rename a file or directory. */
 	const char *rename = "(FILE|DIR)\\s*(.+)";
 
+	/* Extract the hostname from a URL. */
+	const char *hostname = "^http(s?)://(.+\\.amazonaws\\.com).*";
+
+	const char *regionPart =
+		"^http[s]?://([^\\.]+\\.)?([^\\.]+)\\.amazonaws\\.com$";
+
 	/* Compile regular expressions. */
-    #define COMPILE_REGEX_JOINER( x, y ) x.y
-    #define COMPILE_REGEX( regex ) COMPILE_REGEX_JOINER( regexes, regex ) = \
+    #define COMPILE_REGEX( regex ) regexes.regex = \
 			g_regex_new( regex, G_REGEX_OPTIMIZE, G_REGEX_MATCH_NOTEMPTY, NULL )
 
 	COMPILE_REGEX( connectAuth );
@@ -974,6 +970,8 @@ CompileRegexes(
 	COMPILE_REGEX( createDirOptions );
 	COMPILE_REGEX( trimString );
 	COMPILE_REGEX( rename );
+	COMPILE_REGEX( hostname );
+	COMPILE_REGEX( regionPart );
 }
 
 
@@ -992,5 +990,7 @@ FreeRegexes(
 	g_regex_unref( regexes.createDirOptions );
 	g_regex_unref( regexes.trimString );
 	g_regex_unref( regexes.rename );
+	g_regex_unref( regexes.hostname );
+	g_regex_unref( regexes.regionPart );
 }
 

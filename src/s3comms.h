@@ -66,6 +66,11 @@ int s3_SubmitS3PutRequest( S3COMM *handle, struct curl_slist *headers,
 						   const char *filename, void **response,
 						   int *responseLength, unsigned char *bodyData,
 						   size_t bodyLength );
+struct curl_slist*
+BuildS3Request( S3COMM *instance, const char *httpMethod,
+				const char *hostname, struct curl_slist *additionalHeaders,
+				const char *filename );
+void DeleteCurlSlistAndContents( struct curl_slist *toDelete );
 
 
 #endif /* __S3_COMMS_H */

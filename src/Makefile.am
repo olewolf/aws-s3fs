@@ -35,11 +35,13 @@ aws_s3fs_SOURCES = $(HDR) sysdirs.h aws-s3fs.c \
 #aws_s3fs_queue_SOURCES = config.h aws-s3fs.h socket.h filecache.c socket.c \
 	filecachedb.c
 
+test_client_LDADD = libaws-s3fs0.la
 test_client_SOURCES = config.h socket.h filecache.c socket.c filecachedb.c \
 	test-client.c
 
+test_server_LDADD = libaws-s3fs0.la
 test_server_SOURCES = config.h aws-s3fs.h socket.h filecache.c socket.c \
-	filecachedb.c test-server.c
+	filecachedb.c test-server.c downloadqueue.c grant.c
 
 
 lib_LTLIBRARIES = libaws-s3fs0.la

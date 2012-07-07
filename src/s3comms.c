@@ -105,11 +105,11 @@ UnlockCurl(
  */
 S3COMM*
 s3_open( 
-	enum bucketRegions region,
-	const char         *bucket,
-	const char         *keyId,
-	const char         *secretKey
-          )
+	enum  bucketRegions region,
+	const char          *bucket,
+	const char          *keyId,
+	const char          *secretKey
+        )
 {
 	S3COMM *newInstance;
 	const pthread_mutex_t defaultMutex = PTHREAD_MUTEX_INITIALIZER;
@@ -149,7 +149,7 @@ s3_open(
 void
 s3_close(
 	S3COMM *handle
-           ) 
+         ) 
 {
 	pthread_mutex_lock( &handles_mutex );
 	handles = g_slist_remove( handles, handle );
@@ -703,16 +703,16 @@ CreateAwsSignature(
  * @param toDelete [in] Pointer to the first entry in the curl_slist.
  * @return Nothing.
  */
-static void
+void
 DeleteCurlSlistAndContents(
     struct curl_slist *toDelete
-			   )
+	                       )
 {
     if( toDelete != NULL )
     {
-	DeleteCurlSlistAndContents( toDelete->next );
-	free( toDelete->data );
-	free( toDelete );
+		DeleteCurlSlistAndContents( toDelete->next );
+		free( toDelete->data );
+		free( toDelete );
     }
 }
 
@@ -782,7 +782,7 @@ qsort_strcmp( const void *a, const void *b )
  * @param filename [in] The full path of the file that is accessed.
  * @return Complete HTTP header list, including an AWS signature.
  */
-STATIC struct curl_slist*
+struct curl_slist*
 BuildS3Request(
 	S3COMM             *instance,
     const char         *httpMethod,
@@ -951,33 +951,7 @@ s3_SubmitS3Request(
 
     /* Determine the virtual host name. */
     hostName = GetS3HostNameByRegion( instance->region, instance->bucket );
-
-    /* Determine the length of the URL. */
-    urlLength = strlen( hostName )
-                + strlen( "https://" )
-                + strlen( instance->bucket ) + sizeof( char )
-                + strlen( filename )
-                + sizeof( char )
-                + sizeof( char );
-    /* Build the full URL, adding a '/' to the host if the filename does not
-       include it as its leading character. */
-    url = malloc( urlLength );
-    if( instance->region != US_STANDARD )
-    {
-        sprintf( url, "https://%s%s%s", hostName,
-				 filename[ 0 ] == '/' ? "" : "/",
-				 filename );
-    }
-    else
-    {
-        sprintf( url, "https://%s/%s%s%s", hostName,
-				 instance->bucket,
-				 filename[ 0 ] == '/' ? "" : "/",
-				 filename );
-    }
-
     headers = BuildS3Request( instance, httpVerb, hostName, headers, filename );
-    free( hostName );
 
     /* Submit request via CURL and wait for the response. */
     LockCurl( &instance->curl_mutex );
@@ -1012,8 +986,31 @@ s3_SubmitS3Request(
 		curl_easy_setopt( curl, CURLOPT_UPLOAD, true );
 		curl_easy_setopt( curl, CURLOPT_INFILESIZE, 0 );
     }
-
     curl_easy_setopt( curl, CURLOPT_HTTPHEADER, headers );
+    /* Determine the length of the URL. */
+    urlLength = strlen( hostName )
+                + strlen( "https://" )
+                + strlen( instance->bucket ) + sizeof( char )
+                + strlen( filename )
+                + sizeof( char )
+                + sizeof( char );
+    /* Build the full URL, adding a '/' to the host if the filename does not
+       include it as its leading character. */
+    url = malloc( urlLength );
+    if( instance->region != US_STANDARD )
+    {
+        sprintf( url, "https://%s%s%s", hostName,
+				 filename[ 0 ] == '/' ? "" : "/",
+				 filename );
+    }
+    else
+    {
+        sprintf( url, "https://%s/%s%s%s", hostName,
+				 instance->bucket,
+				 filename[ 0 ] == '/' ? "" : "/",
+				 filename );
+    }
+    free( hostName );
     curl_easy_setopt( curl, CURLOPT_URL, url );
     /*
 	curl_easy_setopt( curl, CURLOPT_VERBOSE, 1 );
