@@ -165,7 +165,7 @@ OpenCacheFile(
 
 
 /**
- * Instruct the file cache to retrieve a file from external storage. If the
+ * Ask the file cache to retrieve a file from external storage. If the
  * file is already in the cache, the function returns immediately without
  * downloading the file.
  * @param path [in] Full S3 path name of the file.
@@ -204,7 +204,7 @@ DownloadCacheFile(
 
 /**
  * Close a cached file, meaning it is no longer accessed by a particular
- * user. If all access to the file has released, prepare for synchronization.
+ * user. Prepare for synchronization once all access to the file is released.
  * @param path [in] Path name of the file.
  * @return 0 on success, or \a -errno on failure.
  */
@@ -215,6 +215,7 @@ CloseCacheFile(
 	const char *path
 	           )
 {
+	/* Stub */
 	return( 0 );
 }
 #pragma GCC diagnostic pop
@@ -268,7 +269,6 @@ GetDirtyStatsList(
 	*dirtyFiles = dirtyList;
 	return( nDirty );
 }
-
 
 
 

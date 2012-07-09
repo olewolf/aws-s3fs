@@ -20,8 +20,6 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-// See http://www.thomasstover.com/uds.html for passing credentials and file
-// handles over a socket.
 
 #include <config.h>
 #include <stdlib.h>
@@ -392,6 +390,7 @@ ReceiveRequests(
 									&message );
 		if( 0 <= status )
 		{
+			
 			getsockopt( clientConnection->connectionHandle, SOL_SOCKET,
 						SO_PEERCRED, &credentials, &credentialsLength );
 			clientConnection->uid = credentials.uid;
@@ -654,9 +653,9 @@ ClientConnectionsListener(
 
 
 /**
- * The client sends a connect message passing the key ID and the secret key.
- * The CacheClientConnection structure for the client is updated with these
- * keys.
+ * The client sends a connect message passing the bucket, the key ID, and the
+ * secret key. The CacheClientConnection structure for the client is updated
+ * with this information.
  * The server responds with CONNECTED or ERROR.
  * @param clientConnection [in/out] CacheClientConnection structure for the
  *        client.
@@ -684,8 +683,9 @@ ClientConnects(
 		secretKey = g_match_info_fetch( matchInfo, 3 );
 		g_match_info_free( matchInfo );
 
-		/* Store the keys in the client connection info structure, and return
-		   a success message if the keys have the correct length. */
+		/* Store the bucket name and the keys in the client connection info
+		   structure, and return a success message if the keys have the
+		   correct length. */
 		if( ( strlen( keyId ) == 20 ) && ( strlen( secretKey ) == 40 ) )
 		{
 			clientConnection->bucket = bucket;
@@ -736,6 +736,9 @@ ClientRequestsCaching(
 	int         status;
 
 	GMatchInfo *matchInfo;
+	gchar      *parentUidStr;
+	gchar      *parentGidStr;
+	gchar      *parentPermissionsStr;
 	gchar      *uidStr;
 	gchar      *gidStr;
 	gchar      *permissionsStr;
@@ -750,15 +753,19 @@ ClientRequestsCaching(
 	char       *localfile;
 	char       *reply;
 
-	/* Extract uid, gid, permissions, mtime, and filename. */
+	/* Extract parent uid, parent gid, parent permissions, uid, gid,
+	   permissions, mtime, and filename. */
 	g_regex_ref( regexes.createFileOptions );
 	if( g_regex_match( regexes.createFileOptions, request, 0, &matchInfo ) )
 	{
-		uidStr         = g_match_info_fetch( matchInfo, 1 );
-		gidStr         = g_match_info_fetch( matchInfo, 2 );
-		permissionsStr = g_match_info_fetch( matchInfo, 3 );
-		mtimeStr       = g_match_info_fetch( matchInfo, 4 );
-		path           = g_match_info_fetch( matchInfo, 5 );
+		parentUidStr         = g_match_info_fetch( matchInfo, 1 );
+		parentGidStr         = g_match_info_fetch( matchInfo, 2 );
+		parentPermissionsStr = g_match_info_fetch( matchInfo, 3 );
+		uidStr               = g_match_info_fetch( matchInfo, 4 );
+		gidStr               = g_match_info_fetch( matchInfo, 5 );
+		permissionsStr       = g_match_info_fetch( matchInfo, 6 );
+		mtimeStr             = g_match_info_fetch( matchInfo, 7 );
+		path                 = g_match_info_fetch( matchInfo, 8 );
 		g_match_info_free( matchInfo );
 		/* Create numeric values for uid, gid, permissions, and mtime. */
 		uid         = atoi( uidStr );
@@ -942,6 +949,7 @@ CompileRegexes(
 
 	/* Grep uid:gid:perm:mtime:string */
 	const char *createFileOptions =
+		"([0-9]{1,5})\\s*:\\s*([0-9]{1,5})\\s*:\\s*([0-9]{1,3})\\s*:\\s*"
 		"([0-9]{1,5})\\s*:\\s*([0-9]{1,5})\\s*:\\s*([0-9]{1,3})\\s*:\\s*"
 		"([0-9]{1,20})\\s*:\\s*(.+)";
 
