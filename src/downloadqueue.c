@@ -75,6 +75,7 @@ struct DownloadSubscription
 
 struct DownloadStarter
 {
+	int                         socket;
 	int                         downloader;
 	struct DownloadSubscription *subscription;
 };
@@ -86,11 +87,12 @@ static void *BeginDownload( void *threadCtx );
 static void UnsubscribeFromDownload(
 	struct DownloadSubscription *subscription );
 static struct DownloadSubscription *GetSubscriptionFromQueue( void );
-static bool MoveToSharedCache( const char *parentname, uid_t parentUid,
+static bool MoveToSharedCache( int socketHandle,
+							   const char *parentname, uid_t parentUid,
 							   gid_t parentGid, const char *filename,
 							   uid_t uid, gid_t gid );
 
-static void SendGrantMessage( const char *privopRequest );
+static void SendGrantMessage( int socketHandle, const char *privopRequest );
 
 
 
@@ -273,12 +275,15 @@ UnsubscribeFromDownload(
 /**
  * Pull requests from the download queue and start downloads. This function
  * is started as a thread.
+ * @param socket [in] The socket handle for communicating with the permissions
+ *        grant module.
+ * @return Nothing.
  */
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 void*
 ProcessDownloadQueue(
-	void *ctx
+	void *socket
 	                 )
 {
 	int                         i;
@@ -287,7 +292,9 @@ ProcessDownloadQueue(
 	bool                        tryMoreDownloads;
 	struct DownloadStarter      *downloadStarter;
 	pthread_t                   threadId;
+	int                         socketHandle;
 
+	socketHandle = * (int*) socket;
 
 	/* Initialize downloaders. The S3COMM handle is not acquired by
 	   s3_open( ), because for downloads, its contents are file specific
@@ -322,7 +329,9 @@ ProcessDownloadQueue(
 				downloadStarter = malloc( sizeof( struct DownloadStarter ) );
 				downloadStarter->downloader   = downloader;
 				downloadStarter->subscription = subscription;
-				pthread_create( &threadId, NULL, BeginDownload, NULL );
+				downloadStarter->socket       = socketHandle;
+				pthread_create( &threadId, NULL, BeginDownload,
+								downloadStarter );
 				tryMoreDownloads = true;
 			}
 			else
@@ -421,6 +430,7 @@ BeginDownload(
 	void *ctx
 	          )
 {
+	int                         socketHandle;
 	struct DownloadStarter      *downloadStarter;
 	int                         downloader;
 	struct DownloadSubscription *subscription;
@@ -453,6 +463,7 @@ BeginDownload(
 	downloadStarter = (struct DownloadStarter*) ctx;
 	downloader      = downloadStarter->downloader;
 	subscription    = downloadStarter->subscription;
+	socketHandle    = downloadStarter->socket;
 	free( ctx );
 
 	downloaders[ downloader ].isReady = false;
@@ -510,7 +521,7 @@ BeginDownload(
 		free( downloadFile );
 		/* Grant appropriate rights to the file and move it into the shared
 		   cache folder. */
-		MoveToSharedCache( parentname, parentUid, parentGid,
+		MoveToSharedCache( socketHandle, parentname, parentUid, parentGid,
 						   filename, uid, gid );
 		free( parentname );
 		free( filename );
@@ -585,6 +596,7 @@ GetSubscriptionFromQueue(
  */
 static bool
 MoveToSharedCache(
+	int        socketHandle,
 	const char *parentname,
 	uid_t      parentUid,
 	gid_t      parentGid,
@@ -602,7 +614,7 @@ MoveToSharedCache(
 						   + sizeof( char ) );
 	sprintf( chownRequest, "CHOWN %d %d ", (int) parentUid, (int) parentGid );
 	strcat( chownRequest, parentname );
-	SendGrantMessage( chownRequest );
+	SendGrantMessage( socketHandle, chownRequest );
 	free( chownRequest );
 
 	/* Similarly, give the downloaded file appropriate ownership. */
@@ -610,7 +622,7 @@ MoveToSharedCache(
 						   + sizeof( char ) );
 	sprintf( chownRequest, "CHOWN %d %d ", (int) uid, (int) gid );
 	strcat( chownRequest, filename );
-	SendGrantMessage( chownRequest );
+	SendGrantMessage( socketHandle, chownRequest );
 
 	return( true );
 }
@@ -625,9 +637,10 @@ MoveToSharedCache(
  */
 static void
 SendGrantMessage(
+	int        socketHandle,
     const char *privopRequest
 	             )
 {
 	/* Stub. */
-	printf( "Sending message to privileged process: %s\n", privopRequest );
+	printf( "Sending message via socket %d to privileged process: %s\n", socketHandle, privopRequest );
 }

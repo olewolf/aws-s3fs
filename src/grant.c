@@ -1,5 +1,5 @@
 /**
- * \file chowner.c
+ * \file grant.c
  * \brief Privileged operations for performing chown on files.
  *
  * Copyright (C) 2012 Ole Wolf <wolf@blazingangles.com>
@@ -28,28 +28,76 @@
 #include <string.h>
 #include <malloc.h>
 #include <assert.h>
-#include "aws-s3fs.h"
 #include "socket.h"
-
-
-#undef CACHE_DIR
-#define CACHE_DIR "./temp"
-#undef SOCKET_NAME
-#define SOCKET_NAME "temp/aws-s3fs.sock"
+#include "filecache.h"
 
 
 #define CACHE_FILES    CACHE_DIR "/files/"
 
+#define COMPARESTRINGS( x, y ) \
+    ( ( ( strlen( y ) < length ) && \
+		( strncasecmp( x, y, strlen( y ) ) == 0 ) ) ? 0 : 1 )
+
+
+
+/**
+ * Initialize the Permission Grant module.
+ * @param childPid [in] pid of the download queue; the permission grant module
+ *        will accept socket communication only from a process with this pid.
+ * @param socketHandle [in] Socket handle for communicating with the download
+ *        queue.
+ * @return Nothing.
+ */
+void
+InitializePermissionsGrant(
+	pid_t childPid,
+	int   socketHandle
+	                       )
+{
+	struct ucred credentials;
+	size_t       length;
+	char         request[ 100 ];
+	int          fd; /* unused */
+
+
+	while( 1 )
+	{
+		/* Wait for a request from the download queue. */
+		length = SocketReceiveDatagramFromClient( socketHandle, request,
+												  sizeof( request ),
+												  &credentials, &fd );
+
+		/* Validate the sender: it must have the pid of the download queue. */
+		if( credentials.pid == childPid )
+		{
+			/* Process the request. */
+			if( COMPARESTRINGS( request, "CHOWN " ) == 0 )
+			{
+			}
+			else if( COMPARESTRINGS( request, "PUBLISH " ) == 0 )
+			{
+			}
+			else if( COMPARESTRINGS( request, "DELETE " ) == 0 )
+			{
+			}
+			else
+			{
+			}
+		}
+		/* Silently ignore the message if it was not sent from the download
+		   queue. */
+		else
+		{
+			/* Do nothing. */
+		}
+	}
+
+}
 
 
 
 
-
-
-
-
-
-
+#if 0
 /**
  * Initialize the socket which is used to communicate with the file cache
  * module.
@@ -129,5 +177,5 @@ void Client( void )
     }
 }
 
-
+#endif
 

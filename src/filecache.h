@@ -42,7 +42,6 @@ struct RegularExpressions
 {
 	GRegex *connectAuth;
 	GRegex *createFileOptions;
-	GRegex *createDirOptions;
 	GRegex *trimString;
 	GRegex *rename;
 	GRegex *hostname;
@@ -61,6 +60,8 @@ int DownloadCacheFile( const char *path );
 int CloseCacheFile( const char *path );
 const char *SendCacheRequest( const char *message );
 const char *ReceiveCacheReply( void );
+void InitializePermissionsGrant( pid_t childPid, int socketHandle );
+void *ProcessDownloadQueue( void *socket );
 
 
 

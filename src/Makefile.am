@@ -37,7 +37,7 @@ aws_s3fs_SOURCES = $(HDR) sysdirs.h aws-s3fs.c \
 
 test_client_LDADD = libaws-s3fs0.la
 test_client_SOURCES = config.h socket.h filecache.c socket.c filecachedb.c \
-	test-client.c
+	test-client.c grant.c downloadqueue.c
 
 test_server_LDADD = libaws-s3fs0.la
 test_server_SOURCES = config.h aws-s3fs.h socket.h filecache.c socket.c \

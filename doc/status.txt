@@ -1,5 +1,9 @@
-2012-07-05:
-	
+2012-07-10:
+	Removed the MKDIR request from the File Cache.
+	Added process forking to filecache.c
+
+2012-07-09:
+	Documented the aws-s3fs architecture and design.
 
 2012-07-02:
 	Enabled threads to block the SIGPIPE signal that occurs if the client

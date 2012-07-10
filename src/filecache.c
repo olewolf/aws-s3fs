@@ -27,6 +27,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <malloc.h>
+#include <fcntl.h>
 #include <sys/stat.h>
 #include <assert.h>
 #include <pthread.h>
@@ -43,6 +44,7 @@
 
 
 static pthread_t clientConnectionsListener;
+static pthread_t downloadQueue;
 
 /* Used as a constant for blocking the SIGPIPE signal. */
 static sigset_t sigpipeMask;
@@ -76,6 +78,7 @@ static int ClientConnects( struct CacheClientConnection *clientConnection,
 						   const char *request );
 static int ClientRequestsCaching(
 	struct CacheClientConnection *clientConnection, const char *request );
+
 /*
 static int ClientRequestsMkdir(
     struct CacheClientConnection *clientConnection, const char *request );
@@ -86,10 +89,10 @@ static int ClientRequestsMkdir(
 
 
 /**
- * Block the SIGPIPE signal that may be generated on write( ). The problem
+ * Block the SIGPIPE signal that may be generated on write( ).  The problem
  * is that the signal is delivered synchronously, meaning it must be handled
  * by an action handler that is set on a per-process level; it is also
- * delivered only to the thread that performs the write. Hence, blocking it
+ * delivered only to the thread that performs the write.  Hence, blocking it
  * and testing for errno == EPIPE is the best approach.
  * @param wasPending [out] \a true if a SIGPIPE signal was pending prior to
  *        blocking it; \a false otherwise.
@@ -121,7 +124,7 @@ BlockSigpipeSignal(
 
 
 /**
- * Unblock the SIGPIPE signal.
+ * Restore the SIGPIPE signal to its previous state.
  * @param wasPending [in] \a true if a SIGPIPE signal was pending prior to
  *        blocking it; \a false otherwise.
  * @param wasBlocked [in] \a true if the SIGPIPE signal was already blocked
@@ -129,7 +132,7 @@ BlockSigpipeSignal(
  * @return Nothing.
  */
 void
-UnblockSigpipeSignal( 
+RestoreSigpipeSignal( 
 	bool wasPending,
 	bool wasBlocked
 	               )
@@ -150,7 +153,7 @@ UnblockSigpipeSignal(
         {
 			/* The SIGPIPE may have been sent from a malicious user to the
 			   process and delivered to another thread before we've had the
-			   chance to react on it. Circumvent this situation in the wait. */
+			   chance to react on it.  Circumvent this situation in the wait. */
 			do
 			{
 				res = sigtimedwait( &sigpipeMask, NULL, &zeroWait );
@@ -168,7 +171,7 @@ UnblockSigpipeSignal(
 
 
 /**
- * Send a message to a client via a socket connection. The message is sent
+ * Send a message to a client via a socket connection.  The message is sent
  * including its string-terminating null character.
  * @param connectionHandle [in] Connection handle for the socket.
  * @param message [in] Message to send.
@@ -190,7 +193,7 @@ SendMessageToClient(
 	status = write( connectionHandle, message,
 					strlen( message ) + sizeof( char ) );
 	/* Restore the SIGPIPE signal action. */
-	UnblockSigpipeSignal( wasPending, wasBlocked );
+	RestoreSigpipeSignal( wasPending, wasBlocked );
 
 	printf( "Written, status = %d\n", status );
 	return( status );
@@ -198,7 +201,12 @@ SendMessageToClient(
 
 
 
-#if 0
+
+/**
+ * Respond to HUP and TERM signals.
+ */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 static void
 SignalHandler(
 	int       signal,
@@ -206,9 +214,139 @@ SignalHandler(
 	void      *context
 	          )
 {
-	/* No handling of signals required. */
+    switch( sigInfo->si_signo )
+    {
+        case SIGHUP:
+            break;
+        case SIGTERM:
+            exit( EXIT_SUCCESS );
+            break;
+
+	    default:
+			break;
+	}
 }
-#endif
+#pragma GCC diagnostic pop
+
+
+
+/**
+ * Start two processes: the file cache module together with the download queue,
+ * and the permissions grant module.  The permissions grant module keeps its
+ * superuser privileges.
+ * @return Nothing.
+ */
+void
+StartProcesses(
+	void
+	           )
+{
+	int              socketPair[ 2 ];
+	char             *runDir;
+	pid_t            forkPid;
+	int              fileDesc;
+	int              stdIO;
+	struct sigaction sigAction;
+
+	/* Setup a socket pair for communication between the two processes. */
+	if( socketpair( PF_UNIX, SOCK_DGRAM, 0, socketPair ) < 0 )
+	{
+		fprintf( stderr, "Could not create socket pairs\n" );
+		exit( EXIT_FAILURE );
+	}
+	/* Start a child process. */
+	if( ( forkPid = fork( ) ) < 0 )
+	{
+		fprintf( stderr, "Could not fork process\n" );
+		exit( EXIT_FAILURE );
+	}
+	/* Set working directory, file permissions, and signal handling for both
+	   the child process and the parent process. */
+	else
+	{
+        /* Set default file permissions for created files. */
+        umask(027);
+        /* Change running directory. */
+        runDir = getenv( "TMPDIR" );
+        if( runDir == NULL )
+        {
+            runDir = DEFAULT_TMP_DIR;
+        }
+        if( chdir( runDir ) != 0 )
+        {
+            fprintf( stderr, "Cannot change to directory %s\n", runDir );
+        }
+
+		/* Register handling of the HUP and the TERM signals. */
+		memset( &sigAction, 0, sizeof( sigAction ) );
+		sigAction.sa_sigaction = &SignalHandler;
+		/* Use sa_sigaction to handle the signals. */
+		sigAction.sa_flags = SA_SIGINFO;
+		if( sigaction( SIGHUP, &sigAction, NULL ) < 0 )
+		{  
+			perror( "Cannot register SIGHUP handler" );
+			exit( EXIT_FAILURE );
+		}
+		if( sigaction( SIGTERM, &sigAction, NULL ) < 0)
+		{  
+			perror( "Cannot register SIGTERM handler" );
+			exit( EXIT_FAILURE );
+		}
+		/* Ignore TTY signals. */
+		sigAction.sa_flags = 0;
+		sigAction.sa_handler = SIG_IGN;
+		sigaction( SIGTSTP, &sigAction, NULL );
+		sigaction( SIGTTOU, &sigAction, NULL );
+		sigaction( SIGTTIN, &sigAction, NULL );
+
+		/* Initialize the child process, which runs the file cache module. */
+		if( forkPid == 0 )
+		{
+			close( socketPair[ 1 ] );
+
+			/* Obtain a new process group. */
+			setsid( ); 
+			/* Close all descriptors. */
+			for( fileDesc = getdtablesize( ); fileDesc >= 0; --fileDesc )
+			{
+				close( fileDesc );
+			}
+			/* Handle standard I/O. */
+			stdIO = open( "/dev/null", O_RDWR );
+			if( dup( stdIO ) < 0 )
+			{
+				fprintf( stderr, "Cannot redirect stdout to /dev/null\n" );
+				exit( EXIT_FAILURE );
+			}
+			if( dup( stdIO ) < 0 )
+			{
+				fprintf( stderr, "Cannot redirect stderr to /dev/null\n" );
+				exit( EXIT_FAILURE );
+			}
+
+			/* Start the download queue as a thread. */
+			if( pthread_create( &downloadQueue, NULL,
+								ProcessDownloadQueue, &socketPair[ 1 ] ) != 0 )
+			{
+				fprintf( stderr, "Couldn't start download queue thread" );
+				exit( 1 );
+			}
+			/* Start the file cache server. */
+			InitializeFileCache( );
+			while( 1 )
+			{
+				sleep( 5 );
+			}
+			ShutdownFileCache( );
+		}
+		/* Start the permissions grant module. */
+		else
+		{
+			close( socketPair[ 0 ] );
+			InitializePermissionsGrant( forkPid, socketPair[ 1 ] );
+		}
+	}
+}
 
 
 
@@ -218,8 +356,8 @@ SignalHandler(
  */
 void
 InitializeFileCache(
-    void
-	               )
+	void
+	                )
 {
 	/* Initialize the sigpipeMask constant. */
 	sigemptyset( &sigpipeMask );
@@ -249,7 +387,7 @@ InitializeFileCache(
 	}
 #endif
 
-    /* Create the files directory. Ignore any errors for now (such as that
+    /* Create the files directory.  Ignore any errors for now (such as that
        the directory already exists), because we only need to react to the
        fact that the local files won't be created unless the directory
        exists. */
@@ -294,8 +432,7 @@ ShutdownFileCache(
 
 
 /**
- * Read the entire pending message, regardless of length, and place it in
- * a buffer.
+ * Read the entire pending message and place it in a buffer.
  * @param connectionHandle [in] Socket connection handle.
  * @param clientMessage [out] Message received from the client.
  * @return Number of bytes read.
@@ -365,9 +502,10 @@ ReadEntireMessage(
 
 
 /**
- * Thread that waits for requests and handles them appropriately. Each client
- * connection has its own thread to enable one thread to wait for a message
+ * Thread that waits for requests and handles them appropriately.  Each client
+ * connection gets its own thread so that one thread may wait for a message
  * without blocking other threads.
+ * @param data [in] Thread context: the client connection.
  * @return Thread status (always 0 ).
  */
 static void*
@@ -465,7 +603,7 @@ CommandDispatcher(
 		printf( "unknown command.\n" );
 		status = SendMessageToClient( clientConnection->connectionHandle,
 									  "ERROR: unknown command" );
-		/* If the client has terminated, the pipe is broken. Terminate
+		/* If the client has terminated, the pipe is broken.  Terminate
 		   the receiving thread. */
 		if( status == -EPIPE )
 		{
@@ -480,8 +618,8 @@ CommandDispatcher(
 
 
 /**
- * Create a local filename for the S3 file and create a database entry
- * with the two file names and the S3 file attributes.
+ * Create a local filename for the S3 file, and create a database entry
+ * with the two related file names and the S3 file attributes.
  * @param path [in] Full S3 pathname for the file.
  * @param uid [in] Ownership of the S3 file.
  * @param gid [in] Ownership of the S3 file.
@@ -541,7 +679,7 @@ CreateLocalFile(
 
 /**
  * Create a local directory where downloaded files or newly created files
- * are stored and keep it in the database. The local directory serves to
+ * are stored and keep it in the database.  The local directory serves to
  * mimic ownership and permissions of an S3 parent directory.
  * @param path [in] Directory path on the S3 storage.
  * @param uid [in] uid of the directory.
@@ -596,7 +734,7 @@ CreateLocalDir(
 
 /**
  * Thread that listens to new connections and adds client connections as
- * they are detected. A new thread is initiated for each new connection
+ * they are detected.  A new thread is initiated for each new connection
  * so that the process is able to wait for activity on them without blocking
  * the other threads.
  * @return Thread status (always 0 ).
@@ -655,7 +793,7 @@ ClientConnectionsListener(
 
 /**
  * The client sends a connect message passing the bucket, the key ID, and the
- * secret key. The CacheClientConnection structure for the client is updated
+ * secret key.  The CacheClientConnection structure for the client is updated
  * with this information.
  * The server responds with CONNECTED or ERROR.
  * @param clientConnection [in/out] CacheClientConnection structure for the
@@ -721,7 +859,7 @@ ClientConnects(
 
 /**
  * The client sends a caching request message for a file and the filecache
- * server adds the file to the download queue. The thread is blocked until the
+ * server adds the file to the download queue.  The thread is blocked until the
  * file has been downloaded.
  * @param clientConnection [in/out] CacheClientConnection structure for the
  *        client.
@@ -789,8 +927,6 @@ ClientRequestsCaching(
 		g_free( permissionsStr );
 		g_free( mtimeStr );
 
-
-		/* Trim the filename. */
 		filename = TrimString( path );
 		/* Identify the directory name. */
 		parentdir = g_path_get_dirname( path );
@@ -799,10 +935,11 @@ ClientRequestsCaching(
 			parentdir[ 0 ] = '/';
 		}
 
-		/* Create a local name for the directory and return the ID of
+		/* Create a local name for the directory and get the ID of
 		   its database entry. */
 		parentId = CreateLocalDir( parentdir, parentUid,
 								   parentGid, parentPermissions );
+		free( parentdir );
 		if( 0 < parentId )
 		{
 			/* Create a local file for the filename and return the name. */
@@ -817,24 +954,26 @@ ClientRequestsCaching(
 				free( reply );
 				status = 0;
 			}
+			/* Couldn't create the local file. */
 			else
 			{
 				status = -EIO;
 			}
 			free( filename );
 		}
+		/* Couldn't create the parent directory. */
 		else
 		{
-			status = -EINVAL;
+			status = -EIO;
 			SendMessageToClient( clientConnection->connectionHandle,
-								 "ERROR: cannot open file for caching" );
+								 "ERROR: cannot create local directory" );
 		}
 	}
 	else
 	{
 		status = -EINVAL;
 		SendMessageToClient( clientConnection->connectionHandle,
-							 "ERROR: cannot create local dir" );
+							 "ERROR: cannot parse request parameters" );
 	}
 
 	g_regex_unref( regexes.createFileOptions );
@@ -844,112 +983,8 @@ ClientRequestsCaching(
 
 
 
-#if 0
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-static int
-ClientRequestsDownload(
-    struct CacheClientConnection *clientConnection,
-	const char                   *request
-	                   )
-{
-
-	printf( "Download: %s\n", request );
-
-	/* Determine the name of the local file. */
-	
-
-	/* Return if the file is already available in the cache directory. */
-
-
-	/* Otherwise, enqueue for download. */
-
-	SendMessageToClient( clientConnection->connectionHandle, "OK" );
-	return( 0 );
-}
-#pragma GCC diagnostic pop
-#endif
-
-
-
-#if 0
-static int
-ClientRequestsMkdir(
-    struct CacheClientConnection *clientConnection,
-	const char                   *request
-	                    )
-{
-	int         status;
-
-	GMatchInfo *matchInfo;
-	gchar      *uidStr;
-	gchar      *gidStr;
-	gchar      *permissionsStr;
-	gchar      *path;
-
-	int        uid;
-	int        gid;
-	int        permissions;
-	char       *dirname;
-	char       *localdir;
-	char       *reply;
-
-	/* Extract uid, gid, permissions, mtime, and directory name. */
-	g_regex_ref( regexes.createDirOptions );
-	if( g_regex_match( regexes.createDirOptions, request, 0, &matchInfo ) )
-	{
-		uidStr         = g_match_info_fetch( matchInfo, 1 );
-		gidStr         = g_match_info_fetch( matchInfo, 2 );
-		permissionsStr = g_match_info_fetch( matchInfo, 3 );
-		path           = g_match_info_fetch( matchInfo, 4 );
-		g_match_info_free( matchInfo );
-		/* Create numeric values for uid, gid, and permissions. */
-		uid         = atoi( uidStr );
-		gid         = atoi( gidStr );
-		permissions = atoi( permissionsStr );
-		g_free( uidStr );
-		g_free( gidStr );
-		g_free( permissionsStr );
-		/* Trim the directory name. */
-		dirname = TrimString( path );
-
-		/* Create a local name for the directory and return the name. */
-		if( CreateLocalDir( dirname, uid, gid, permissions, &localdir ) )
-		{
-
-			reply = malloc( strlen( "CREATED " ) + sizeof( localdir )
-							+ sizeof( char ) );
-			sprintf( reply, "CREATED %s", localdir );
-			SendMessageToClient( clientConnection->connectionHandle, reply );
-			free( reply );
-			status = 0;
-		}
-		else
-		{
-			status = -EIO;
-		}
-		free( dirname );
-	}		
-	else
-	{
-		status = -EINVAL;
-	}
-	g_regex_unref( regexes.createDirOptions );
-
-	if( status != 0 )
-	{
-		SendMessageToClient( clientConnection->connectionHandle,
-							 "ERROR: cannot create directory" );
-	}
-
-	return( status );
-}
-#endif
-
-
-
 /**
- * Remove whitespace before and after a string. The original string memory
+ * Remove whitespace before and after a string.  The original string memory
  * is released.
  * @param original [in/out] String with possibly leading and/or trailing
  *        whitespace.
@@ -991,10 +1026,6 @@ CompileRegexes(
 		"([0-9]{1,5})\\s*:\\s*([0-9]{1,5})\\s*:\\s*([0-9]{1,3})\\s*:\\s*"
 		"([0-9]{1,20})\\s*:\\s*(.+)";
 
-	/* Grep uid:gid:perm:string */
-	const char *createDirOptions =
-		"([0-9]{1,5})\\s*:\\s*([0-9]{1,5})\\s*:\\s*([0-9]{1,3})\\s*:\\s*(.+)";
-
     /* Replace leading and trailing spaces. */
 	const char *trimString = "^[\\s]+|[\\s]+$";
 
@@ -1013,7 +1044,6 @@ CompileRegexes(
 
 	COMPILE_REGEX( connectAuth );
 	COMPILE_REGEX( createFileOptions );
-	COMPILE_REGEX( createDirOptions );
 	COMPILE_REGEX( trimString );
 	COMPILE_REGEX( rename );
 	COMPILE_REGEX( hostname );
@@ -1033,7 +1063,6 @@ FreeRegexes(
 {
 	g_regex_unref( regexes.connectAuth );
 	g_regex_unref( regexes.createFileOptions );
-	g_regex_unref( regexes.createDirOptions );
 	g_regex_unref( regexes.trimString );
 	g_regex_unref( regexes.rename );
 	g_regex_unref( regexes.hostname );

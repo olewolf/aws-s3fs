@@ -1,7 +1,7 @@
 This README contains notes for packagers
 ----------------------------------------
 
-I am aware of the s3fs code from Randy Rizun <rrizun@gmail.com>. However, this
+I am aware of the s3fs code from Randy Rizun <rrizun@gmail.com>. However, that
 code relies on OpenSSL whose license conflicts with the GPL, and it seems to
 have problems supporting buckets that are not stored on the Standard US server.
 My impression of the quality of the code made me decide to implement aws-s3fs
@@ -46,6 +46,9 @@ provide patches that will enable other build systems.
 
 
 == Source Code Documentation ==
+
+The software design is documented in doc/Design.odt, which is readable by
+the LibreOffice Writer.
 
 The code is documented with Doxygen comments. The documentation is built
 automatically in doc/doxygen if "make" is run and the build has been configured
