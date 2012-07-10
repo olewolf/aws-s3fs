@@ -251,8 +251,8 @@ CompileStandardQueries(
 
     const char *const newFileSql =
         "INSERT INTO files( parent, uid, gid, permissions, mtime,  \
-                            remotename, localname )        \
-        VALUES( ?, ?, ?, ?, ?, ?, ? );";
+                            parent, remotename, localname )        \
+        VALUES( ?, ?, ?, ?, ?, ?, ?, ? );";
 
     const char *const newParentSql =
         "INSERT INTO parents( uid, gid, permissions, remotename, localname ) \
@@ -429,22 +429,20 @@ FindFile(
  */
 sqlite3_int64
 Query_CreateLocalFile(
-    const char *path,
-    int        uid,
-    int        gid,
-    int        permissions,
-    time_t     mtime,
-    char       *localfile,
-	bool       *alreadyExists
+    const char    *path,
+    int           uid,
+    int           gid,
+    int           permissions,
+    time_t        mtime,
+	sqlite3_int64 parentId,
+    char          *localfile,
+	bool          *alreadyExists
 	                  )
 {
     int           rc;
 
-	gchar         *parent;
     sqlite3_stmt  *newFileQuery = cacheDatabase.newFile;
     sqlite3_int64 id = 0;
-    sqlite3_int64 parentId;
-	char          parentDir[ 7 ];
 	char          localname[ 7 ];
 
 	/* Return the file ID if the file is already cached. */
@@ -455,55 +453,36 @@ Query_CreateLocalFile(
 		return( id );
 	}
 
-	/* Get the parent directory of the file. */
-	*alreadyExists = false;
-	parent = g_path_get_dirname( path );
-	if( strcmp( parent, "." ) == 0 )
+	LockCache( );
+	BIND_QUERY( rc, int( newFileQuery, 1, parentId ),
+	BIND_QUERY( rc, int( newFileQuery, 2, uid ),
+	BIND_QUERY( rc, int( newFileQuery, 3, gid ),
+	BIND_QUERY( rc, int( newFileQuery, 4, permissions ),
+    BIND_QUERY( rc, int( newFileQuery, 5, mtime ),
+    BIND_QUERY( rc, int( newFileQuery, 6, parentId ),
+    BIND_QUERY( rc, text( newFileQuery, 7, path, -1, NULL ),
+    BIND_QUERY( rc, text( newFileQuery, 8, localfile, -1, NULL ),
+		) ) ) ) ) ) ) );
+
+    if( rc != SQLITE_OK )
 	{
-		parent[ 0 ] = '/';
+		fprintf( stderr, "Error binding value in insert (%i): %s\n", rc,
+				 sqlite3_errmsg( cacheDatabase.cacheDb ) );
+		exit( 1 );
 	}
-
-	/* Verify that the file's parent directory has been created. The parent
-	   directory is actually not required for the insertion of the file, but
-	   it is required when the cache server releases the file for access. */
-	parentId = FindParent( parent, parentDir );
-
-	/* Insert the filename into the database. */
-	if( parentId == 0 )
+	rc = sqlite3_step( newFileQuery );
+	if( rc != SQLITE_DONE )
 	{
-		LockCache( );
-		BIND_QUERY( rc, int( newFileQuery, 1, parentId ),
-		BIND_QUERY( rc, int( newFileQuery, 2, uid ),
-		BIND_QUERY( rc, int( newFileQuery, 3, gid ),
-		BIND_QUERY( rc, int( newFileQuery, 4, permissions ),
-        BIND_QUERY( rc, int( newFileQuery, 5, mtime ),
-        BIND_QUERY( rc, text( newFileQuery, 6, path, -1, NULL ),
-        BIND_QUERY( rc, text( newFileQuery, 7, localfile, -1, NULL ),
-			) ) ) ) ) ) );
-		if( rc != SQLITE_OK )
-		{
-			fprintf( stderr, "Error binding value in insert (%i): %s\n", rc,
-					 sqlite3_errmsg( cacheDatabase.cacheDb ) );
-			exit( 1 );
-		}
-		rc = sqlite3_step( newFileQuery );
-		if( rc != SQLITE_DONE )
-		{
-			fprintf( stderr, "Insert statement failed (%i): %s\n", rc,
-					 sqlite3_errmsg( cacheDatabase.cacheDb) );
-		}
-		else
-		{
-			id = sqlite3_last_insert_rowid( cacheDatabase.cacheDb );
-		}
-
-		RESET_QUERY( newFile );
-		UnlockCache( );
+		fprintf( stderr, "Insert statement failed (%i): %s\n", rc,
+				 sqlite3_errmsg( cacheDatabase.cacheDb) );
 	}
 	else
 	{
-		printf( "Parent directory does not exist\n" );
+		id = sqlite3_last_insert_rowid( cacheDatabase.cacheDb );
 	}
+
+	RESET_QUERY( newFile );
+	UnlockCache( );
 
     return( id );
 }

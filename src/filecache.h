@@ -69,6 +69,7 @@ void ShutdownFileCacheDatabase( void );
 void InitializeFileCacheDatabase( void );
 sqlite3_int64 Query_CreateLocalFile( const char *path, int uid, int gid,
 									 int permissions, time_t mtime,
+									 sqlite3_int64 parentId,
 									 char *localfile, bool *alreadyExists );
 sqlite3_int64 Query_CreateLocalDir( const char *path, int uid, int gid,
 									int permissions, char *localdir,

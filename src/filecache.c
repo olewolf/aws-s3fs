@@ -76,10 +76,10 @@ static int ClientConnects( struct CacheClientConnection *clientConnection,
 						   const char *request );
 static int ClientRequestsCaching(
 	struct CacheClientConnection *clientConnection, const char *request );
+/*
 static int ClientRequestsMkdir(
     struct CacheClientConnection *clientConnection, const char *request );
-
-
+*/
 //static int ClientRequestsDownload(
 //	struct CacheClientConnection *clientConnection, const char *request );
 
@@ -440,7 +440,7 @@ CommandDispatcher(
 	} dispatchTable[ ] =
 		{
 			{ "CACHE",   ClientRequestsCaching },
-			{ "MKDIR",   ClientRequestsMkdir },
+//			{ "MKDIR",   ClientRequestsMkdir },
 			{ "CONNECT", ClientConnects },
 			{ NULL, NULL }
 		};
@@ -492,12 +492,13 @@ CommandDispatcher(
  */
 static sqlite3_int64
 CreateLocalFile(
-    const char *path,
-    int        uid,
-    int        gid,
-    int        permissions,
-    time_t     mtime,
-    char       **localfile
+    const char    *path,
+    int           uid,
+    int           gid,
+    int           permissions,
+    time_t        mtime,
+	sqlite3_int64 parentId,
+    char          **localfile
 	            )
 {
 	const char    *template = "XXXXXX";
@@ -525,7 +526,7 @@ CreateLocalFile(
 
     /* Insert the filename combo into the database. */
 	id = Query_CreateLocalFile( path, uid, gid, permissions,
-								mtime, *localfile, &exists );
+								mtime, parentId, *localfile, &exists );
 	/* Delete the unique file if the file was already in the database. */
 	if( exists )
 	{
@@ -540,26 +541,25 @@ CreateLocalFile(
 
 /**
  * Create a local directory where downloaded files or newly created files
- * are stored. The local directory serves to mimic ownership and permissions
- * of the S3 parent directory.
+ * are stored and keep it in the database. The local directory serves to
+ * mimic ownership and permissions of an S3 parent directory.
  * @param path [in] Directory path on the S3 storage.
  * @param uid [in] uid of the directory.
  * @param gid [in] gid of the directory.
  * @param permissions [in] Permission flags of the directory.
- * @param localdir [out] Pointer to the name of the local directory.
  * @return Database id of the directory entry in the database.
  */
 static sqlite3_int64
 CreateLocalDir(
-    const char *path,
-    int        uid,
-    int        gid,
-    int        permissions,
-    char       **localdir
+    const char   *path,
+    int          uid,
+    int          gid,
+    int          permissions
 	            )
 {
 	const char    *template = "XXXXXX";
     char          *localname;
+    char          *localdir;
     sqlite3_int64 id;
 	bool          alreadyExists;
 
@@ -573,13 +573,13 @@ CreateLocalDir(
     /* Create a uniquely named directory. */
 	(void) mkdtemp( localname );
     /* Keep the non-redundant part of the local directory name. */
-	*localdir = malloc( strlen( localname ) - strlen( template )
-						+ sizeof( char ) );
-    strcpy( *localdir,
+	localdir = malloc( strlen( localname ) - strlen( template )
+					   + sizeof( char ) );
+    strcpy( localdir,
 			&localname[ strlen( localname ) - strlen( template ) ] );
 
     /* Insert the filename combo into the database. */
-	id = Query_CreateLocalDir( path, uid, gid, permissions, *localdir,
+	id = Query_CreateLocalDir( path, uid, gid, permissions, localdir,
 							   &alreadyExists );
 	/* Delete the temporary directory if it had already been inserted. */
 	if( alreadyExists )
@@ -587,6 +587,7 @@ CreateLocalDir(
 		rmdir( localname );
 	}
     free( localname );
+	free( localdir );
 
     return( id );
 }
@@ -745,13 +746,18 @@ ClientRequestsCaching(
 	gchar      *mtimeStr;
 	gchar      *path;
 
-	int        uid;
-	int        gid;
-	int        permissions;
-	long long  mtime;
-	char       *filename;
-	char       *localfile;
-	char       *reply;
+	char          *parentdir;
+	int           parentUid;
+	int           parentGid;
+	int           parentPermissions;
+	sqlite3_int64 parentId;
+	int           uid;
+	int           gid;
+	int           permissions;
+	long long     mtime;
+	char          *filename;
+	char          *localfile;
+	char          *reply;
 
 	/* Extract parent uid, parent gid, parent permissions, uid, gid,
 	   permissions, mtime, and filename. */
@@ -768,40 +774,69 @@ ClientRequestsCaching(
 		path                 = g_match_info_fetch( matchInfo, 8 );
 		g_match_info_free( matchInfo );
 		/* Create numeric values for uid, gid, permissions, and mtime. */
-		uid         = atoi( uidStr );
-		gid         = atoi( gidStr );
-		permissions = atoi( permissionsStr );
-		mtime       = atoll( mtimeStr );
+		parentUid         = atoi( parentUidStr );
+		parentGid         = atoi( parentGidStr );
+		parentPermissions = atoi( parentPermissionsStr );
+		uid               = atoi( uidStr );
+		gid               = atoi( gidStr );
+		permissions       = atoi( permissionsStr );
+		mtime             = atoll( mtimeStr );
+		g_free( parentUidStr );
+		g_free( parentGidStr );
+		g_free( parentPermissionsStr );
 		g_free( uidStr );
 		g_free( gidStr );
 		g_free( permissionsStr );
 		g_free( mtimeStr );
+
+
 		/* Trim the filename. */
 		filename = TrimString( path );
-
-		/* Create a local file for the filename and return the name. */
-		if( CreateLocalFile( filename, uid, gid, permissions,
-							 mtime, &localfile ) )
+		/* Identify the directory name. */
+		parentdir = g_path_get_dirname( path );
+		if( strcmp( parentdir, "." ) == 0 )
 		{
-			reply = malloc( strlen( "CREATED " ) + sizeof( localfile )
-							+ sizeof( char ) );
-			sprintf( reply, "CREATED %s", localfile );
-			SendMessageToClient( clientConnection->connectionHandle, reply );
-			free( reply );
-			status = 0;
+			parentdir[ 0 ] = '/';
+		}
+
+		/* Create a local name for the directory and return the ID of
+		   its database entry. */
+		parentId = CreateLocalDir( parentdir, parentUid,
+								   parentGid, parentPermissions );
+		if( 0 < parentId )
+		{
+			/* Create a local file for the filename and return the name. */
+			if( CreateLocalFile( filename, uid, gid, permissions,
+								 mtime, parentId, &localfile ) )
+			{
+				reply = malloc( strlen( "CREATED " ) + sizeof( localfile )
+								+ sizeof( char ) );
+				sprintf( reply, "CREATED %s", localfile );
+				SendMessageToClient( clientConnection->connectionHandle,
+									 reply );
+				free( reply );
+				status = 0;
+			}
+			else
+			{
+				status = -EIO;
+			}
+			free( filename );
 		}
 		else
 		{
-			status = -EIO;
+			status = -EINVAL;
+			SendMessageToClient( clientConnection->connectionHandle,
+								 "ERROR: cannot open file for caching" );
 		}
-		free( filename );
 	}
 	else
 	{
 		status = -EINVAL;
 		SendMessageToClient( clientConnection->connectionHandle,
-			"ERROR: cannot open file for caching" );
+							 "ERROR: cannot create local dir" );
 	}
+
 	g_regex_unref( regexes.createFileOptions );
 
 	return( status );
@@ -837,6 +872,7 @@ ClientRequestsDownload(
 
 
 
+#if 0
 static int
 ClientRequestsMkdir(
     struct CacheClientConnection *clientConnection,
@@ -880,6 +916,7 @@ ClientRequestsMkdir(
 		/* Create a local name for the directory and return the name. */
 		if( CreateLocalDir( dirname, uid, gid, permissions, &localdir ) )
 		{
+
 			reply = malloc( strlen( "CREATED " ) + sizeof( localdir )
 							+ sizeof( char ) );
 			sprintf( reply, "CREATED %s", localdir );
@@ -907,6 +944,7 @@ ClientRequestsMkdir(
 
 	return( status );
 }
+#endif
 
 
 
