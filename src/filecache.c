@@ -620,6 +620,7 @@ CommandDispatcher(
 /**
  * Create a local filename for the S3 file, and create a database entry
  * with the two related file names and the S3 file attributes.
+ * @param bucket [in] Bucket in which the S3 file is stored.
  * @param path [in] Full S3 pathname for the file.
  * @param uid [in] Ownership of the S3 file.
  * @param gid [in] Ownership of the S3 file.
@@ -630,6 +631,7 @@ CommandDispatcher(
  */
 static sqlite3_int64
 CreateLocalFile(
+	const char    *bucket,
     const char    *path,
     int           uid,
     int           gid,
@@ -663,7 +665,7 @@ CreateLocalFile(
 			&localname[ strlen( localname ) - strlen( template ) ] );
 
     /* Insert the filename combo into the database. */
-	id = Query_CreateLocalFile( path, uid, gid, permissions,
+	id = Query_CreateLocalFile( bucket, path, uid, gid, permissions,
 								mtime, parentId, *localfile, &exists );
 	/* Delete the unique file if the file was already in the database. */
 	if( exists )
@@ -943,7 +945,8 @@ ClientRequestsCaching(
 		if( 0 < parentId )
 		{
 			/* Create a local file for the filename and return the name. */
-			if( CreateLocalFile( filename, uid, gid, permissions,
+			if( CreateLocalFile( clientConnection->bucket, filename,
+								 uid, gid, permissions,
 								 mtime, parentId, &localfile ) )
 			{
 				reply = malloc( strlen( "CREATED " ) + sizeof( localfile )

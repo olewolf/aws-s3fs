@@ -48,7 +48,7 @@ void DoNotDaemonize( void ) { }
 
 
 struct Configuration configuration;
-
+struct Configuration globalConfig; /*unused*/
 
 const struct dispatchTable dispatchTable[ ] =
 {

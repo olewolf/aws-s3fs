@@ -28,6 +28,8 @@
 
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 
+struct Configuration globalConfig; /*unused*/
+
 
 static void test_AddEntry( const char *parms );
 static void test_FindEntry( const char *parms );

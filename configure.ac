@@ -63,6 +63,7 @@ AC_CHECK_PROG(HAVE_SPLINT, splint, true, false)
 AC_CHECK_PROG(HAVE_FLAWFINDER, flawfinder, true, false)
 AC_CHECK_PROG(HAVE_RATS, rats, true, false)
 AC_CHECK_PROG(HAVE_PSCAN, pscan, true, false)
+AC_CHECK_PROG(HAVE_SQLITE_UTIL, sqlite3, true, false)
 AC_PATH_PROGS(DOXYGEN, doxygen)
 AC_PATH_PROGS(SPLINT, splint)
 AC_PATH_PROGS(FLAWFINDER, flawfinder)
@@ -219,7 +220,7 @@ if @<:@ "x$ac_enable_openssltest" != "xno" @:>@; then
     fi
 fi
 AM_CONDITIONAL(MAKE_OPENSSL_TESTS,$MAKE_OPENSSL_TESTS)
-
+AM_CONDITIONAL(HAVE_SQLITE_UTIL,$HAVE_SQLITE_UTIL)
 
 CFLAGS="$CFLAGS -Wall -Werror -Wextra $DEPS_CFLAGS"
 LIBS_OLD="$LIBS"

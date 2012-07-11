@@ -28,6 +28,7 @@
 #include "testfunctions.h"
 
 
+struct Configuration globalConfig; /*unused*/
 
 extern void SplitS3MountPath( const char *, char **, char ** );
 

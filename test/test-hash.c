@@ -23,12 +23,14 @@
 #include <config.h>
 #include <stdio.h>
 #include <string.h>
+#include <aws-s3fs.h>
 #include "testfunctions.h"
 #include "digest.h"
 #include "base64.h"
 
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 
+struct Configuration globalConfig; /*unused*/
 
 static void test_MD5DigestBuffer( const char *parms );
 static void test_MD5DigestStream( const char *parms );

@@ -30,6 +30,8 @@
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 
 
+struct Configuration globalConfig; /*unused*/
+
 extern const FILE *TestFileReadable( const char * );
 
 void test_TestFileReadable( const char * );
@@ -42,7 +44,6 @@ const struct dispatchTable dispatchTable[ ] =
     { "VerboseOutput", &test_VerboseOutput },
     { NULL, NULL }
 };
-
 
 
 

@@ -28,11 +28,12 @@
 #include <glib-2.0/glib.h>
 
 
+//#ifdef AUTOTEST
 #undef CACHE_DIR
-#define CACHE_DIR "./temp"
+#define CACHE_DIR "cachedir"
 #undef SOCKET_NAME
-#define SOCKET_NAME "temp/aws-s3fs.sock"
-
+#define SOCKET_NAME "cachedir/aws-s3fs.sock"
+//#endif
 
 #define CACHE_DATABASE CACHE_DIR "/cache.sl3"
 #define CACHE_FILES    CACHE_DIR "/files/"
@@ -68,7 +69,8 @@ void *ProcessDownloadQueue( void *socket );
 /* Database */
 void ShutdownFileCacheDatabase( void );
 void InitializeFileCacheDatabase( void );
-sqlite3_int64 Query_CreateLocalFile( const char *path, int uid, int gid,
+sqlite3_int64 Query_CreateLocalFile( const char *bucket,
+									 const char *path, int uid, int gid,
 									 int permissions, time_t mtime,
 									 sqlite3_int64 parentId,
 									 char *localfile, bool *alreadyExists );

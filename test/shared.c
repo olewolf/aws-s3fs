@@ -23,10 +23,12 @@
 #include <config.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <ctype.h>
 #include <string.h>
 #include "aws-s3fs.h"
 #include "testfunctions.h"
 
+extern struct Configuration globalConfig;
 
 
 void PrintConfig( int testNo, const struct CmdlineConfiguration *config, bool verbose )
@@ -69,5 +71,86 @@ void ReleaseConfig( struct CmdlineConfiguration *config )
     config->keyIdSpecified = false;
     config->secretKeySpecified = false;
     config->logfileSpecified = false;
+}
+
+
+
+void ReadLiveConfig( const char *param )
+{
+    FILE               *conf;
+    char               buf[ 100 ];
+    int                i;
+    char               *configKey   = NULL;
+    char               *configValue = NULL;
+
+    globalConfig.bucketName = NULL;
+    globalConfig.keyId      = NULL;
+    globalConfig.secretKey  = NULL;
+
+    if( param == NULL )
+    {
+        printf( "Config file with authentication data required for live tests.\n" );
+	exit( 77 );
+    }
+
+    /* Read the test config file. */
+    conf = fopen( param, "r" );
+    if( ! conf )
+    {
+        printf( "Cannot open config file \"%s\".\n", param );
+		exit( 77 );
+    }
+    while( ! feof( conf ) )
+    {
+        if( fgets( buf, sizeof( buf ), conf ) != NULL )
+		{
+			if( ( buf[ 0 ] != '#' ) && ( ! isspace( buf[ 0 ] ) ) )
+			{
+				configKey = &buf[ 0 ];
+				configValue = NULL;
+				for( i = 0; ( buf[ i ] != '\0' ) && ( buf[ i ] != '\n' ); i++ )
+				{
+					if( buf[ i ] == ':' )
+					{
+						configValue = &buf[ i + 1 ];
+						break;
+					}
+				}
+				if( configValue != NULL )
+				{
+					while( configValue[ i ] != '\0' )
+					{
+						if( configValue[ i ] == '\n' )
+						{
+							configValue[ i ] = '\0';
+						}
+						i++;
+					}
+				}
+				if( strncmp( configKey, "key", 3 ) == 0 )
+	        {
+				i = 0;
+				while( configValue[ i ] != ':' ) i++;
+				globalConfig.keyId = malloc( i + 1 );
+				strncpy( globalConfig.keyId, configValue, i );
+				i++;
+				globalConfig.secretKey = malloc( strlen( &configValue[ i ] ) + 1 );
+				strcpy( globalConfig.secretKey, &configValue[ i ] );
+			}
+				else if( strncmp( configKey, "bucket", 6 ) == 0 )
+				{
+					globalConfig.bucketName = strdup( configValue );
+				}
+				else if( strncmp( configKey, "region", 6 ) == 0 )
+				{
+					globalConfig.region = atoi( configValue );
+				}
+				else
+				{
+					printf( "Config key not recognized.\n" );
+				}
+			}
+		}
+    }
 }
 

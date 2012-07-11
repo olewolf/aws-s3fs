@@ -27,6 +27,7 @@
 #include "testfunctions.h"
 
 
+struct Configuration globalConfig; /*unused*/
 
 void test_Syslog( const char * );
 

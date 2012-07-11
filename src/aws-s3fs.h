@@ -52,8 +52,15 @@
 /* Chache dir. */
 #define CACHE_DIR LOCALSTATEDIR "/cache/aws-s3fs"
 
+
+#ifdef AUTOTEST
+#define STATIC /**/
+#else
+#define STATIC static
+#endif
+
 /* Name of the shared library. */
-#define AWS_S3FS_LIB "aws-s3fs.so"
+/*#define AWS_S3FS_LIB "aws-s3fs.so"*/
 
 
 /** Default configuration values. */

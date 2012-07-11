@@ -40,6 +40,8 @@ void PrintConfig( int testNo, const struct CmdlineConfiguration *config, bool ve
 
 void ReleaseConfig( struct CmdlineConfiguration *config );
 
+void ReadLiveConfig( const char *param );
+
 
 #endif /* __TESTFUNCTIONS_H */
 

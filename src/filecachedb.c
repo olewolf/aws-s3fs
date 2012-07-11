@@ -66,17 +66,16 @@ struct CacheFileStat
 static void CreateDatabase( sqlite3* cacheDb; );
 static void CompileStandardQueries( sqlite3 *cacheDb );
 static bool CompileSqlStatement( sqlite3 *db, const char *const sql,
-				 sqlite3_stmt **query );
-static sqlite3_int64 FindFile( const char *filename, char *localname );
-static sqlite3_int64 FindParent( const char *path, char *localname );
+								 sqlite3_stmt **query );
+STATIC sqlite3_int64 FindFile( const char *filename, char *localname );
+STATIC sqlite3_int64 FindParent( const char *path, char *localname );
 
 
 /* Convenience macro for creating a series of nested "if OK" clauses
-   without cluttering the code. */
+   without cluttering the source code. */
 #define BIND_QUERY( rc, stmt, next ) rc = sqlite3_bind_##stmt;   \
                                      if( rc == SQLITE_OK ) { next; }
 #define RESET_QUERY( query ) sqlite3_reset( cacheDatabase.query )
-
 /* Compile an SQL source entry and add the byte-code to the cacheDatabase
    structure. */
 #define COMPILESQL( stmt ) CompileSqlStatement( cacheDb, stmt##Sql,   \
@@ -84,14 +83,30 @@ static sqlite3_int64 FindParent( const char *path, char *localname );
 
 
 
+#ifdef AUTOTEST
+const sqlite3*
+GetCacheDatabase(
+	void
+               )
+{
+	return( cacheDatabase.cacheDb );
+}
+#endif
 
+
+
+/**
+ * Initialize the database access, and create the database if necessary.
+ * @return Nothing.
+ * Test: unit test (test-filecache.c).
+ */
 void
 InitializeFileCacheDatabase(
     void
 	                       )
 {
     sqlite3 *cacheDb;
-    int rc;
+    int     rc;
 
     /* Open the database. */
     rc = sqlite3_open( CACHE_DATABASE, &cacheDb );
@@ -99,24 +114,25 @@ InitializeFileCacheDatabase(
     {
         fprintf( stderr, "Cannot open database: %s\n",
 				 sqlite3_errmsg( cacheDb ) );
-		exit( 1 );
+		exit( EXIT_FAILURE );
     }
-    /* Create tables if necessary. */
     cacheDatabase.cacheDb = cacheDb;
+
+    /* Create tables if necessary. */
     CreateDatabase( cacheDb );
 
     /* Compile queries that are often used. */
     CompileStandardQueries( cacheDb );
-
-    /* Create the files directory. Ignore any errors for now (such as that
-       the directory already exists), because we only need to react to the
-       fact that the local files won't be created unless the directory
-       exists. */
-    (void) mkdir( CACHE_FILES, S_IRWXU );
 }
 
 
 
+
+/**
+ * Release the database and compiled queries.
+ * @return Nothing.
+ * Test: none.
+ */
 void
 ShutdownFileCacheDatabase(
     void
@@ -143,6 +159,7 @@ ShutdownFileCacheDatabase(
  * Create the database tables if they do not already exist.
  * @param cacheDb [in] Opened SQLite database.
  * @return Nothing.
+ * Test: implicit blackbox (test-filecache.c).
  */
 static void
 CreateDatabase(
@@ -153,6 +170,8 @@ CreateDatabase(
     int  rc;
 
     static const char *createSql =
+		"PRAGMA foreign_keys = ON; "
+
 		/* Parent directories are required because users must be able to
 		   create files locally for upload. The parent directories determine
 		   access rights that are governed by the system. */
@@ -180,14 +199,15 @@ CreateDatabase(
             remotename VARCHAR( 4096 ) NOT NULL UNIQUE,        \
             localname VARCHAR( 6 ) NOT NULL,                   \
             subscriptions INT NOT NULL DEFAULT \'1\',          \
-            parent INTEGER NOT NULL REFERENCES parents( id ),  \
+            parent INTEGER NOT NULL,                           \
             uid INTEGER NOT NULL,                              \
             gid INTEGER NOT NULL,                              \
             permissions INTEGER NOT NULL,                      \
             atime DATETIME NULL,                               \
             mtime DATETIME NULL,                               \
             statcacheinsync BOOLEAN NOT NULL DEFAULT \'1\',    \
-            filechanged BOOLEAN NOT NULL DEFAULT \'0\'         \
+            filechanged BOOLEAN NOT NULL DEFAULT \'0\',        \
+            FOREIGN KEY( parent ) REFERENCES parents( id )     \
         ); "
         "CREATE INDEX IF NOT EXISTS remotename_id ON files( remotename ); "
 
@@ -203,21 +223,24 @@ CreateDatabase(
 		   downloads. */
 	    "CREATE TABLE IF NOT EXISTS transfers(                     \
             id INTEGER PRIMARY KEY,                                \
-            owner INTEGER NOT NULL REFERENCES users( uid ),        \
-            file INTEGER NOT NULL REFERENCES files( id ),          \
+            owner INTEGER NOT NULL,                                \
+            file INTEGER NOT NULL,                                 \
             direction CHARACTER( 1 )                               \
                 CONSTRAINT dir_chk                                 \
                 CHECK( direction = \'u\' OR direction = \'d\' ),   \
-	        uploadId VARCHAR( 57 )								   \
+	        uploadId VARCHAR( 57 ),                                \
+            FOREIGN KEY( owner ) REFERENCES users( uid ),          \
+            FOREIGN KEY( file ) REFERENCES files( id )             \
         ); "
 
         /* Transferparts lists the parts of an S3 multipart upload. */
         "CREATE TABLE IF NOT EXISTS transferparts(                  \
 	        id INTEGER PRIMARY KEY,                                 \
-	        transfer INTEGER REFERENCES transfers( id ) NOT NULL,	\
+	        transfer INTEGER NOT NULL,	                            \
             part INTEGER NOT NULL,                                  \
 	        inprogress BOOLEAN NOT NULL,                            \
-            etag VARCHAR( 32 ) NULL                                 \
+            etag VARCHAR( 32 ) NULL,                               \
+            FOREIGN KEY( transfer ) REFERENCES transfers( id )      \
 	    ); "
 		"";
 
@@ -227,7 +250,7 @@ CreateDatabase(
         fprintf( stderr, "Cannot create table (%i): %s\n", rc, errMsg );
 		sqlite3_free( errMsg );
 		sqlite3_close( cacheDb );
-		exit( 1 );
+		exit( EXIT_FAILURE );
     }
 }
 
@@ -238,6 +261,7 @@ CreateDatabase(
  * structure.
  * @param cacheDb [in] Opened SQLite database.
  * @return Nothing.
+ * Test: implicit blackbox (test-filecache.c).
  */
 static void
 CompileStandardQueries(
@@ -250,7 +274,7 @@ CompileStandardQueries(
         WHERE remotename = ?;";
 
     const char *const newFileSql =
-        "INSERT INTO files( parent, uid, gid, permissions, mtime,  \
+        "INSERT INTO files( bucket, uid, gid, permissions, mtime,  \
                             parent, remotename, localname )        \
         VALUES( ?, ?, ?, ?, ?, ?, ?, ? );";
 
@@ -273,6 +297,14 @@ CompileStandardQueries(
          WHERE remotename = ?;";
 
 	const char *const downloadSql =
+/*
+		"SELECT files.bucket, files.remotename, files.localname,  \
+                users.keyid, users.secretkey                      \
+        FROM transfers                                            \
+            LEFT JOIN files ON transfers.file = files.id          \
+            LEFT JOIN users ON transfers.owner = users.uid        \
+        WHERE transfers.direction = 'd' AND files.id = ?;";
+*/
 		"SELECT files.bucket, files.remotename, files.localname,  \
                 users.keyid, users.secretkey                      \
         FROM transfers                                            \
@@ -312,6 +344,7 @@ CompileStandardQueries(
  * @param sql [in] Source SQL query.
  * @param query [out] Destination for the byte code.
  * @return \true if the query was successfully compiled, or \a false otherwise.
+ * Test: implicit blackbox (test-filecache.c).
  */
 static bool
 CompileSqlStatement(
@@ -340,6 +373,7 @@ CompileSqlStatement(
 /**
  * Prevent other threads from accessing the cache.
  * @return Nothing.
+ * Test: implicit blackbox (test-filecache.c).
  */
 static inline void
 LockCache(
@@ -354,6 +388,7 @@ LockCache(
 /**
  * Allow other threads to access the cache.
  * @return Nothing.
+ * Test: implicit blackbox (test-filecache.c).
  */
 static inline void
 UnlockCache(
@@ -370,12 +405,13 @@ UnlockCache(
  * @param path [in] Remote filename.
  * @param localname [out] The basename of the local file.
  * @return ID of the file if it is cached, or 0 otherwise.
+ * Test: unit test (test-filecache.c).
  */
-static sqlite3_int64
+STATIC sqlite3_int64
 FindFile(
     const char *path,
 	char       *localname
-             )
+         )
 {
     int           rc;
     sqlite3_stmt  *searchQuery = cacheDatabase.findFile;
@@ -417,18 +453,23 @@ FindFile(
 /**
  * Create a local filename for the S3 file and create a database entry
  * with the two file names and the S3 file attributes.
+ * @param bucket [in] Bucket name for the S3 file storage.
  * @param path [in] Full S3 pathname for the file.
  * @param uid [in] Ownership of the S3 file.
  * @param gid [in] Ownership of the S3 file.
  * @param permissions [in] Permissions for the S3 file.
  * @param mtime [in] Last modification time of the S3 file.
- * @param localfile [out] Filename of the local file.
+ * @param localfile [in/out] Filename of the local file.  If the file already
+ *        exists in the database, \a localfile is overwritten with a copy of
+ *        the filename.
  * @param alreadyExists [out] Set to true if the file already exists in the
  *        database.
  * @return ID for the database entry, or \a -1 if an error occurred.
+ * Test: unit test (test-filecache.c).
  */
 sqlite3_int64
 Query_CreateLocalFile(
+	const char    *bucket,
     const char    *path,
     int           uid,
     int           gid,
@@ -448,13 +489,13 @@ Query_CreateLocalFile(
 	/* Return the file ID if the file is already cached. */
 	if( ( id = FindFile( path, localname ) ) != 0 )
 	{
-		strncpy( localfile, localname, 6 );
+		strncpy( localfile, localname, 7 );
 		*alreadyExists = true;
 		return( id );
 	}
 
 	LockCache( );
-	BIND_QUERY( rc, int( newFileQuery, 1, parentId ),
+    BIND_QUERY( rc, text( newFileQuery, 1, bucket, -1, NULL ),
 	BIND_QUERY( rc, int( newFileQuery, 2, uid ),
 	BIND_QUERY( rc, int( newFileQuery, 3, gid ),
 	BIND_QUERY( rc, int( newFileQuery, 4, permissions ),
@@ -468,17 +509,21 @@ Query_CreateLocalFile(
 	{
 		fprintf( stderr, "Error binding value in insert (%i): %s\n", rc,
 				 sqlite3_errmsg( cacheDatabase.cacheDb ) );
-		exit( 1 );
-	}
-	rc = sqlite3_step( newFileQuery );
-	if( rc != SQLITE_DONE )
-	{
-		fprintf( stderr, "Insert statement failed (%i): %s\n", rc,
-				 sqlite3_errmsg( cacheDatabase.cacheDb) );
+		id = 0;
 	}
 	else
 	{
-		id = sqlite3_last_insert_rowid( cacheDatabase.cacheDb );
+		rc = sqlite3_step( newFileQuery );
+		if( rc != SQLITE_DONE )
+		{
+			fprintf( stderr, "Insert statement failed (%i): %s\n", rc,
+					 sqlite3_errmsg( cacheDatabase.cacheDb) );
+			id = 0;
+		}
+		else
+		{
+			id = sqlite3_last_insert_rowid( cacheDatabase.cacheDb );
+		}
 	}
 
 	RESET_QUERY( newFile );
@@ -500,6 +545,7 @@ Query_CreateLocalFile(
  * @param alreadyExists [out] Set to \a true if the parent already exists
  *        in the database.
  * @return ID for the database entry, or \a -1 if an error occurred.
+ * Test: unit test (test-filecache.c).
  */
 sqlite3_int64
 Query_CreateLocalDir(
@@ -509,7 +555,7 @@ Query_CreateLocalDir(
     int        permissions,
     char       *localdir,
 	bool       *alreadyExists
-		)
+		             )
 {
     int           rc;
     sqlite3_stmt  *newDirQuery = cacheDatabase.newParent;
@@ -519,7 +565,7 @@ Query_CreateLocalDir(
 	/* Return the file ID if the file is already cached. */
 	if( ( id = FindParent( path, parentName ) ) != 0 )
 	{
-		strncpy( localdir, parentName, 6 );
+		strncpy( localdir, parentName, 7 );
 		*alreadyExists = true;
 		return( id );
 	}
@@ -538,25 +584,40 @@ Query_CreateLocalDir(
 	{
 		fprintf( stderr, "Error binding value in insert (%i): %s\n", rc,
 				 sqlite3_errmsg( cacheDatabase.cacheDb ) );
-		exit( 1 );
+		id = 0;
 	}
-	rc = sqlite3_step( newDirQuery );
-	if( rc != SQLITE_DONE )
+	else
 	{
-		fprintf( stderr, "Insert statement failed (%i): %s\n", rc,
-				 sqlite3_errmsg( cacheDatabase.cacheDb) );
+		rc = sqlite3_step( newDirQuery );
+		if( rc != SQLITE_DONE )
+		{
+			fprintf( stderr, "Insert statement failed (%i): %s\n", rc,
+					 sqlite3_errmsg( cacheDatabase.cacheDb) );
+			id = 0;
+		}
+		else
+		{
+			id = sqlite3_last_insert_rowid( cacheDatabase.cacheDb );
+		}
 	}
-	id = sqlite3_last_insert_rowid( cacheDatabase.cacheDb );
-	RESET_QUERY( newParent );
 
+	RESET_QUERY( newParent );
 	UnlockCache( );
     return( id );
-
 }
 
 
 
-static sqlite3_int64
+/**
+ * Determine if the specified directory is cached.
+ * @param path [in] Remote directory name.
+ * @param localname [in/out] The local directory name.  If the directory
+ *        already exists, \a localname is overwritten with the local directory
+ *        name.
+ * @return ID of the directory if it is cached, or 0 otherwise.
+ * Test: unit test (test-filecache.c).
+ */
+STATIC sqlite3_int64
 FindParent(
 	const char *parent,
 	char       *localname
@@ -598,6 +659,18 @@ FindParent(
 
 
 
+/**
+ * Read the information that is required in order to create a download request
+ * for the Amazon S3.
+ * @param fileId [in] ID of the file in the files table.
+ * @param bucket [out] Pointer to the file's bucket name string.
+ * @param bucket [out] Pointer to the file's S3 path name string.
+ * @param bucket [out] Pointer to the file's local path name string.
+ * @param bucket [out] Pointer to the user's Amazon Key ID string.
+ * @param bucket [out] Pointer to the user's Secret Key string.
+ * @return \a true if the information was found, or \a false otherwise.
+ * Test: unit test (filecache.c).
+ */
 bool
 Query_GetDownload(
 	sqlite3_int64 fileId,
@@ -634,11 +707,10 @@ Query_GetDownload(
 				            sqlite3_column_text( filenamesQuery, 3 );
 			resSecretKey  = (const char*)
 				            sqlite3_column_text( filenamesQuery, 4 );
-			status     = true;
+			status = true;
 		}
 		if( rc != SQLITE_DONE )
 		{
-			status = false;
 			fprintf( stderr,
 					 "Select statement didn't finish with DONE (%i): %s\n",
 					 rc, sqlite3_errmsg( cacheDatabase.cacheDb ) );
@@ -664,6 +736,20 @@ Query_GetDownload(
 
 
 
+/**
+ * Read the ownership and permissions of a file and its parent directory.
+ * @param fileId [in] ID of the file whose access requirements are requested.
+ * @param parentname [out] Pointer to the parent directory name string.
+ * @param parentUid [out] Pointer to the parent directory uid.
+ * @param parentGid [out] Pointer to the parent directory gid.
+ * @param filename [out] Pointer to the file name string.
+ * @param uid [out] Pointer to the file uid.
+ * @param uid [out] Pointer to the file gid.
+ * @param uid [out] Pointer to the file permissions.
+ * @return \a true if the access requirements could be retrieved, or \a false
+ *         otherwise.
+ * Test: unit test (test-filecache.c).
+ */
 bool
 Query_GetOwners(
 	sqlite3_int64 fileId,
@@ -722,26 +808,40 @@ Query_GetOwners(
 
 
 
+/**
+ * Delete a transfer from the queue of transfers.
+ * @param fileId [in] ID of the file that should be deleted from the transfer
+ *        queue.
+ * @return \a true if the file was deleted, or \a false otherwise.
+ */
 bool
 Query_DeleteTransfer(
 	sqlite3_int64 fileId
 	                 )
 {
 	bool         status = false;
+	int          deleted;
 	int          rc;
-    sqlite3_stmt *deleteQuery   = cacheDatabase.deleteTransfer;
+    sqlite3_stmt *deleteQuery = cacheDatabase.deleteTransfer;
 
 	LockCache( );
     BIND_QUERY( rc, int( deleteQuery, 1, fileId ), );
 	if( rc == SQLITE_OK )
     {
-		if( ( rc = sqlite3_step( deleteQuery ) ) == SQLITE_ROW )
+		if( ( rc = sqlite3_step( deleteQuery ) ) == SQLITE_DONE )
 		{
-			status = true;
+			if( ( deleted = sqlite3_changes( cacheDatabase.cacheDb ) ) == 1 )
+			{
+				status = true;
+			}
+			else
+			{
+				fprintf( stderr, "Invalid number of records deleted (%d)\n",
+						 deleted );
+			}
 		}
 		else
 		{
-			status = false;
 			fprintf( stderr,
 					 "Select statement didn't finish with DONE (%i): %s\n",
 					 rc, sqlite3_errmsg( cacheDatabase.cacheDb ) );

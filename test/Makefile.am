@@ -16,11 +16,13 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 
-TESTSCRIPTS = commandline.at config.at common.at logging.at cache.at hash.at \
-	s3if.at
+#TESTSCRIPTS = commandline.at config.at common.at logging.at cache.at hash.at \
+	s3if.at filecache.at
+TESTSCRIPTS = filecache.at
+
 
 noinst_PROGRAMS = test-decodecmdline test-config test-common \
-	test-logging test-cache test-hash test-s3if
+	test-logging test-cache test-hash test-s3if test-filecache
 
 test_decodecmdline_SOURCES = $(SHAREDTESTSOURCE) test-decodecmdline.c \
 	../src/decodecmdline.c ../src/config.c ../src/configfile.c \
@@ -34,12 +36,16 @@ test_logging_SOURCES = $(SHAREDTESTSOURCE) test-logging.c \
 test_cache_SOURCES= $(SHAREDTESTSOURCE) test-cache.c ../src/statcache.c \
 	../src/logger.c
 test_hash_SOURCES= $(SHAREDTESTSOURCE) test-hash.c ../src/digest.c \
-	../src/base64.c ../src/base64.h
+	../src/base64.c src/base64.h
 test_s3if_SOURCES= $(SHAREDTESTSOURCE) test-s3if.c ../src/s3if.c \
-	../src/digest.c ../src/digest.h ../src/statcache.h ../src/statcache.c \
-	../src/logger.c ../src/base64.c ../src/base64.h ../src/dircache.c \
-	../src/dircache.h ../src/s3comms.h ../src/s3comms.c \
+	../src/digest.c src/digest.h src/statcache.h ../src/statcache.c \
+	../src/logger.c ../src/base64.c src/base64.h ../src/dircache.c \
+	src/dircache.h src/s3comms.h ../src/s3comms.c \
 	../src/filecacheclient.c ../src/socket.c
+test_filecache_SOURCES= $(SHAREDTESTSOURCE) test-filecache.c src/filecache.h \
+	../src/filecache.c src/socket.h ../src/socket.c ../src/filecachedb.c \
+	../src/downloadqueue.c ../src/grant.c ../src/s3comms.c src/s3comms.h \
+	../src/digest.c src/digest.h src/base64.h ../src/base64.c
 
 
 SHAREDTESTSOURCE = dispatch.c src/aws-s3fs.h shared.c testfunctions.h
@@ -47,6 +53,9 @@ SHAREDTESTSOURCE = dispatch.c src/aws-s3fs.h shared.c testfunctions.h
 AM_CFLAGS = -I../src -DAUTOTEST -DDEBUG -O0 -g
 if MAKE_OPENSSL_TESTS
 AM_CFLAGS += -DMAKE_OPENSSL_TESTS
+endif
+if HAVE_SQLITE_UTIL
+AM_CFLAGS += -DHAVE_SQLITE_UTIL
 endif
 
 
@@ -68,12 +77,13 @@ $(TESTSUITE): $(TESTSUITE).at $(TESTSCRIPTS) atlocal.in \
 	Makefile.am Makefile.in Makefile
 	autom4te -l autotest $(TESTSUITE).at -o $(TESTSUITE)
 
-$(TESTSUITE).at : $(TESTSCRIPTS)
-	echo >$@ "# This file is auto-generated. Do not edit!"; echo >>$@ "";
-	echo >>$@ "m4_define([AT_PACKAGE_STRING],    [aws-s3fs S3 FUSE Filesystem])";
-	echo >>$@ "m4_define([AT_PACKAGE_BUGREPORT], [wolf@blazingangles.com])";
-	echo >>$@ "AT_INIT([Regression Tests])";
-	for f in $(TESTSCRIPTS); do echo >>$@ "m4_include([$$f])"; done
+$(TESTSUITE).at : $(TESTSCRIPTS) atlocal.in ../configure ../configure.ac \
+	Makefile.am Makefile.in Makefile
+	@echo >$@ "# This file is auto-generated. Do not edit!"; echo >>$@ "";
+	@echo >>$@ "m4_define([AT_PACKAGE_STRING],    [aws-s3fs S3 FUSE Filesystem])";
+	@echo >>$@ "m4_define([AT_PACKAGE_BUGREPORT], [wolf@blazingangles.com])";
+	@echo >>$@ "AT_INIT([Regression Tests])";
+	@for f in $(TESTSCRIPTS); do echo >>$@ "m4_include([$$f])"; done
 
 CLEANFILES = $(noinst_PROGRAMS) $(TESTSUITE).at
 
