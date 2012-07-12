@@ -82,8 +82,10 @@ STATIC char *TrimString( char *original );
 
 STATIC int ClientConnects(
 	struct CacheClientConnection *clientConnection, const char *request );
+/*
 STATIC int ClientRequestsCaching(
 	struct CacheClientConnection *clientConnection, const char *request );
+*/
 STATIC int ClientRequestsCreate(
 	struct CacheClientConnection *clientConnection, const char *request );
 STATIC int ClientDisconnects(
