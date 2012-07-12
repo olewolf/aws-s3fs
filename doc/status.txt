@@ -1,3 +1,7 @@
+2012-07-12:
+	Additional unit tests for filecache.c created.
+	Unit tests for downloadqueue begun.
+
 2012-07-11:
 	Unit tests for filecache.c created.
 

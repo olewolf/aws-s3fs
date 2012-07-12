@@ -49,6 +49,7 @@ static struct
 	sqlite3_stmt *newParent;
     sqlite3_stmt *findFile;
 	sqlite3_stmt *findParent;
+	sqlite3_stmt *getLocalpath;
     sqlite3_stmt *incrementSubscription;
     sqlite3_stmt *decrementSubscription;
 	sqlite3_stmt *download;
@@ -84,7 +85,7 @@ STATIC sqlite3_int64 FindParent( const char *path, char *localname );
 
 
 #ifdef AUTOTEST
-const sqlite3*
+sqlite3*
 GetCacheDatabase(
 	void
                )
@@ -142,6 +143,7 @@ ShutdownFileCacheDatabase(
 	CLEAR_QUERY( fileStat );
 	CLEAR_QUERY( newFile );
 	CLEAR_QUERY( newParent );
+	CLEAR_QUERY( getLocalpath );
 	CLEAR_QUERY( findParent );
 	CLEAR_QUERY( findFile );
 	CLEAR_QUERY( incrementSubscription );
@@ -288,6 +290,12 @@ CompileStandardQueries(
     const char *const findFileSql =
         "SELECT id, localname FROM files WHERE remotename = ?;";
 
+	const char *const getLocalpathSql =
+		"SELECT files.localname, parents.localname           \
+         FROM parents                                        \
+             LEFT JOIN files ON files.parent = parents.id    \
+         WHERE files.remotename = ?;";
+
     const char *const incrementSubscriptionSql = 
         "UPDATE files SET subscriptions = subscriptions + 1   \
          WHERE remotename = ?;";
@@ -297,14 +305,6 @@ CompileStandardQueries(
          WHERE remotename = ?;";
 
 	const char *const downloadSql =
-/*
-		"SELECT files.bucket, files.remotename, files.localname,  \
-                users.keyid, users.secretkey                      \
-        FROM transfers                                            \
-            LEFT JOIN files ON transfers.file = files.id          \
-            LEFT JOIN users ON transfers.owner = users.uid        \
-        WHERE transfers.direction = 'd' AND files.id = ?;";
-*/
 		"SELECT files.bucket, files.remotename, files.localname,  \
                 users.keyid, users.secretkey                      \
         FROM transfers                                            \
@@ -328,6 +328,7 @@ CompileStandardQueries(
     COMPILESQL( newParent );
     COMPILESQL( findParent );
     COMPILESQL( findFile );
+    COMPILESQL( getLocalpath );
     COMPILESQL( incrementSubscription );
     COMPILESQL( decrementSubscription );
 	COMPILESQL( download );
@@ -446,6 +447,68 @@ FindFile(
     UnlockCache( );
 
     return( fileId );
+}
+
+
+
+/**
+ * Return the local path (directory and filename) for a local file.
+ * @param remotename [in] Remote filename.
+ * @return Path name or \a NULL if the file is not known by the file cache.
+ * Test: unit test (test-filecache.c).
+ */
+const char*
+Query_GetLocalPath(
+    const char *remotename
+                   )
+{
+    int           rc;
+    sqlite3_stmt  *searchQuery = cacheDatabase.getLocalpath;
+	const char    *dirname;
+	const char    *basename;
+	char          localpath[ 14 ];
+	const char    *toReturn    = NULL;
+	bool          found        = false;
+
+    /* Search for the remote filename in the database. */
+    LockCache( );
+    BIND_QUERY( rc, text( searchQuery, 1, remotename, -1, NULL ), );
+    if( rc == SQLITE_OK )
+	{
+		while( ( rc = sqlite3_step( searchQuery ) ) == SQLITE_ROW )
+		{
+			/* Get the directory and the basename. */
+			dirname  = (const char*) sqlite3_column_text( searchQuery, 0 );
+			basename = (const char*) sqlite3_column_text( searchQuery, 1 );
+			if( ( dirname != NULL ) && ( basename != NULL ) )
+			{
+				found = true;
+				strcpy( localpath, dirname );
+				strcat( localpath, "/" );
+				strcat( localpath, basename );
+				found = true;
+			}
+		}
+		if( rc != SQLITE_DONE )
+		{
+			fprintf( stderr,
+					 "Select statement didn't finish with DONE (%i): %s\n",
+					 rc, sqlite3_errmsg( cacheDatabase.cacheDb ) );
+		}
+	}
+	else
+    {
+        fprintf( stderr, "Can't prepare select query (%i): %s\n",
+				 rc, sqlite3_errmsg( cacheDatabase.cacheDb ) );
+    }
+	RESET_QUERY( getLocalpath );
+    UnlockCache( );
+
+	if( found )
+	{
+		toReturn = strdup( localpath );
+	}
+    return( toReturn );
 }
 
 

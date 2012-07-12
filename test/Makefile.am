@@ -17,12 +17,13 @@
 
 
 #TESTSCRIPTS = commandline.at config.at common.at logging.at cache.at hash.at \
-	s3if.at filecache.at
-TESTSCRIPTS = filecache.at
+	s3if.at filecache.at downloadqueue.at
+TESTSCRIPTS = downloadqueue.at
 
 
 noinst_PROGRAMS = test-decodecmdline test-config test-common \
-	test-logging test-cache test-hash test-s3if test-filecache
+	test-logging test-cache test-hash test-s3if test-filecache \
+	test-downloadqueue
 
 test_decodecmdline_SOURCES = $(SHAREDTESTSOURCE) test-decodecmdline.c \
 	../src/decodecmdline.c ../src/config.c ../src/configfile.c \
@@ -41,11 +42,16 @@ test_s3if_SOURCES= $(SHAREDTESTSOURCE) test-s3if.c ../src/s3if.c \
 	../src/digest.c src/digest.h src/statcache.h ../src/statcache.c \
 	../src/logger.c ../src/base64.c src/base64.h ../src/dircache.c \
 	src/dircache.h src/s3comms.h ../src/s3comms.c \
-	../src/filecacheclient.c ../src/socket.c
+	../src/filecacheclient.c fakesocket.c
 test_filecache_SOURCES= $(SHAREDTESTSOURCE) test-filecache.c src/filecache.h \
-	../src/filecache.c src/socket.h ../src/socket.c ../src/filecachedb.c \
+	../src/filecache.c src/socket.h fakesocket.c ../src/filecachedb.c \
 	../src/downloadqueue.c ../src/grant.c ../src/s3comms.c src/s3comms.h \
 	../src/digest.c src/digest.h src/base64.h ../src/base64.c
+test_downloadqueue_SOURCES= $(SHAREDTESTSOURCE) test-downloadqueue.c \
+	../src/downloadqueue.c ../src/filecache.h ../src/filecachedb.c \
+	../src/s3comms.h ../src/s3comms.c ../src/digest.h ../src/digest.c \
+	../src/base64.h ../src/base64.c ../src/filecache.c fakesocket.c \
+	../src/grant.c
 
 
 SHAREDTESTSOURCE = dispatch.c src/aws-s3fs.h shared.c testfunctions.h

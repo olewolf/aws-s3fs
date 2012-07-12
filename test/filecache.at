@@ -18,6 +18,64 @@
 
 AT_BANNER([File Cache Tests])
 
+AT_SETUP([TrimString])
+AT_CHECK([test-filecache 2>&1 TrimString], [], [stdout])
+AT_CHECK([grep "^1: \"Nowhitespace\"$" stdout], [], [ignore])
+AT_CHECK([grep "^2: \"Whitespace front\"$" stdout], [], [ignore])
+AT_CHECK([grep "^3: \"Whitespace back\"$" stdout], [], [ignore])
+AT_CHECK([grep "^4: \"Advanced  whitespace\"$" stdout], [], [ignore])
+AT_CHECK([grep "^5: \"\"$" stdout], [], [ignore])
+AT_CLEANUP
+
+AT_SETUP([CreateLocalDir])
+AT_CHECK([test-filecache 2>&1 CreateLocalDir], [], [stdout])
+AT_CHECK([grep "^1: \(@<:@0-9@:>@\{1,3\}\)=\1: \"@<:@a-zA-Z0-9@:>@\{6\}\", type=dir$" stdout], [], [ignore])
+AT_CHECK([grep "^2: \(@<:@0-9@:>@\{1,3\}\)=\1: \"@<:@a-zA-Z0-9@:>@\{6\}\", type=dir$" stdout], [], [ignore])
+AT_CLEANUP
+
+AT_SETUP([CreateLocalFile])
+AT_CHECK([test-filecache 2>&1 CreateLocalFile], [], [stdout])
+AT_CHECK([grep "^1: @<:@0-9@:>@\{1,3\}: \"@<:@a-zA-Z0-9@:>@\{6\}\", type=file$" stdout], [], [ignore])
+AT_CHECK([grep "^2: \(@<:@0-9@:>@\{1,3\}\)=\1: \"@<:@a-zA-Z0-9@:>@\{6\}\", type=file$" stdout], [], [ignore])
+AT_CHECK([grep "^3: 0$" stdout], [], [ignore])
+AT_CLEANUP
+
+AT_SETUP([ClientConnects])
+AT_CHECK([test-filecache 2>&1 ClientConnects], [], [stdout])
+AT_CHECK([grep "^1: Sent: \"CONNECTED\"$" stdout], [], [ignore])
+AT_CHECK([grep "^1: bucketname, aAzZ56789+1/34567890:123/5+7aAzZ23456789012345678901234567890$" stdout], [], [ignore])
+AT_CHECK([grep "^2: Sent: \"ERROR: unable to parse keys\"$" stdout], [], [ignore])
+AT_CHECK([grep "^3: Sent: \"ERROR: unable to parse keys\"$" stdout], [], [ignore])
+AT_CHECK([grep "^4: Sent: \"ERROR: unable to parse keys\"$" stdout], [], [ignore])
+AT_CLEANUP
+
+AT_SETUP([ClientRequestsLocalFilename])
+AT_CHECK([test-filecache 2>&1 ClientRequestsLocalFilename], [], [stdout])
+AT_CHECK([grep "^1: Sent: \"FILE FILE01/DIR001\"$" stdout], [], [ignore])
+AT_CHECK([grep "^2: Sent: \"FILE -\"$" stdout], [], [ignore])
+AT_CLEANUP
+
+AT_SETUP([ClientRequestsCreate])
+AT_CHECK([test-filecache 2>&1 ClientRequestsCreate], [], [stdout])
+AT_CHECK([grep "^1: Sent: \"CREATED @<:@a-zA-Z0-9@:>@\{6\}\"$" stdout], [], [ignore])
+AT_CHECK([grep "^1: @<:@a-zA-Z0-9@:>@\{6\} (1000 1003 644 100) /=@<:@a-zA-Z0-9@:>@\{6\} (1001 1002 755)$" stdout], [], [ignore])
+AT_CLEANUP
+
+AT_SETUP([CommandDispatcher])
+AT_CHECK([test-filecache 2>&1 CommandDispatcher], [], [stdout])
+AT_CHECK([grep "^Sent: \"CONNECTED\"$" stdout], [], [ignore])
+AT_CHECK([grep "^1: Status: 0$" stdout], [], [ignore])
+AT_CHECK([grep "^Sent: \"ERROR: unknown command\"$" stdout], [], [ignore])
+AT_CHECK([grep "^2: Status: 23$" stdout], [], [ignore])
+AT_CLEANUP
+
+AT_SETUP([ReceiveRequests])
+AT_CHECK([test-filecache 2>&1 ReceiveRequests], [], [stdout])
+AT_CHECK([grep "^Sent: \"CONNECTED\"$" stdout], [], [ignore])
+AT_CHECK([grep "^Sent: \"CREATED @<:@0-9a-zA-Z@:>@\{6\}\"$" stdout], [], [ignore])
+AT_CLEANUP
+
+
 AT_SETUP([InitializeFileCacheDatabase])
 AT_CHECK([test-filecache InitializeFileCacheDatabase], [], [stdout])
 AT_CHECK([grep "^CREATE TABLE parents" stdout], [], [ignore])
@@ -39,8 +97,14 @@ AT_CHECK([grep "^1: id=1, file=DIR001$" stdout], [], [ignore])
 AT_CHECK([grep "^2: id=0, file=DIR001$" stdout], [], [ignore])
 AT_CLEANUP
 
+AT_SETUP([GetLocalPath Query])
+AT_CHECK([test-filecache 2>&1 GetLocalPathQuery], [], [stdout])
+AT_CHECK([grep "^1: @<:@0-9a-zA-Z@:>@\{6\}/@<:@0-9a-zA-Z@:>@\{6\}$" stdout], [], [ignore])
+AT_CHECK([grep "^2: (null)$" stdout], [], [ignore])
+AT_CLEANUP
+
 AT_SETUP([CreateLocalFile Query])
-AT_CHECK([test-filecache 2>&1 CreateLocalFile], [], [stdout])
+AT_CHECK([test-filecache 2>&1 CreateLocalFileQuery], [], [stdout])
 AT_CHECK([grep "^1: id=5, file=FILE05, existed=0$" stdout], [], [ignore])
 AT_CHECK([grep "^2: id=5, file=FILE05, existed=1$" stdout], [], [ignore])
 AT_CHECK([grep "^Insert statement failed (19): foreign key constraint failed$" stdout], [], [ignore])
@@ -48,7 +112,7 @@ AT_CHECK([grep "^3: id=0, file=FILE06" stdout], [], [ignore])
 AT_CLEANUP
 
 AT_SETUP([CreateLocalDir Query])
-AT_CHECK([test-filecache 2>&1 CreateLocalDir], [], [stdout])
+AT_CHECK([test-filecache 2>&1 CreateLocalDirQuery], [], [stdout])
 AT_CHECK([grep "^1: id=3, dir=DIR003, existed=0$" stdout], [], [ignore])
 AT_CHECK([grep "^2: id=3, dir=DIR003, existed=1$" stdout], [], [ignore])
 AT_CLEANUP
@@ -72,4 +136,3 @@ AT_CHECK([grep "foreign key constraint failed$" stdout], [], [ignore])
 AT_CHECK([grep "^2: 0$" stdout], [], [ignore])
 AT_CHECK([grep "^3: 0$" stdout], [], [ignore])
 AT_CLEANUP
-

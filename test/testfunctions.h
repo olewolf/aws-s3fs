@@ -42,6 +42,8 @@ void ReleaseConfig( struct CmdlineConfiguration *config );
 
 void ReadLiveConfig( const char *param );
 
+int ReadEntireMessage( int connectionHandle, char **clientMessage );
+
 
 #endif /* __TESTFUNCTIONS_H */
 

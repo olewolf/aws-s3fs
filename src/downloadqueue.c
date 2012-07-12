@@ -43,11 +43,11 @@
 
 
 static pthread_mutex_t downloadQueue_mutex = PTHREAD_MUTEX_INITIALIZER;
-static GQueue          downloadQueue = G_QUEUE_INIT;
+STATIC GQueue          downloadQueue       = G_QUEUE_INIT;
 
 /* Event trigger for the main loop of the download manager. */
-static pthread_mutex_t mainLoop_mutex = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t  mainLoop_cond  = PTHREAD_COND_INITIALIZER;
+STATIC pthread_mutex_t mainLoop_mutex = PTHREAD_MUTEX_INITIALIZER;
+STATIC pthread_cond_t  mainLoop_cond  = PTHREAD_COND_INITIALIZER;
 
 
 static struct
@@ -63,6 +63,7 @@ struct DownloadSubscription
 {
 	sqlite3_int64   fileId;
 	bool            downloadActive;
+	bool            downloadComplete;
 	int             subscribers;
 	/* Used by clients to wait for the download to complete. */
 	pthread_cond_t  waitCond;
@@ -86,7 +87,7 @@ static int FindAvailableDownloader( void );
 static void *BeginDownload( void *threadCtx );
 static void UnsubscribeFromDownload(
 	struct DownloadSubscription *subscription );
-static struct DownloadSubscription *GetSubscriptionFromQueue( void );
+STATIC struct DownloadSubscription *GetSubscriptionFromQueue( void );
 static bool MoveToSharedCache( int socketHandle,
 							   const char *parentname, uid_t parentUid,
 							   gid_t parentGid, const char *filename,
@@ -116,7 +117,7 @@ ShutdownDownloadQueue(
 
 
 
-static void
+STATIC void
 LockDownloadQueue(
     void
 	              )
@@ -126,7 +127,7 @@ LockDownloadQueue(
 
 
 
-static void
+STATIC void
 UnlockDownloadQueue(
     void
 	              )
@@ -163,20 +164,22 @@ FindInDownloadQueue(
  * downloaded.
  * @param fileId [in] The ID of the file in the database.
  * @return Nothing.
+ * Test: unit test (test-downloadqueue.c).
  */
 void
-ScheduleDownload(
+ReceiveDownload(
 	sqlite3_int64 fileId
-	             )
+	            )
 {
 	GList                       *subscriptionEntry;
 	struct DownloadSubscription *subscription;
 	pthread_mutexattr_t         mutexAttr;
 	pthread_condattr_t          condAttr;
 
-
 	/* Find out if a subscription to the same file is already queued. */
-	LockDownloadQueue( );
+//	LockDownloadQueue( );
+
+	pthread_mutex_lock( &mainLoop_mutex );
 	subscriptionEntry = g_queue_find_custom( &downloadQueue, &fileId,
 											 FindInDownloadQueue );
 	/* No other subscriptions, so create one. */
@@ -206,23 +209,19 @@ ScheduleDownload(
 		subscription = subscriptionEntry->data;
 		subscription->subscribers++;
 	}
-	/* TODO: investigate whether the following order of locks could cause
-	   deadlocks. (I think it's safe because no other thread should be able
-	   to access the lock while the queue itself is locked: the lock will
-	   always be granted immediately, because no other threads can lock the
-	   mutex while we have the thread lock. However, waiting until the queue
-	   lock is released will create a small window where the queue entry
-	   could change before we get the chance to wait for the condition.) */
-	pthread_mutex_lock( &subscription->waitMutex );
-	UnlockDownloadQueue( );
+//	UnlockDownloadQueue( );
 
+	/* Lock the download completion mutex before the download is clear to
+	   begin. */
+	pthread_mutex_lock( &subscription->waitMutex );
 	/* Tell the download manager that a new subscription has been entered. */
-	pthread_mutex_lock( &mainLoop_mutex );
 	pthread_cond_signal( &mainLoop_cond );
 	pthread_mutex_unlock( &mainLoop_mutex );
-
 	/* Wait until the download is complete. */
+//	printf( "Subscribe: Waiting for download signal\n" );
 	pthread_cond_wait( &subscription->waitCond, &subscription->waitMutex );
+//	printf( "Subscribe: Download signal received\n" );
+	pthread_mutex_unlock( &subscription->waitMutex );
 
 	/* Unsubscribe from the download. */
 	UnsubscribeFromDownload( subscription );
@@ -243,7 +242,7 @@ UnsubscribeFromDownload(
 	                    )
 {
 	/* Decrement the subscription count. */
-	LockDownloadQueue( );
+	pthread_mutex_lock( &mainLoop_mutex );
 	/* Don't do anything if another thread has set the subscription count
 	   to zero (although since we're still here, how should that happen?). */
 	if( subscription->subscribers != 0 )
@@ -258,7 +257,7 @@ UnsubscribeFromDownload(
 			pthread_mutex_unlock( &subscription->acknowledgeMutex );
 		}
 	}
-	UnlockDownloadQueue( );
+	pthread_mutex_unlock( &mainLoop_mutex );
 }
 
 
@@ -567,7 +566,7 @@ BeginDownload(
  * @return Next subscription entry, or NULL if no subscription entries are
  *         available.
  */
-static struct DownloadSubscription*
+STATIC struct DownloadSubscription*
 GetSubscriptionFromQueue(
 	void
 	                     )
@@ -576,12 +575,10 @@ GetSubscriptionFromQueue(
 	int                         index;
 
 	index = 0;
-	LockDownloadQueue( );
 	do
 	{
 		subscription = g_queue_peek_nth( &downloadQueue, index++ );
 	} while( ( subscription != NULL ) && ( subscription->downloadActive ) );
-	UnlockDownloadQueue( );
 
 	return( subscription );
 }

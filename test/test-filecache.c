@@ -37,31 +37,84 @@
 
 struct Configuration globalConfig;
 
+struct CacheClientConnection
+{
+	int       connectionHandle;
+	pthread_t thread;
+	pid_t     pid;
+	uid_t     uid;
+	gid_t     gid;
+	char      *bucket;
+	char      keyId[ 21 ];
+	char      secretKey[ 41 ];
+};
+
+
+
 extern sqlite3_int64 FindFile( const char *path, char *localname );
 extern sqlite3_int64 FindParent( const char *path, char *localname );
-extern const sqlite3 *GetCacheDatabase( void );
+extern sqlite3 *GetCacheDatabase( void );
+extern void CompileRegexes( void );
+extern char *TrimString( char *original );
+extern sqlite3_int64 CreateLocalDir( const char *path, uid_t uid, gid_t gid,
+									 int permissions );
+extern sqlite3_int64 CreateLocalFile( const char *bucket, const char *path,
+									  int uid, int gid, int permissions,
+									  time_t mtime, sqlite3_int64 parentId,
+									  char **localfile );
+extern int ClientConnects( struct CacheClientConnection *clientConnection,
+						   const char *request );
+extern int ClientRequestsCreate( struct CacheClientConnection *clientConnection,
+								 const char *request );
+extern int ClientRequestsLocalFilename(
+	struct CacheClientConnection *clientConnection, const char *request );
+extern void *ReceiveRequests( void *data );
+extern int CommandDispatcher( struct CacheClientConnection *clientConnection,
+							  const char *message );
 
+static void FillDatabase( void );
 static void test_InitializeFileCacheDatabase( const char *param );
 static void test_FindFile( const char *param );
 static void test_FindParent( const char *param );
-static void test_CreateLocalFile( const char *param );
-static void test_CreateLocalDir( const char *param );
+static void test_GetLocalPathQuery( const char *param );
+static void test_CreateLocalFileQuery( const char *param );
+static void test_CreateLocalDirQuery( const char *param );
 static void test_GetDownload( const char *param );
 static void test_GetOwners( const char *param );
 static void test_DeleteTransfer( const char *param );
-static void FillDatabase( void );
+static void test_TrimString( const char *param );
+static void test_CreateLocalDir( const char *param );
+static void test_CreateLocalFile( const char *param );
+static void test_ClientConnects( const char *param );
+static void test_ClientRequestsCreate( const char *param );
+static void test_ReceiveRequests( const char *param );
+static void test_CommandDispatcher( const char *param );
+static void test_ClientRequestsLocalFilename( const char *param );
 
 
+#define DISPATCHENTRY( x ) { #x, test_##x }
 const struct dispatchTable dispatchTable[ ] =
 {
-    { "InitializeFileCacheDatabase", test_InitializeFileCacheDatabase },
-	{ "FindFile", test_FindFile },
-	{ "FindParent", test_FindParent },
-	{ "CreateLocalFile", test_CreateLocalFile },
-	{ "CreateLocalDir", test_CreateLocalDir },
-	{ "GetDownload", test_GetDownload },
-	{ "GetOwners", test_GetOwners },
-	{ "DeleteTransfer", test_DeleteTransfer },
+
+    DISPATCHENTRY( InitializeFileCacheDatabase ),
+	DISPATCHENTRY( FindFile ),
+	DISPATCHENTRY( FindParent ),
+	DISPATCHENTRY( GetLocalPathQuery ),
+	DISPATCHENTRY( CreateLocalFileQuery ),
+	DISPATCHENTRY( CreateLocalDirQuery ),
+	DISPATCHENTRY( GetDownload ),
+	DISPATCHENTRY( GetOwners),
+	DISPATCHENTRY( DeleteTransfer ),
+
+	DISPATCHENTRY( TrimString ),
+	DISPATCHENTRY( CreateLocalDir ),
+	DISPATCHENTRY( CreateLocalFile ),
+	DISPATCHENTRY( ClientConnects ),
+	DISPATCHENTRY( ClientRequestsCreate ),
+	DISPATCHENTRY( ClientRequestsLocalFilename ),
+	DISPATCHENTRY( ReceiveRequests ),
+	DISPATCHENTRY( CommandDispatcher ),
+
     { NULL, NULL }
 };
 
@@ -90,8 +143,9 @@ static void PrepareLiveTestData( const char *configFile )
 static void CreateDatabase( void )
 {
 	unlink( CACHE_DATABASE );
-	rmdir( CACHE_DIR );
-	mkdir( CACHE_DIR, 0750 );
+	mkdir( CACHE_DIR, 0700 );
+	mkdir( CACHE_FILES, 0755 );
+	mkdir( CACHE_INPROGRESS, 0700 );
 	InitializeFileCacheDatabase( );
 }
 
@@ -156,7 +210,7 @@ static void test_FindParent( const char *param )
 
 
 
-static void test_CreateLocalFile( const char *param )
+static void test_CreateLocalFileQuery( const char *param )
 {
 	sqlite3_int64 id;
 	bool          exists;
@@ -180,7 +234,7 @@ static void test_CreateLocalFile( const char *param )
 
 
 
-static void test_CreateLocalDir( const char *param )
+static void test_CreateLocalDirQuery( const char *param )
 {
 	sqlite3_int64 id;
 	bool          exists;
@@ -209,19 +263,7 @@ static void test_GetDownload( const char *param )
 	char          *secretKey = NULL;
 
 	FillDatabase( );
-/*
-	CreateDatabase( );
-	const sqlite3 *cacheDb;
-	char          *errMsg;
-	int           rc;
-	cacheDb = GetCacheDatabase( );
-	rc = sqlite_exec( cacheDb, "INSERT INTO USERS ...", NULL, NULL, &errMsg );
-	if( rc != SQLITE_OK )
-	{
-		fprintf( "SQLite error (%i): %s\n", rc, errMsg );
-		exit( EXIT_FAILURE );
-	}
-*/
+
 	status = Query_GetDownload( 2, &bucket, &remotePath, &localPath,
 								&keyId, &secretKey );
 	printf( "1: %d - %s, %s, %s, %s, %s\n", status, bucket, remotePath,
@@ -272,3 +314,268 @@ static void test_DeleteTransfer( const char *param )
 	status = Query_DeleteTransfer( 200 );
 	printf( "3: %d\n", status );
 }
+
+
+
+static void test_TrimString( const char *param )
+{
+	char *string1 = "Nowhitespace";
+	char *string2 = "  Whitespace front";
+	char *string3 = "Whitespace back  ";
+	char *string4 = "\n Advanced  whitespace\f ";
+	char *string5 = "   ";
+
+	CompileRegexes( );
+	string1 = TrimString( strdup( string1 ) );
+	string2 = TrimString( strdup( string2 ) );
+	string3 = TrimString( strdup( string3 ) );
+	string4 = TrimString( strdup( string4 ) );
+	string5 = TrimString( strdup( string5 ) );
+	printf( "1: \"%s\"\n", string1 );
+	printf( "2: \"%s\"\n", string2 );
+	printf( "3: \"%s\"\n", string3 );
+	printf( "4: \"%s\"\n", string4 );
+	printf( "5: \"%s\"\n", string5 );
+}
+
+
+
+static void test_CreateLocalDir( const char *param )
+{
+	sqlite3_int64 dirId;
+	sqlite3_int64 parentId;
+	char          localname[ 10 ];
+	char          path[ 40 ];
+	struct stat   stat;
+	const char    *type;
+
+	FillDatabase( );
+
+	dirId = CreateLocalDir( "http://testdir1", 1001, 1002, 0705 );
+	parentId = FindParent( "http://testdir1", localname );
+	sprintf( path, "%s%s", CACHE_INPROGRESS, localname );
+	lstat( path, &stat );
+	if( S_ISDIR( stat.st_mode ) ) type = "dir";
+	else                          type = "other";
+	printf( "1: %d=%d: \"%s\", type=%s\n", (int)dirId, (int)parentId, localname, type );
+
+	dirId = CreateLocalDir( "http://testdir1", 1001, 1002, 0705 );
+	parentId = FindParent( "http://testdir1", localname );
+	sprintf( path, "%s%s", CACHE_INPROGRESS, localname );
+	lstat( path, &stat );
+	if( S_ISDIR( stat.st_mode ) ) type = "dir";
+	else                          type = "other";
+	printf( "2: %d=%d: \"%s\", type=%s\n", (int)dirId, (int)parentId, localname, type );
+}
+
+
+
+static void test_CreateLocalFile( const char *param )
+{
+	sqlite3_int64 fileId;
+	sqlite3_int64 id;
+	char          *localname;
+	char          path[ 40 ];
+	struct stat   stat;
+	const char    *type;
+
+	FillDatabase( );
+
+	fileId = CreateLocalFile( "bucketname", "http://testfile1", 1002, 1003,
+							  0664, 100, 1, &localname );
+	sprintf( path, "%s%s", CACHE_INPROGRESS, localname );
+	lstat( path, &stat );
+	if( S_ISREG( stat.st_mode ) ) type = "file";
+	else                          type = "other";
+	printf( "1: %d: \"%s\", type=%s\n", (int)fileId, localname, type );
+
+	id = CreateLocalFile( "bucketname", "http://testfile1", 1002, 1003,
+						  0664, 100, 1, &localname );
+	sprintf( path, "%s%s", CACHE_INPROGRESS, localname );
+	lstat( path, &stat );
+	if( S_ISREG( stat.st_mode ) ) type = "file";
+	else                          type = "other";
+	printf( "2: %d=%d: \"%s\", type=%s\n", (int)fileId, (int)id, localname, type );
+
+	/* Invalid parent (id 20) must fail. */
+	fileId = CreateLocalFile( "bucketname", "http://testfile2", 1002, 1003,
+							  0664, 100, 20, &localname );
+	printf( "3: %d\n", (int)fileId );
+}
+
+
+
+static void test_ClientConnects( const char *param )
+{
+	struct CacheClientConnection clientConnection;
+
+	CompileRegexes( );
+
+	printf( "1: " );
+	ClientConnects( &clientConnection, " bucketname : aAzZ56789+1/34567890 : 123/5+7aAzZ23456789012345678901234567890 " );
+	printf( "1: %s, %s:%s\n", clientConnection.bucket, clientConnection.keyId, clientConnection.secretKey );
+	printf( "2: " );
+	ClientConnects( &clientConnection, " bucketname : 2345678901234567890 : 1234567890123456789012345678901234567890 " );
+	printf( "3: " );
+	ClientConnects( &clientConnection, " bucketname : 12345678901234567890 : 12345678901234567890123456789012345678901 " );
+	printf( "4: " );
+	ClientConnects( &clientConnection, " bucketname : 12345678901234567890 ; 1234567890123456789012345678901234567890 " );
+}
+
+
+
+static int PrintCallback( void *dummy, int columns, char **data, char **names )
+{
+	char *uid, *gid, *permissions, *parentUid, *parentGid, *parentPermissions,
+		*parentRemote, *parentLocal, *localname, *mtime;
+
+	localname         = data[ 0 ];
+	uid               = data[ 1 ];
+	gid               = data[ 2 ];
+	permissions       = data[ 3 ];
+	parentUid         = data[ 6 ];
+	parentGid         = data[ 7 ];
+	parentRemote      = data[ 4 ];
+	parentLocal       = data[ 5 ];
+	parentPermissions = data[ 8 ];
+	mtime             = data[ 9 ];
+
+	printf( "%s (%d %d %3o %d) %s=%s (%d %d %o)\n", localname, atoi( uid ),
+			atoi( gid ), atoi( permissions ), atoi( mtime ), parentRemote,
+			parentLocal, atoi( parentUid ), atoi( parentGid ),
+			atoi( parentPermissions ) );
+
+	return( 0 );
+}
+
+
+
+static void PrintFileFromDatabase( const char *remotename )
+{
+	sqlite3 *cacheDb;
+	char    *errMsg;
+	int     rc;
+	char    query[ 1000 ];
+
+	cacheDb = GetCacheDatabase( );
+
+	sprintf( query, "SELECT files.localname, files.uid, files.gid, "
+			 "files.permissions, parents.remotename, parents.localname, "
+			 "parents.uid, parents.gid, parents.permissions, "
+			 "files.mtime "
+			 "FROM files LEFT JOIN parents "
+			 "ON parents.id = files.parent WHERE files.remotename = '%s'",
+			 remotename );
+	rc = sqlite3_exec( cacheDb, query, PrintCallback, NULL, &errMsg );
+	if( rc != SQLITE_OK )
+	{
+		printf( "SQLite error (%i): %s\n", rc, errMsg );
+		exit( EXIT_FAILURE );
+	}
+
+
+}
+
+
+static void test_ClientRequestsCreate( const char *param )
+{
+	struct CacheClientConnection clientConnection;
+
+	FillDatabase( );
+	CompileRegexes( );
+
+	clientConnection.bucket = "bucketname";
+
+	printf( "1: " );
+	ClientRequestsCreate( &clientConnection, " 1001:1002:493:1000:1003:420:100:http://remotetest1" );
+	printf( "1: " );
+	PrintFileFromDatabase( "http://remotetest1" );
+}
+
+
+
+/* Simulation function. */
+int ReadEntireMessage( int connectionHandle, char **clientMessage )
+{
+	static int messageNumber = 0;
+	char       *message;
+	char       *messages[ ] =
+	{
+		"CONNECT bucketname:12345678901234567890:1234567890123456789012345678901234567890",
+		"CREATE 1001:1002:493:1000:1003:420:100:http://remotetest1",
+		"DISCONNECT",
+		NULL
+	};
+
+	message = messages[ messageNumber++ ];
+
+	if( *clientMessage != NULL )
+	{
+		*clientMessage = strdup( message );
+		return( strlen( message ) );
+	}
+	else
+	{
+		*clientMessage = NULL;
+		return( -1 );
+	}
+}
+
+
+static void test_ReceiveRequests( const char *param )
+{
+	struct CacheClientConnection clientConnection;
+	pthread_t                    thread;
+
+	FillDatabase( );
+	CompileRegexes( );
+
+	pthread_create( &thread, NULL, ReceiveRequests, &clientConnection );
+	pthread_join( thread, NULL );
+}
+
+
+static void test_CommandDispatcher( const char *param )
+{
+	struct CacheClientConnection clientConnection;
+	int                          status;
+
+	FillDatabase( );
+	CompileRegexes( );
+
+	status = CommandDispatcher( &clientConnection, "CONNECT bucketname:12345678901234567890:1234567890123456789012345678901234567890" );
+	printf( "1: Status: %d\n", status );
+	status = CommandDispatcher( &clientConnection, "And now for something completely different" );
+	printf( "2: Status: %d\n", status );
+}
+
+
+
+static void test_GetLocalPathQuery( const char *param )
+{
+	const char *localpath;
+
+	FillDatabase( );
+
+	localpath = Query_GetLocalPath( "http://remote1" );
+	printf( "1: %s\n", localpath );
+
+	localpath = Query_GetLocalPath( "http://nonexistent" );
+	printf( "2: %s\n", localpath );
+}
+
+
+
+static void test_ClientRequestsLocalFilename( const char *param )
+{
+	struct CacheClientConnection clientConnection;
+
+	FillDatabase( );
+	CompileRegexes( );
+
+	printf( "1: " );
+	ClientRequestsLocalFilename( &clientConnection, "http://remote1" );
+	printf( "2: " );
+	ClientRequestsLocalFilename( &clientConnection, "http://nonexistent" );
+}
+

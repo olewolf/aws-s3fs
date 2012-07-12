@@ -35,8 +35,9 @@
 #define SOCKET_NAME "cachedir/aws-s3fs.sock"
 //#endif
 
-#define CACHE_DATABASE CACHE_DIR "/cache.sl3"
-#define CACHE_FILES    CACHE_DIR "/files/"
+#define CACHE_DATABASE   CACHE_DIR "/cache.sl3"
+#define CACHE_FILES      CACHE_DIR "/files/"
+#define CACHE_INPROGRESS CACHE_FILES "unfinished/"
 
 
 struct RegularExpressions
@@ -63,7 +64,7 @@ const char *SendCacheRequest( const char *message );
 const char *ReceiveCacheReply( void );
 void InitializePermissionsGrant( pid_t childPid, int socketHandle );
 void *ProcessDownloadQueue( void *socket );
-
+void ReceiveDownload( sqlite3_int64 fileId );
 
 
 /* Database */
@@ -83,6 +84,7 @@ bool Query_GetOwners( sqlite3_int64 fileId, char **parentdir,
 					  uid_t *parentUid, gid_t *parentGid, char **filename,
 					  uid_t *uid, gid_t *gid, int *permissions );
 bool Query_DeleteTransfer( sqlite3_int64 fileId );
+const char *Query_GetLocalPath( const char *remotename );
 
 
 #endif /* __FILECACHE_H */

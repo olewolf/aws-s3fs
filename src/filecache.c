@@ -39,8 +39,9 @@
 #include "filecache.h"
 
 
-
-#define CACHE_INPROGRESS CACHE_FILES "unfinished/"
+#ifdef AUTOTEST
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#endif
 
 
 static pthread_t clientConnectionsListener;
@@ -66,17 +67,29 @@ struct CacheClientConnection
 struct RegularExpressions regexes;
 
 
-static void CompileRegexes( void );
+STATIC void CompileRegexes( void );
 static void FreeRegexes( void );
-static void *ReceiveRequests( void* );
+STATIC void *ReceiveRequests( void* );
 static void *ClientConnectionsListener( void* );
-static int CommandDispatcher( struct CacheClientConnection *clientConnection,
+#ifdef AUTOTEST
+extern int ReadEntireMessage( int connectionHandle, char **clientMessage );
+#else
+static int ReadEntireMessage( int connectionHandle, char **clientMessage );
+#endif
+STATIC int CommandDispatcher( struct CacheClientConnection *clientConnection,
 							  const char *message );
-static char *TrimString( char *original );
+STATIC char *TrimString( char *original );
 
-static int ClientConnects( struct CacheClientConnection *clientConnection,
-						   const char *request );
-static int ClientRequestsCaching(
+STATIC int ClientConnects(
+	struct CacheClientConnection *clientConnection, const char *request );
+STATIC int ClientRequestsCaching(
+	struct CacheClientConnection *clientConnection, const char *request );
+STATIC int ClientRequestsCreate(
+	struct CacheClientConnection *clientConnection, const char *request );
+STATIC int ClientDisconnects(
+	struct CacheClientConnection *clientConnection, const char *request );
+STATIC int
+ClientRequestsLocalFilename(
 	struct CacheClientConnection *clientConnection, const char *request );
 
 /*
@@ -99,6 +112,7 @@ static int ClientRequestsMkdir(
  * @param wasBlocked [out] \a true if the SIGPIPE signal was already blocked
  *        when we blocked it.
  * @return Nothing.
+ * Test: none.
  */
 void
 BlockSigpipeSignal( 
@@ -130,6 +144,7 @@ BlockSigpipeSignal(
  * @param wasBlocked [in] \a true if the SIGPIPE signal was already blocked
  *        when we blocked it.
  * @return Nothing.
+ * Test: none.
  */
 void
 RestoreSigpipeSignal( 
@@ -176,6 +191,7 @@ RestoreSigpipeSignal(
  * @param connectionHandle [in] Connection handle for the socket.
  * @param message [in] Message to send.
  * @return >= 0 if the message was sent, or \a -errno if an error occurred.
+ * Test: none.
  */
 static int
 SendMessageToClient(
@@ -190,12 +206,15 @@ SendMessageToClient(
 	/* Block the SIGPIPE signal if the client happens to have disconnected. */
 	BlockSigpipeSignal( &wasPending, &wasBlocked );
 	/* Send the message to the client. */
+#ifndef AUTOTEST
 	status = write( connectionHandle, message,
 					strlen( message ) + sizeof( char ) );
+#else
+	printf( "Sent: \"%s\"\n", message );
+	status = strlen( message ) + sizeof( char );
+#endif
 	/* Restore the SIGPIPE signal action. */
 	RestoreSigpipeSignal( wasPending, wasBlocked );
-
-	printf( "Written, status = %d\n", status );
 	return( status );
 }
 
@@ -204,6 +223,7 @@ SendMessageToClient(
 
 /**
  * Respond to HUP and TERM signals.
+ * Test: none.
  */
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
@@ -235,6 +255,7 @@ SignalHandler(
  * and the permissions grant module.  The permissions grant module keeps its
  * superuser privileges.
  * @return Nothing.
+ * Test: none.
  */
 void
 StartProcesses(
@@ -353,6 +374,7 @@ StartProcesses(
 /**
  * Initialize the file caching module.
  * @return Nothing.
+ * Test: none.
  */
 void
 InitializeFileCache(
@@ -413,6 +435,7 @@ InitializeFileCache(
 /**
  * Shut down the file caching module.
  * @return Nothing.
+ * Test: none.
  */
 void
 ShutdownFileCache(
@@ -430,13 +453,14 @@ ShutdownFileCache(
 
 
 
-
 /**
  * Read the entire pending message and place it in a buffer.
  * @param connectionHandle [in] Socket connection handle.
  * @param clientMessage [out] Message received from the client.
  * @return Number of bytes read.
  */
+/* During automated unit tests, this function is replaced by a simulation. */
+#ifndef AUTOTEST
 static int
 ReadEntireMessage(
     int  connectionHandle,
@@ -498,6 +522,7 @@ ReadEntireMessage(
 	*clientMessage = message;
 	return( messageSize );
 }
+#endif /* AUTOTEST */
 
 
 
@@ -507,8 +532,9 @@ ReadEntireMessage(
  * without blocking other threads.
  * @param data [in] Thread context: the client connection.
  * @return Thread status (always 0 ).
+ * Test: unit test (test-filecache.c).
  */
-static void*
+STATIC void*
 ReceiveRequests(
 	void *data
                 )
@@ -524,11 +550,11 @@ ReceiveRequests(
 	while( connected )
 	{
 		printf( "Waiting for message...\n" );
+
 		status = ReadEntireMessage( clientConnection->connectionHandle,
 									&message );
 		if( 0 <= status )
 		{
-			
 			getsockopt( clientConnection->connectionHandle, SOL_SOCKET,
 						SO_PEERCRED, &credentials, &credentialsLength );
 			clientConnection->uid = credentials.uid;
@@ -540,6 +566,11 @@ ReceiveRequests(
 		else
 		{
 			connected = false;
+		}
+		if( status == 0 )
+		{
+			printf( "Exiting\n" );
+			exit( 1 );
 		}
 	}
 	printf( "Lost connection, connection thread exiting\n" );
@@ -557,8 +588,9 @@ ReceiveRequests(
  *        about the cache client.
  * @param message [in] Client message.
  * @return Nothing.
+ * Test: unit test (test-filecache.c).
  */
-static int
+STATIC int
 CommandDispatcher(
 	struct CacheClientConnection *clientConnection,
 	const char                   *message
@@ -576,10 +608,12 @@ CommandDispatcher(
 		int        (*commandFunction)( struct CacheClientConnection *clientInfo,
 									   const char *message );
 	} dispatchTable[ ] =
-		{
-			{ "CACHE",   ClientRequestsCaching },
-//			{ "MKDIR",   ClientRequestsMkdir },
+	    {
+			{ "FILE",    ClientRequestsLocalFilename },
+//			{ "CACHE",   ClientRequestsCaching },
+			{ "CREATE",  ClientRequestsCreate },
 			{ "CONNECT", ClientConnects },
+			{ "DISCONNECT", ClientDisconnects },
 			{ NULL, NULL }
 		};
 
@@ -628,8 +662,9 @@ CommandDispatcher(
  * @param mtime [in] Last modification time of the S3 file.
  * @param localfile [out] Filename of the local file.
  * @return ID for the database entry, or \a -1 if an error occurred.
+ * Test: unit test (test-filecache.c).
  */
-static sqlite3_int64
+STATIC sqlite3_int64
 CreateLocalFile(
 	const char    *bucket,
     const char    *path,
@@ -668,7 +703,7 @@ CreateLocalFile(
 	id = Query_CreateLocalFile( bucket, path, uid, gid, permissions,
 								mtime, parentId, *localfile, &exists );
 	/* Delete the unique file if the file was already in the database. */
-	if( exists )
+	if( exists || ( id == 0 ) )
 	{
 		unlink( localname );
 	}
@@ -688,13 +723,14 @@ CreateLocalFile(
  * @param gid [in] gid of the directory.
  * @param permissions [in] Permission flags of the directory.
  * @return Database id of the directory entry in the database.
+ * Test: unit test (test-filecache.c).
  */
-static sqlite3_int64
+STATIC sqlite3_int64
 CreateLocalDir(
-    const char   *path,
-    int          uid,
-    int          gid,
-    int          permissions
+    const char *path,
+    uid_t      uid,
+    gid_t      gid,
+    int        permissions
 	            )
 {
 	const char    *template = "XXXXXX";
@@ -719,8 +755,8 @@ CreateLocalDir(
 			&localname[ strlen( localname ) - strlen( template ) ] );
 
     /* Insert the filename combo into the database. */
-	id = Query_CreateLocalDir( path, uid, gid, permissions, localdir,
-							   &alreadyExists );
+	id = Query_CreateLocalDir( path, (int) uid, (int) gid, permissions,
+							   localdir, &alreadyExists );
 	/* Delete the temporary directory if it had already been inserted. */
 	if( alreadyExists )
 	{
@@ -740,6 +776,7 @@ CreateLocalDir(
  * so that the process is able to wait for activity on them without blocking
  * the other threads.
  * @return Thread status (always 0 ).
+ * Test: none.
  */
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
@@ -783,10 +820,32 @@ ClientConnectionsListener(
 			printf( "New communications thread started.\n" );
 		}
     }
-
 	printf( "Exiting\n" );
     unlink( SOCKET_NAME );
 
+	return( 0 );
+}
+#pragma GCC diagnostic pop
+
+
+
+/**
+ * Close the connection and terminate the connection thread.
+ * @param clientConnection [in] Client Connection structure.
+ * @param request [in] Request parameters (unused).
+ * @return Nothing.
+ * Test: implied blackbox (test-filecache.c).
+ */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+STATIC int
+ClientDisconnects(
+    struct CacheClientConnection *clientConnection,
+	const char                   *request
+	              )
+{
+	close( clientConnection->connectionHandle );
+	pthread_exit( NULL );
 	return( 0 );
 }
 #pragma GCC diagnostic pop
@@ -802,8 +861,9 @@ ClientConnectionsListener(
  *        client.
  * @param request [in] Connection request parameters.
  * @return 0 on success, or \a -errno on failure.
+ * Test: unit test (test-filecache.c).
  */
-static int
+STATIC int
 ClientConnects(
     struct CacheClientConnection *clientConnection,
 	const char                   *request
@@ -860,19 +920,65 @@ ClientConnects(
 
 
 /**
- * The client sends a caching request message for a file and the filecache
- * server adds the file to the download queue.  The thread is blocked until the
- * file has been downloaded.
+ * The client requests the local path name of a file that may be cached.  The
+ * function returns the pathname as the garbled directory name and the garbled
+ * file name.
  * @param clientConnection [in/out] CacheClientConnection structure for the
  *        client.
- * @param request [in] Connection request parameters.
- * @return 0 on success, or \a -errno on failure.
+ * @param request [in] Creation request parameters with the filename of the
+ *        remove file.
+ * @return Name of the local file, or \a NULL the file was not cached.
+ * Test: unit test (test-filecache.c).
  */
-static int
-ClientRequestsCaching(
+STATIC int
+ClientRequestsLocalFilename(
     struct CacheClientConnection *clientConnection,
 	const char                   *request
-	                  )
+	                        )
+{
+	const char *trimmed;
+	const char *localpath;
+	char message[ 5 + 7 + 6 + 1 ];
+
+	/* Trim the request string, but do not free it, as happens in the TrimString
+	   function. */
+	g_regex_ref( regexes.trimString );
+	trimmed = g_regex_replace( regexes.trimString, request,
+							   -1, 0, "", 0, NULL );
+	g_regex_unref( regexes.trimString );
+
+	localpath = Query_GetLocalPath( trimmed );
+	if( localpath == NULL )
+	{
+		sprintf( message, "FILE -" );
+	}
+	else
+	{
+		sprintf( message, "FILE %s", localpath );
+	}
+	free( (char*) trimmed );
+	free( (char*) localpath );
+	SendMessageToClient( clientConnection->connectionHandle, message );
+
+	return( 0 );
+}
+
+
+
+/**
+ * The client sends a local file creation file, and the filecache server
+ * creates a local parent and a local file as appropriate.
+ * @param clientConnection [in/out] CacheClientConnection structure for the
+ *        client.
+ * @param request [in] Creation request parameters.
+ * @return 0 on success, or \a -errno on failure.
+ * Test: unit test (test-filecache.c).
+ */
+STATIC int
+ClientRequestsCreate(
+    struct CacheClientConnection *clientConnection,
+	const char                   *request
+	                 )
 {
 	int         status;
 
@@ -962,7 +1068,6 @@ ClientRequestsCaching(
 			{
 				status = -EIO;
 			}
-			free( filename );
 		}
 		/* Couldn't create the parent directory. */
 		else
@@ -979,6 +1084,7 @@ ClientRequestsCaching(
 							 "ERROR: cannot parse request parameters" );
 	}
 
+	free( filename );
 	g_regex_unref( regexes.createFileOptions );
 
 	return( status );
@@ -992,8 +1098,9 @@ ClientRequestsCaching(
  * @param original [in/out] String with possibly leading and/or trailing
  *        whitespace.
  * @return String without leading and trailing whitespace.
+ * Test: unit test (test-filecache.c).
  */
-static char*
+STATIC char*
 TrimString(
 	char *original
 	       )
@@ -1013,15 +1120,16 @@ TrimString(
 /**
  * Compile regular expressions before use.
  * @return Nothing.
+ * Test: implied blackbox (test-filecache.c).
  */
-static void
+STATIC void
 CompileRegexes(
     void
 	           )
 {
 	/* Grep "bucket:keyid:secretkey" from the parameter string. */
 	const char *connectAuth =
-		"^\\s*([a-zA-Z0-9-\\+_])+\\s*:\\s*([a-zA-Z0-9\\+/=]{20})\\s*:\\s*([a-zA-Z0-9\\+/=]{40})";
+		"^\\s*([a-zA-Z0-9-\\+_]+)\\s*:\\s*([a-zA-Z0-9\\+/=]{20})\\s*:\\s*([a-zA-Z0-9\\+/=]{40})\\s*$";
 
 	/* Grep uid:gid:perm:mtime:string */
 	const char *createFileOptions =
@@ -1058,6 +1166,7 @@ CompileRegexes(
 /**
  * Release the allocations in the regular expressions.
  * @return Nothing.
+ * Test: none.
  */
 static void
 FreeRegexes(

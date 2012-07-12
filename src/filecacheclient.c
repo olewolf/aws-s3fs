@@ -48,6 +48,7 @@ static struct sockaddr_un cacheSocketAddress;
  * @param keyId [in] Amazon Access Key ID.
  * @param secretKey [in] Secret key ID.
  * @return \a true if successfully connected; \a false otherwise.
+ * Test: none.
  */
 bool
 ConnectToFileCache(
@@ -85,7 +86,7 @@ ConnectToFileCache(
 
 /**
  * Retrieve the garbled name of the cached file from the cache.
- * @param cachedFilename [in] True filename of the cached file.
+ * @param cachedFilename [in] Remote filename of the cached file.
  * @return The name of the file in the cache directory, or NULL if
  *         the file is not cached.
  */
