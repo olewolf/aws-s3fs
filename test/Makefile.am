@@ -23,7 +23,7 @@ TESTSCRIPTS = commandline.at config.at common.at logging.at cache.at hash.at \
 
 noinst_PROGRAMS = test-decodecmdline test-config test-common \
 	test-logging test-cache test-hash test-s3if test-filecache \
-	test-downloadqueue
+	test-downloadqueue test-process
 
 test_decodecmdline_SOURCES = $(SHAREDTESTSOURCE) test-decodecmdline.c \
 	../src/decodecmdline.c ../src/config.c ../src/configfile.c \
@@ -50,11 +50,7 @@ test_filecache_SOURCES= $(SHAREDTESTSOURCE) test-filecache.c src/filecache.h \
 test_downloadqueue_SOURCES= $(SHAREDTESTSOURCE) test-downloadqueue.c \
 	../src/downloadqueue.c ../src/filecache.h \
 	../src/filecache.c fakesocket.c ../src/grant.c
-#test_downloadqueue_SOURCES= $(SHAREDTESTSOURCE) test-downloadqueue.c \
-#	../src/downloadqueue.c ../src/filecache.h ../src/filecachedb.c \
-#	../src/s3comms.h ../src/s3comms.c ../src/digest.h ../src/digest.c \
-#	../src/base64.h ../src/base64.c ../src/filecache.c fakesocket.c \
-#	../src/grant.c
+test_process_SOURCES= $(SHAREDTESTSOURCE) test-process.c
 
 
 SHAREDTESTSOURCE = dispatch.c src/aws-s3fs.h shared.c testfunctions.h \

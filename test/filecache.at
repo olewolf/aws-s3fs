@@ -136,3 +136,13 @@ AT_CHECK([grep "foreign key constraint failed$" stdout], [], [ignore])
 AT_CHECK([grep "^2: 0$" stdout], [], [ignore])
 AT_CHECK([grep "^3: 0$" stdout], [], [ignore])
 AT_CLEANUP
+
+AT_SETUP([Daemon])
+AT_CHECK([test-process 2>&1 Daemon], [], [stdout])
+AT_CHECK([grep "^Waiting for connections...$" stdout], [], [ignore])
+AT_CHECK([grep "^Connection established.$" stdout], [], [ignore])
+AT_CHECK([grep "^Connected to socket .\+/aws-s3fs\.sock$" stdout], [], [ignore])
+AT_CHECK([grep "^Reply: CONNECTED$" stdout], [], [ignore])
+AT_CHECK([grep "^Process terminated$" stdout], [], [ignore])
+AT_CLEANUP
+

@@ -19,8 +19,7 @@ AM_LIBS = pthread
 #AM_CFLAGS = -O2 -g
 AM_CFLAGS = -O0 -g
 
-#bin_PROGRAMS = aws-s3fs aws-s3fs-queue test-client
-bin_PROGRAMS = aws-s3fs test-client test-server
+bin_PROGRAMS = aws-s3fs aws-s3fs-queued
 
 HDR = config.h sysdirs.h s3comms.h fuseif.h s3if.h statcache.h filecache.h \
 	  socket.h aws-s3fs.h dircache.h
@@ -31,17 +30,17 @@ aws_s3fs_SOURCES = $(HDR) sysdirs.h aws-s3fs.c \
 	logger.c dircache.c fuseif.c s3if.c statcache.c socket.c \
 	filecacheclient.c
 
-#aws_s3fs_queue_LDADD = libaws-s3fs0.la
-#aws_s3fs_queue_SOURCES = config.h aws-s3fs.h socket.h filecache.c socket.c \
-	filecachedb.c
+aws_s3fs_queued_LDADD = libaws-s3fs0.la
+aws_s3fs_queued_SOURCES = $(HDR) sysdirs.h filecache.c socket.c \
+	filecachedb.c downloadqueue.c grant.c aws-s3fs-queued.c
 
-test_client_LDADD = libaws-s3fs0.la
-test_client_SOURCES = config.h socket.h filecache.c socket.c filecachedb.c \
-	test-client.c grant.c downloadqueue.c
+#test_client_LDADD = libaws-s3fs0.la
+#test_client_SOURCES = config.h socket.h filecache.c socket.c filecachedb.c \
+#	test-client.c grant.c downloadqueue.c
 
-test_server_LDADD = libaws-s3fs0.la
-test_server_SOURCES = config.h aws-s3fs.h socket.h filecache.c socket.c \
-	filecachedb.c test-server.c downloadqueue.c grant.c
+#test_server_LDADD = libaws-s3fs0.la
+#test_server_SOURCES = config.h aws-s3fs.h socket.h filecache.c socket.c \
+#	filecachedb.c test-server.c downloadqueue.c grant.c
 
 
 lib_LTLIBRARIES = libaws-s3fs0.la

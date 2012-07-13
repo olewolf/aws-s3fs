@@ -30,7 +30,7 @@
 
 //#ifdef AUTOTEST
 #undef CACHE_DIR
-#define CACHE_DIR "cachedir"
+#define CACHE_DIR "./cachedir"
 #undef SOCKET_NAME
 #define SOCKET_NAME "cachedir/aws-s3fs.sock"
 //#endif
@@ -58,6 +58,8 @@ extern struct RegularExpressions regexes;
 
 void InitializeFileCache( void );
 void ShutdownFileCache( void );
+void InitializeDownloadCache( void );
+void ShutdownDownloadQueue( void );
 bool ConnectToFileCache( const char *keyId, const char *secretKey );
 int OpenCacheFile( const char *path, uid_t uid, gid_t gid,
 				   int permissions, time_t mtime, char **localname );

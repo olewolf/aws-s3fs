@@ -1,3 +1,9 @@
+2012-07-13:
+	Unit tests for downloadqueue completed.
+	Unit tests for filecache.c completed.
+	Daemon startup completed.
+	Unit test for daemon completed.
+
 2012-07-12:
 	Additional unit tests for filecache.c created.
 	Unit tests for downloadqueue begun.

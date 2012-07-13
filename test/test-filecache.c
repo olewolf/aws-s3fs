@@ -547,4 +547,3 @@ static void test_ClientRequestsLocalFilename( const char *param )
 	printf( "2: " );
 	ClientRequestsLocalFilename( &clientConnection, "http://nonexistent" );
 }
-

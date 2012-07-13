@@ -45,7 +45,6 @@
 
 
 static pthread_t clientConnectionsListener;
-static pthread_t downloadQueue;
 
 /* Used as a constant for blocking the SIGPIPE signal. */
 static sigset_t sigpipeMask;
@@ -92,6 +91,9 @@ STATIC int ClientDisconnects(
 	struct CacheClientConnection *clientConnection, const char *request );
 STATIC int
 ClientRequestsLocalFilename(
+	struct CacheClientConnection *clientConnection, const char *request );
+STATIC int
+ClientRequestsShutdown(
 	struct CacheClientConnection *clientConnection, const char *request );
 
 /*
@@ -224,156 +226,6 @@ SendMessageToClient(
 
 
 /**
- * Respond to HUP and TERM signals.
- * Test: none.
- */
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-static void
-SignalHandler(
-	int       signal,
-	siginfo_t *sigInfo,
-	void      *context
-	          )
-{
-    switch( sigInfo->si_signo )
-    {
-        case SIGHUP:
-            break;
-        case SIGTERM:
-            exit( EXIT_SUCCESS );
-            break;
-
-	    default:
-			break;
-	}
-}
-#pragma GCC diagnostic pop
-
-
-
-/**
- * Start two processes: the file cache module together with the download queue,
- * and the permissions grant module.  The permissions grant module keeps its
- * superuser privileges.
- * @return Nothing.
- * Test: none.
- */
-void
-StartProcesses(
-	void
-	           )
-{
-	int              socketPair[ 2 ];
-	char             *runDir;
-	pid_t            forkPid;
-	int              fileDesc;
-	int              stdIO;
-	struct sigaction sigAction;
-
-	/* Setup a socket pair for communication between the two processes. */
-	if( socketpair( PF_UNIX, SOCK_DGRAM, 0, socketPair ) < 0 )
-	{
-		fprintf( stderr, "Could not create socket pairs\n" );
-		exit( EXIT_FAILURE );
-	}
-	/* Start a child process. */
-	if( ( forkPid = fork( ) ) < 0 )
-	{
-		fprintf( stderr, "Could not fork process\n" );
-		exit( EXIT_FAILURE );
-	}
-	/* Set working directory, file permissions, and signal handling for both
-	   the child process and the parent process. */
-	else
-	{
-        /* Set default file permissions for created files. */
-        umask(027);
-        /* Change running directory. */
-        runDir = getenv( "TMPDIR" );
-        if( runDir == NULL )
-        {
-            runDir = DEFAULT_TMP_DIR;
-        }
-        if( chdir( runDir ) != 0 )
-        {
-            fprintf( stderr, "Cannot change to directory %s\n", runDir );
-        }
-
-		/* Register handling of the HUP and the TERM signals. */
-		memset( &sigAction, 0, sizeof( sigAction ) );
-		sigAction.sa_sigaction = &SignalHandler;
-		/* Use sa_sigaction to handle the signals. */
-		sigAction.sa_flags = SA_SIGINFO;
-		if( sigaction( SIGHUP, &sigAction, NULL ) < 0 )
-		{  
-			perror( "Cannot register SIGHUP handler" );
-			exit( EXIT_FAILURE );
-		}
-		if( sigaction( SIGTERM, &sigAction, NULL ) < 0)
-		{  
-			perror( "Cannot register SIGTERM handler" );
-			exit( EXIT_FAILURE );
-		}
-		/* Ignore TTY signals. */
-		sigAction.sa_flags = 0;
-		sigAction.sa_handler = SIG_IGN;
-		sigaction( SIGTSTP, &sigAction, NULL );
-		sigaction( SIGTTOU, &sigAction, NULL );
-		sigaction( SIGTTIN, &sigAction, NULL );
-
-		/* Initialize the child process, which runs the file cache module. */
-		if( forkPid == 0 )
-		{
-			close( socketPair[ 1 ] );
-
-			/* Obtain a new process group. */
-			setsid( ); 
-			/* Close all descriptors. */
-			for( fileDesc = getdtablesize( ); fileDesc >= 0; --fileDesc )
-			{
-				close( fileDesc );
-			}
-			/* Handle standard I/O. */
-			stdIO = open( "/dev/null", O_RDWR );
-			if( dup( stdIO ) < 0 )
-			{
-				fprintf( stderr, "Cannot redirect stdout to /dev/null\n" );
-				exit( EXIT_FAILURE );
-			}
-			if( dup( stdIO ) < 0 )
-			{
-				fprintf( stderr, "Cannot redirect stderr to /dev/null\n" );
-				exit( EXIT_FAILURE );
-			}
-
-			/* Start the download queue as a thread. */
-			if( pthread_create( &downloadQueue, NULL,
-								ProcessDownloadQueue, &socketPair[ 1 ] ) != 0 )
-			{
-				fprintf( stderr, "Couldn't start download queue thread" );
-				exit( 1 );
-			}
-			/* Start the file cache server. */
-			InitializeFileCache( );
-			while( 1 )
-			{
-				sleep( 5 );
-			}
-			ShutdownFileCache( );
-		}
-		/* Start the permissions grant module. */
-		else
-		{
-			close( socketPair[ 0 ] );
-			InitializePermissionsGrant( forkPid, socketPair[ 1 ] );
-		}
-	}
-}
-
-
-
-/**
  * Initialize the file caching module.
  * @return Nothing.
  * Test: none.
@@ -446,7 +298,7 @@ ShutdownFileCache(
 {
 	ShutdownFileCacheDatabase( );
 	FreeRegexes( );
-
+	ShutdownDownloadQueue( );
 #if 0
 	static const struct sigaction action = { .sa_handler = SIG_DFL };
 	sigaction( signalMask, &action, NULL);
@@ -551,7 +403,9 @@ ReceiveRequests(
 
 	while( connected )
 	{
+#ifdef AUTOTEST
 		printf( "Waiting for message...\n" );
+#endif
 
 		status = ReadEntireMessage( clientConnection->connectionHandle,
 									&message );
@@ -611,11 +465,12 @@ CommandDispatcher(
 									   const char *message );
 	} dispatchTable[ ] =
 	    {
-			{ "FILE",    ClientRequestsLocalFilename },
-//			{ "CACHE",   ClientRequestsCaching },
-			{ "CREATE",  ClientRequestsCreate },
-			{ "CONNECT", ClientConnects },
+			{ "FILE",       ClientRequestsLocalFilename },
+//			{ "CACHE",      ClientRequestsCaching },
+			{ "CREATE",     ClientRequestsCreate },
+			{ "CONNECT",    ClientConnects },
 			{ "DISCONNECT", ClientDisconnects },
+			{ "QUIT"      , ClientRequestsShutdown },
 			{ NULL, NULL }
 		};
 
@@ -623,10 +478,11 @@ CommandDispatcher(
 	entry = 0;
 	while( ( command = dispatchTable[ entry ].command ) != NULL )
 	{
-		printf( "Trying command %s... ", command );
 		if( strncasecmp( message, command, strlen( command ) ) == 0 )
 		{
-			printf( "executing command\n" );
+#ifdef AUTOTEST
+			printf( "executing command %s\n", command );
+#endif
 			commandFunction = dispatchTable[ entry ].commandFunction;
 			status = commandFunction( clientConnection,
 									  &message[ strlen( command ) + 1 ] );
@@ -819,7 +675,7 @@ ClientConnectionsListener(
 		}
 		else
 		{
-			printf( "New communications thread started.\n" );
+			/* Connected. No action required. */
 		}
     }
 	printf( "Exiting\n" );
@@ -848,6 +704,34 @@ ClientDisconnects(
 {
 	close( clientConnection->connectionHandle );
 	pthread_exit( NULL );
+	return( 0 );
+}
+#pragma GCC diagnostic pop
+
+
+
+/**
+ * Shutdown the file cache.  This function requires the client to either be
+ * root or have the same uid as the file cache.
+ * @param clientConnection [in] Client Connection structure.
+ * @param request [in] Request parameters (unused).
+ * @return Nothing.
+ * Test: none.
+ */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+STATIC int
+ClientRequestsShutdown(
+    struct CacheClientConnection *clientConnection,
+	const char                   *request
+	                   )
+{
+	if( ( clientConnection->uid == 0 ) || clientConnection->uid == getuid( ) )
+	{
+		ShutdownFileCache( );
+		exit( EXIT_SUCCESS );
+	}
+
 	return( 0 );
 }
 #pragma GCC diagnostic pop

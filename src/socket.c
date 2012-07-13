@@ -123,6 +123,7 @@ CreateServerStreamSocket(
         socketAddress->sun_family = AF_UNIX;
 		strncpy( socketAddress->sun_path, socketPath,
 				 sizeof( socketAddress->sun_path ) /* = UNIX_PATH_MAX */ );
+		unlink( socketPath );
 		if( bind( *socketFd, socketAddress,
 				  sizeof( struct sockaddr_un ) ) != 0 )
 		{
