@@ -44,17 +44,21 @@ test_s3if_SOURCES= $(SHAREDTESTSOURCE) test-s3if.c ../src/s3if.c \
 	src/dircache.h src/s3comms.h ../src/s3comms.c \
 	../src/filecacheclient.c fakesocket.c
 test_filecache_SOURCES= $(SHAREDTESTSOURCE) test-filecache.c src/filecache.h \
-	../src/filecache.c src/socket.h fakesocket.c ../src/filecachedb.c \
+	../src/filecache.c src/socket.h fakesocket.c \
 	../src/downloadqueue.c ../src/grant.c ../src/s3comms.c src/s3comms.h \
 	../src/digest.c src/digest.h src/base64.h ../src/base64.c
 test_downloadqueue_SOURCES= $(SHAREDTESTSOURCE) test-downloadqueue.c \
-	../src/downloadqueue.c ../src/filecache.h ../src/filecachedb.c \
-	../src/s3comms.h ../src/s3comms.c ../src/digest.h ../src/digest.c \
-	../src/base64.h ../src/base64.c ../src/filecache.c fakesocket.c \
-	../src/grant.c
+	../src/downloadqueue.c ../src/filecache.h \
+	../src/filecache.c fakesocket.c ../src/grant.c
+#test_downloadqueue_SOURCES= $(SHAREDTESTSOURCE) test-downloadqueue.c \
+#	../src/downloadqueue.c ../src/filecache.h ../src/filecachedb.c \
+#	../src/s3comms.h ../src/s3comms.c ../src/digest.h ../src/digest.c \
+#	../src/base64.h ../src/base64.c ../src/filecache.c fakesocket.c \
+#	../src/grant.c
 
 
-SHAREDTESTSOURCE = dispatch.c src/aws-s3fs.h shared.c testfunctions.h
+SHAREDTESTSOURCE = dispatch.c src/aws-s3fs.h shared.c testfunctions.h \
+	../src/filecachedb.c
 
 AM_CFLAGS = -I../src -DAUTOTEST -DDEBUG -O0 -g
 if MAKE_OPENSSL_TESTS

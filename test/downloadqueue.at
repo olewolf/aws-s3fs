@@ -18,6 +18,38 @@
 
 AT_BANNER([Download Queue])
 
+AT_SETUP([GetSubscriptionFromQueue])
+AT_CHECK([test-downloadqueue GetSubscriptionFromQueue], [], [stdout])
+AT_CHECK([grep '^1: 2$' stdout], [], [ignore])
+AT_CHECK([grep '^2: 3$' stdout], [], [ignore])
+AT_CHECK([grep '^3: 4$' stdout], [], [ignore])
+AT_CLEANUP
+
+AT_SETUP([HostnameToRegion])
+AT_CHECK([test-downloadqueue HostnameToRegion], [], [stdout])
+AT_CHECK([grep '^1: 0$' stdout], [], [ignore])
+AT_CHECK([grep '^2: 2$' stdout], [], [ignore])
+AT_CHECK([grep '^3: 1$' stdout], [], [ignore])
+AT_CHECK([grep '^4: 3$' stdout], [], [ignore])
+AT_CHECK([grep '^5: 4$' stdout], [], [ignore])
+AT_CHECK([grep '^6: 5$' stdout], [], [ignore])
+AT_CHECK([grep '^7: 6$' stdout], [], [ignore])
+AT_CHECK([grep '^8: -1$' stdout], [], [ignore])
+AT_CLEANUP
+
+AT_SETUP([FindAvailableDownloader])
+AT_CHECK([test-downloadqueue FindAvailableDownloader], [], [stdout])
+AT_CHECK([grep '^1: 0$' stdout], [], [ignore])
+AT_CHECK([grep '^2: 1$' stdout], [], [ignore])
+AT_CHECK([grep '^3: 1$' stdout], [], [ignore])
+AT_CHECK([grep '^4: -1$' stdout], [], [ignore])
+AT_CLEANUP
+
+AT_SETUP([UnsubscribeFromDownload])
+AT_CHECK([test-downloadqueue UnsubscribeFromDownload], [], [stdout])
+AT_CHECK([grep '^Received signal; 0 subscribers$' stdout], [], [ignore])
+AT_CLEANUP
+
 AT_SETUP([ReceiveDownload])
 AT_CHECK([test-downloadqueue ReceiveDownload], [], [stdout])
 AT_CHECK([grep '^Subscribe (1): Subscribing to download of file 1$' stdout], [], [ignore])
@@ -29,3 +61,55 @@ AT_CHECK([grep '^Subscribe (6): Download of file @<:@13@:>@ complete$' stdout], 
 AT_CHECK([grep '^Downloader: Signaling @<:@12@:>@ subscriber(s)' stdout], [], [ignore])
 AT_CLEANUP
 
+AT_SETUP([MoveToSharedCache])
+AT_CHECK([test-downloadqueue MoveToSharedCache], [], [stdout])
+AT_CHECK([grep '^1: CHOWN 1010:1011:DIR001$' stdout], [], [ignore])
+AT_CHECK([grep '^2: CHOWN 1001:1002:FILE01$' stdout], [], [ignore])
+AT_CLEANUP
+
+AT_SETUP([BeginDownload])
+AT_CHECK([test-downloadqueue BeginDownload], [], [stdout])
+AT_CHECK([grep '^bucketname, http://s3.amazonaws.com/bucketname/FILE05, FILE07$' stdout], [], [ignore])
+AT_CHECK([grep '^FILE07 exists$' stdout], [], [ignore])
+AT_CHECK([grep '^0 entries in queue$' stdout], [], [ignore])
+AT_CLEANUP
+
+AT_SETUP([ProcessDownloadQueue])
+AT_CHECK([test-downloadqueue ProcessDownloadQueue], [], [stdout])
+AT_CHECK([grep '^Processed download 1$' stdout], [], [ignore])
+AT_CHECK([grep '^Processed download 2$' stdout], [], [ignore])
+AT_CHECK([grep '^Processed download 3$' stdout], [], [ignore])
+AT_CHECK([grep '^Processed download 4$' stdout], [], [ignore])
+AT_CHECK([grep '^Processed download 5$' stdout], [], [ignore])
+AT_CHECK([grep '^Processed download 10$' stdout], [], [ignore])
+AT_CHECK([grep '^Processed download 11$' stdout], [], [ignore])
+AT_CHECK([grep '^Processed download 12$' stdout], [], [ignore])
+AT_CHECK([grep '^Processed download 13$' stdout], [], [ignore])
+AT_CHECK([grep '^Processed download 14$' stdout], [], [ignore])
+AT_CHECK([grep '^Processed download 15$' stdout], [], [ignore])
+AT_CHECK([grep '^Processed download 16$' stdout], [], [ignore])
+AT_CHECK([grep '^Processed download 17$' stdout], [], [ignore])
+AT_CHECK([grep '^Processed download 18$' stdout], [], [ignore])
+AT_CHECK([grep '^Processed download 19$' stdout], [], [ignore])
+AT_CHECK([grep '^Processed download 20$' stdout], [], [ignore])
+AT_CHECK([grep '^Processed download 21$' stdout], [], [ignore])
+AT_CHECK([grep '^Processed download 22$' stdout], [], [ignore])
+AT_CHECK([grep '^Processed download 23$' stdout], [], [ignore])
+AT_CHECK([grep '^Processed download 24$' stdout], [], [ignore])
+AT_CHECK([grep '^Processed download 25$' stdout], [], [ignore])
+AT_CHECK([grep '^Processed download 26$' stdout], [], [ignore])
+AT_CHECK([grep '^Processed download 27$' stdout], [], [ignore])
+AT_CHECK([grep '^Processed download 28$' stdout], [], [ignore])
+AT_CHECK([grep '^Processed download 29$' stdout], [], [ignore])
+AT_CHECK([grep '^Processed download 30$' stdout], [], [ignore])
+AT_CHECK([grep '^Processed download 31$' stdout], [], [ignore])
+AT_CHECK([grep '^Processed download 32$' stdout], [], [ignore])
+AT_CHECK([grep '^Processed download 33$' stdout], [], [ignore])
+AT_CHECK([grep '^Processed download 34$' stdout], [], [ignore])
+AT_CHECK([grep '^Processed download 35$' stdout], [], [ignore])
+AT_CHECK([grep '^Processed download 36$' stdout], [], [ignore])
+AT_CHECK([grep '^Processed download 37$' stdout], [], [ignore])
+AT_CHECK([grep '^Processed download 38$' stdout], [], [ignore])
+AT_CHECK([grep '^Processed download 39$' stdout], [], [ignore])
+AT_CHECK([grep '^Processed download 40$' stdout], [], [ignore])
+AT_CLEANUP

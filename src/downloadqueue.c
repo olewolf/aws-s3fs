@@ -37,20 +37,15 @@
 #include "s3comms.h"
 
 
-#define CACHE_INPROGRESS CACHE_FILES "unfinished/"
 
-#define MAX_SIMULTANEOUS_DOWNLOADS 4
+STATIC GQueue          downloadQueue  = G_QUEUE_INIT;
 
-
-static pthread_mutex_t downloadQueue_mutex = PTHREAD_MUTEX_INITIALIZER;
-STATIC GQueue          downloadQueue       = G_QUEUE_INIT;
-
-/* Event trigger for the main loop of the download manager. */
+/* Event trigger and queue lock for the download manager. */
 STATIC pthread_mutex_t mainLoop_mutex = PTHREAD_MUTEX_INITIALIZER;
 STATIC pthread_cond_t  mainLoop_cond  = PTHREAD_COND_INITIALIZER;
 
 
-static struct
+STATIC struct
 {
 	bool   isReady;
 	CURL   *curl;
@@ -83,19 +78,19 @@ struct DownloadStarter
 
 
 
-static int FindAvailableDownloader( void );
-static void *BeginDownload( void *threadCtx );
-static void UnsubscribeFromDownload(
+STATIC int FindAvailableDownloader( void );
+STATIC void *BeginDownload( void *threadCtx );
+STATIC void UnsubscribeFromDownload(
 	struct DownloadSubscription *subscription );
 STATIC struct DownloadSubscription *GetSubscriptionFromQueue( void );
-static bool MoveToSharedCache( int socketHandle,
+STATIC bool MoveToSharedCache( int socketHandle,
 							   const char *parentname, uid_t parentUid,
 							   gid_t parentGid, const char *filename,
 							   uid_t uid, gid_t gid );
 
+#ifndef AUTOTEST
 static void SendGrantMessage( int socketHandle, const char *privopRequest );
-
-
+#endif
 
 
 
@@ -117,32 +112,13 @@ ShutdownDownloadQueue(
 
 
 
-STATIC void
-LockDownloadQueue(
-    void
-	              )
-{
-	pthread_mutex_lock( &downloadQueue_mutex );
-}
-
-
-
-STATIC void
-UnlockDownloadQueue(
-    void
-	              )
-{
-	pthread_mutex_unlock( &downloadQueue_mutex );
-}
-
-
-
 /**
  * Helper function for the \a ScheduleDownload function which serves to
  * identify the data that is searched for.
  * @param queueData [in] Pointer to the data field in a GQueue queue.
  * @param cmpVal [in] Pointer to the data that the data should be compared with.
  * @return \a 1 if the data matches, or \0 otherwise.
+ * Test: implied blackbox (test-downloadqueue.c).
  */
 static int
 FindInDownloadQueue(
@@ -177,8 +153,6 @@ ReceiveDownload(
 	pthread_condattr_t          condAttr;
 
 	/* Find out if a subscription to the same file is already queued. */
-//	LockDownloadQueue( );
-
 	pthread_mutex_lock( &mainLoop_mutex );
 	subscriptionEntry = g_queue_find_custom( &downloadQueue, &fileId,
 											 FindInDownloadQueue );
@@ -198,6 +172,8 @@ ReceiveDownload(
 		pthread_cond_init( &subscription->waitCond, &condAttr );
 		pthread_cond_init( &subscription->acknowledgeCond, &condAttr );
 		pthread_condattr_destroy( &condAttr );
+		/* Add the entry to the transfers list. */
+		Query_AddDownload( fileId, getuid( ) );
 		/* Enqueue the entry. */
 		g_queue_push_tail( &downloadQueue, subscription );
 	}
@@ -209,7 +185,6 @@ ReceiveDownload(
 		subscription = subscriptionEntry->data;
 		subscription->subscribers++;
 	}
-//	UnlockDownloadQueue( );
 
 	/* Lock the download completion mutex before the download is clear to
 	   begin. */
@@ -217,10 +192,9 @@ ReceiveDownload(
 	/* Tell the download manager that a new subscription has been entered. */
 	pthread_cond_signal( &mainLoop_cond );
 	pthread_mutex_unlock( &mainLoop_mutex );
+
 	/* Wait until the download is complete. */
-//	printf( "Subscribe: Waiting for download signal\n" );
 	pthread_cond_wait( &subscription->waitCond, &subscription->waitMutex );
-//	printf( "Subscribe: Download signal received\n" );
 	pthread_mutex_unlock( &subscription->waitMutex );
 
 	/* Unsubscribe from the download. */
@@ -235,8 +209,9 @@ ReceiveDownload(
  * signal that the download has completed.
  * @param subscription [in/out] The subscription to the download.
  * @return Nothing.
+ * Test: unit test (test-downloadqueue.c).
  */
-static void
+STATIC void
 UnsubscribeFromDownload(
 	struct DownloadSubscription *subscription
 	                    )
@@ -288,20 +263,19 @@ ProcessDownloadQueue(
 	int                         i;
 	struct DownloadSubscription *subscription;
 	int                         downloader;
-	bool                        tryMoreDownloads;
 	struct DownloadStarter      *downloadStarter;
 	pthread_t                   threadId;
 	int                         socketHandle;
 
 	socketHandle = * (int*) socket;
 
-	/* Initialize downloaders. The S3COMM handle is not acquired by
+	/* Initialize downloaders. The S3COMM handle is not acquired via
 	   s3_open( ), because for downloads, its contents are file specific
 	   and would require us to open and close the s3comms module for each
-	   file. We can "fake" an S3COMM handle, however, because we just use it
-	   for the s3BuildRequest function, which uses it for reading only.
-	   All we must do is specify the region, bucket, keyId, and secretKey
-	   entries in the handle for each download. */
+	   file.  We can "fake" an S3COMM handle, however, because we just use it
+	   for the s3BuildRequest function, which uses it only for reading the
+	   region, the bucket, the keyId, and the secretKey entries.  All we need
+	   to do is specify these values in the handle for each download. */
 	curl_global_init( CURL_GLOBAL_ALL );
 	for( i = 0; i < MAX_SIMULTANEOUS_DOWNLOADS; i++ )
 	{
@@ -314,30 +288,47 @@ ProcessDownloadQueue(
 	for( ; ; )
 	{
 		/* Wait for a subscription entry or a download completion. */
-		pthread_mutex_lock( &mainLoop_mutex );
-		pthread_cond_wait( &mainLoop_cond, &mainLoop_mutex );
 
-		/* Pick subscriptions from the download queue and start downloaders
-		   until either all downloaders are in use or the queue is empty. */
-		do
+		/* Prevent other threads from modifying the queue while we're
+		   processing it. */
+		pthread_mutex_lock( &mainLoop_mutex );
+
+		/* Fill the download slots with downloads until either all download
+		   slots are occupied or the queue is empty. */
+		while( ( downloader = FindAvailableDownloader( ) ) != -1 )
 		{
+			/* Find an entry in the queue that isn't processed yet. */
 			subscription = GetSubscriptionFromQueue( );
-			downloader   = FindAvailableDownloader( );
-			if( ( subscription != NULL ) && ( downloader != -1 ) )
+			if( subscription != NULL )
 			{
+				subscription->downloadActive      = true;
+                downloaders[ downloader ].isReady = false;
 				downloadStarter = malloc( sizeof( struct DownloadStarter ) );
 				downloadStarter->downloader   = downloader;
 				downloadStarter->subscription = subscription;
 				downloadStarter->socket       = socketHandle;
 				pthread_create( &threadId, NULL, BeginDownload,
 								downloadStarter );
-				tryMoreDownloads = true;
 			}
 			else
 			{
-				tryMoreDownloads = false;
+				break;
 			}
-		} while( tryMoreDownloads == true );
+		}
+
+		/* If the queue is emptied or all download slots are occupied,
+		   then wait until there are new entries in the queue or the download
+		   finishes, whichever comes first.
+		   We still hav the mutex lock, so we won't receive any signals yet.
+		   Any new entries or finished downloads will be waiting for us to
+		   release the lock. */
+		if( ( downloader == -1 ) || ( subscription == NULL ) )
+		{
+			pthread_cond_wait( &mainLoop_cond, &mainLoop_mutex );
+		}
+		/* Otherwise, process more entries until the queue is empty or all
+		   download slots are taken. */
+		pthread_mutex_unlock( &mainLoop_mutex );
 	}
 
 
@@ -356,8 +347,9 @@ ProcessDownloadQueue(
  * Find any downloader that is not currently busy.
  * @return Handle of an available downloader, or -1 if all downloaders are
  *         occupied.
+ * Test: unit test (test-downloadqueue.c).
  */
-static int
+STATIC int
 FindAvailableDownloader(
 	void
 	                    )
@@ -378,9 +370,15 @@ FindAvailableDownloader(
 
 
 
-static enum bucketRegions
+/**
+ * Determine the region based on the hostname.
+ * @param url [in] Complete S3 URL.
+ * @return Bucket region for the specified hostname.
+ * Test: unit test (test-downloadqueue.c).
+ */
+STATIC enum bucketRegions
 HostnameToRegion(
-	const char *hostname
+	const char *url
 	             )
 {
     static const char *amazonHost[ ] =
@@ -397,21 +395,27 @@ HostnameToRegion(
 	const char         *regionStr;
 	enum bucketRegions region;
 
-	g_regex_match( regexes.regionPart, hostname, 0, &matchInfo );
+	g_regex_match( regexes.regionPart, url, 0, &matchInfo );
 	regionStr = g_match_info_fetch( matchInfo, 2 );
 	g_match_info_free( matchInfo );
-    for( region = 0; region < sizeof( amazonHost ) / sizeof( char* ); region++ )
+	if( regionStr != NULL )
 	{
-		if( strcmp( amazonHost[ region ], regionStr ) == 0 )
+		for( region = 0;
+			 region < sizeof( amazonHost ) / sizeof( char* ); region++ )
 		{
-			break;
+			if( strcmp( amazonHost[ region ], regionStr ) == 0 )
+			{
+				break;
+			}
+		}
+		free( (char*) regionStr );
+		if( region == sizeof( amazonHost ) / sizeof( char* ) )
+		{
+			/* Handle unknown region error */
+			region = -1;
 		}
 	}
-	free( (char*) regionStr );
-	if( region == sizeof( amazonHost ) / sizeof( char* ) )
-	{
-		/* Handle unknown region error */
-	}
+
 	return( region );
 }
 
@@ -423,8 +427,9 @@ HostnameToRegion(
  * @param ctx [in] Pointer to a DownloadStarter structure. The structure is
  *        freed from memory.
  * @return Nothing.
+ * Test: unit test (test-downloadqueue.c).
  */
-static void*
+STATIC void*
 BeginDownload(
 	void *ctx
 	          )
@@ -465,14 +470,17 @@ BeginDownload(
 	socketHandle    = downloadStarter->socket;
 	free( ctx );
 
-	downloaders[ downloader ].isReady = false;
 	curl   = downloaders[ downloader ].curl;
 	s3Comm = downloaders[ downloader ].s3Comm;
 
 	/* Fetch local filename, remote filename, bucket, keyId, and
 	   secretKey. */
+	pthread_mutex_lock( &mainLoop_mutex );
 	Query_GetDownload( subscription->fileId, &bucket, &remotePath,
 					   &downloadPath, &keyId, &secretKey );
+#ifdef AUTOTEST
+//	printf( "GetDownload: %d - %d, %s, %s, %s\n", downloader, (int)subscription->fileId, bucket, remotePath, downloadPath );
+#endif
 	/* Set the path for the local file and open it for writing. */
 	downloadFile = malloc( strlen( CACHE_INPROGRESS )
 						   + strlen( downloadPath ) + sizeof( char ) );
@@ -504,18 +512,24 @@ BeginDownload(
 	curl_easy_setopt( curl, CURLOPT_URL, remotePath );
 	free( remotePath );
 	DeleteCurlSlistAndContents( headers );
+
+	pthread_mutex_unlock( &mainLoop_mutex );
+#ifndef AUTOTEST
 	status = curl_easy_perform( curl );
+#else
+	status = 0;
+#endif
 	fclose( downFile );
-	/* Mark the downloader as ready for another download. */
-	downloaders[ downloader ].isReady = true;
 
 	if( status == 0 )
 	{
 		/* Determine the owners and the permissions of the file. */
+		pthread_mutex_lock( &mainLoop_mutex );
 	    Query_GetOwners( subscription->fileId,
 						 &parentname, &parentUid, &parentGid,
 						 &filename, &uid, &gid, &permissions );
 		/* Set the permissions while we still own the file. */
+		pthread_mutex_unlock( &mainLoop_mutex );
 		chmod( downloadFile, permissions );
 		free( downloadFile );
 		/* Grant appropriate rights to the file and move it into the shared
@@ -525,30 +539,39 @@ BeginDownload(
 		free( parentname );
 		free( filename );
 
+		/* Lock the queue to prevent threads from subscribing to this
+		   download after we broadcast a signal that the file is available. */
+		pthread_mutex_lock( &mainLoop_mutex );
+		/* Remove the file from the download queue and the downloads table. */
+		g_queue_remove( &downloadQueue, subscription );
+		status = Query_DeleteTransfer( subscription->fileId );
+		/* Mark the downloader as ready for another download. */
+		downloaders[ downloader ].isReady = true;
 		/* Before signaling to the subscribers that the file is available,
 		   make sure none of them can acknowledge before we're ready to
 		   receive the acknowledgment. */
 		pthread_mutex_lock( &subscription->acknowledgeMutex );
-		/* Lock the queue to prevent threads from subscribing to this
-		   download after we broadcast a signal that the file is available. */
-		LockDownloadQueue( );
-		/* Inform the subscribers that the file is available. */
 		pthread_mutex_lock( &subscription->waitMutex );
+		subscription->downloadActive = false;
+		/* Inform the subscribers that the file is available. */
 		pthread_cond_broadcast( &subscription->waitCond );
+		/* Inform the queue processor that a download slot is available. */
+		pthread_cond_signal( &mainLoop_cond );
+		pthread_mutex_unlock( &mainLoop_mutex );
 		pthread_mutex_unlock( &subscription->waitMutex );
-		/* Remove the file from the download queue and the downloads table. */
-		g_queue_remove( &downloadQueue, subscription );
-		Query_DeleteTransfer( subscription->fileId );
-		UnlockDownloadQueue( );
-
 		/* Wait for the last subscriber to acknowledge that the subscription
 		   count is zero. If no response is received within a minute, probably
 		   some subscribers are dead. */
-		gettimeofday( &now, NULL );
-		oneMinute.tv_sec  = now.tv_sec + 60;
-		oneMinute.tv_nsec = 0;
-		pthread_cond_timedwait( &subscription->acknowledgeCond,
-								&subscription->acknowledgeMutex, &oneMinute );
+		if( subscription->subscribers != 0 )
+		{
+			gettimeofday( &now, NULL );
+			oneMinute.tv_sec  = now.tv_sec + 60;
+			oneMinute.tv_nsec = 0;
+			pthread_cond_timedwait( &subscription->acknowledgeCond,
+									&subscription->acknowledgeMutex,
+									&oneMinute );
+		}
+		pthread_mutex_unlock( &subscription->acknowledgeMutex );
 		/* Delete the subscription entry whether all threads have acknowledged
 		   or not. */
 		free( subscription );
@@ -565,6 +588,7 @@ BeginDownload(
  * subscriptions should be allowed until the download is complete.
  * @return Next subscription entry, or NULL if no subscription entries are
  *         available.
+ * Test: unit test (test-downloadqueue.c).
  */
 STATIC struct DownloadSubscription*
 GetSubscriptionFromQueue(
@@ -589,9 +613,21 @@ GetSubscriptionFromQueue(
  * Function that interfaces with the priviliged process, which changes
  * ownership of parent directory and file and places them in the shared
  * cache.
- * 
+ * @param socketHandle [in] Socket handle for the permissions grant module.
+ * @param parentname [in] Local name of the parent directory.
+ * @param parentUid [in] new uid for the local parent directory.
+ * @param parentGid [in] new gid for the local parent directory.
+ * @param filename [in] Local name of the downloaded file.
+ * @param uid [in] new uid for the downloaded file.
+ * @param uid [in] new gid for the downloaded file.
+ * @return \a true if successful, or \a false otherwise.
+ * Test: unit test (test-downloadqueue.c).
  */
-static bool
+#ifdef AUTOTEST
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#endif
+STATIC bool
 MoveToSharedCache(
 	int        socketHandle,
 	const char *parentname,
@@ -604,25 +640,36 @@ MoveToSharedCache(
 {
 	char *chownRequest;
 
-
 	/* Give the directory its original owners. It was created with proper
 	   permissions to begin with. */
-	chownRequest = malloc( strlen( parentname ) + strlen( "chown xxxx xxxx " )
+	chownRequest = malloc( strlen( parentname ) + strlen( "chown xxxxx xxxxx " )
 						   + sizeof( char ) );
-	sprintf( chownRequest, "CHOWN %d %d ", (int) parentUid, (int) parentGid );
+	sprintf( chownRequest, "CHOWN %d:%d:", (int) parentUid, (int) parentGid );
 	strcat( chownRequest, parentname );
+#ifndef AUTOTEST
 	SendGrantMessage( socketHandle, chownRequest );
+#else
+	printf( "1: %s\n", chownRequest );
+#endif
 	free( chownRequest );
 
 	/* Similarly, give the downloaded file appropriate ownership. */
-	chownRequest = malloc( strlen( filename ) + strlen( "chown xxxx xxxx " )
+	chownRequest = malloc( strlen( filename ) + strlen( "chown xxxxx xxxxx " )
 						   + sizeof( char ) );
-	sprintf( chownRequest, "CHOWN %d %d ", (int) uid, (int) gid );
+	sprintf( chownRequest, "CHOWN %d:%d:", (int) uid, (int) gid );
 	strcat( chownRequest, filename );
+#ifndef AUTOTEST
 	SendGrantMessage( socketHandle, chownRequest );
+#else
+	printf( "2: %s\n", chownRequest );
+#endif
+	free( chownRequest );
 
 	return( true );
 }
+#ifdef AUTOTEST
+#pragma GCC diagnostic pop
+#endif
 
 
 
@@ -632,6 +679,7 @@ MoveToSharedCache(
  * @param privopRequest [in] Request message.
  * @return Nothing.
  */
+#ifndef AUTOTEST
 static void
 SendGrantMessage(
 	int        socketHandle,
@@ -641,3 +689,4 @@ SendGrantMessage(
 	/* Stub. */
 	printf( "Sending message via socket %d to privileged process: %s\n", socketHandle, privopRequest );
 }
+#endif /*AUTOTEST */

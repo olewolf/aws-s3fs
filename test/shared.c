@@ -25,10 +25,15 @@
 #include <stdio.h>
 #include <ctype.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include "aws-s3fs.h"
+#include "filecache.h"
 #include "testfunctions.h"
 
 extern struct Configuration globalConfig;
+
+extern void InitializeFileCacheDatabase( void );
 
 
 void PrintConfig( int testNo, const struct CmdlineConfiguration *config, bool verbose )
@@ -153,4 +158,36 @@ void ReadLiveConfig( const char *param )
 		}
     }
 }
+
+
+
+void CheckSQLiteUtil( void )
+{
+#ifndef HAVE_SQLITE_UTIL
+	printf( "sqlite3 not found; skipping test.\n" );
+	exit( 77 );
+#endif
+}
+
+
+void CreateDatabase( void )
+{
+	unlink( CACHE_DATABASE );
+	mkdir( CACHE_DIR, 0700 );
+	mkdir( CACHE_FILES, 0755 );
+	mkdir( CACHE_INPROGRESS, 0700 );
+	InitializeFileCacheDatabase( );
+}
+
+
+void FillDatabase( void )
+{
+	CheckSQLiteUtil( );
+	CreateDatabase( );
+	if( system( "echo \"PRAGMA foreign_keys = ON;\n.read ../../testdata/cache.sql\" | sqlite3 " CACHE_DATABASE ) != 0 )
+	{
+		exit( EXIT_FAILURE );
+	}
+}
+
 

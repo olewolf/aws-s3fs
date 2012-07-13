@@ -71,8 +71,8 @@ extern int ClientRequestsLocalFilename(
 extern void *ReceiveRequests( void *data );
 extern int CommandDispatcher( struct CacheClientConnection *clientConnection,
 							  const char *message );
+void FillDatabase( void );
 
-static void FillDatabase( void );
 static void test_InitializeFileCacheDatabase( const char *param );
 static void test_FindFile( const char *param );
 static void test_FindParent( const char *param );
@@ -120,15 +120,6 @@ const struct dispatchTable dispatchTable[ ] =
 
 
 
-static void CheckSQLiteUtil( void )
-{
-#ifndef HAVE_SQLITE_UTIL
-	printf( "sqlite3 not found; skipping test.\n" );
-	exit( 77 );
-#endif
-}
-
-
 #if 0
 static void PrepareLiveTestData( const char *configFile )
 {
@@ -138,28 +129,6 @@ static void PrepareLiveTestData( const char *configFile )
 	
 }
 #endif
-
-
-static void CreateDatabase( void )
-{
-	unlink( CACHE_DATABASE );
-	mkdir( CACHE_DIR, 0700 );
-	mkdir( CACHE_FILES, 0755 );
-	mkdir( CACHE_INPROGRESS, 0700 );
-	InitializeFileCacheDatabase( );
-}
-
-
-static void FillDatabase( void )
-{
-	CheckSQLiteUtil( );
-	CreateDatabase( );
-	if( system( "echo \"PRAGMA foreign_keys = ON;\n.read ../../testdata/cache.sql\" | sqlite3 " CACHE_DATABASE ) != 0 )
-	{
-		exit( EXIT_FAILURE );
-	}
-}
-
 
 
 

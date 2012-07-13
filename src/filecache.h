@@ -39,6 +39,9 @@
 #define CACHE_FILES      CACHE_DIR "/files/"
 #define CACHE_INPROGRESS CACHE_FILES "unfinished/"
 
+#define MAX_SIMULTANEOUS_DOWNLOADS 6
+
+
 
 struct RegularExpressions
 {
@@ -84,7 +87,10 @@ bool Query_GetOwners( sqlite3_int64 fileId, char **parentdir,
 					  uid_t *parentUid, gid_t *parentGid, char **filename,
 					  uid_t *uid, gid_t *gid, int *permissions );
 bool Query_DeleteTransfer( sqlite3_int64 fileId );
+bool Query_AddDownload( sqlite3_int64 fileId, uid_t uid );
 const char *Query_GetLocalPath( const char *remotename );
+bool Query_DecrementSubscriptionCount( sqlite3_int64 fileId );
+bool Query_IncrementSubscriptionCount( sqlite3_int64 fileId );
 
 
 #endif /* __FILECACHE_H */

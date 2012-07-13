@@ -1149,7 +1149,7 @@ CompileRegexes(
 	const char *hostname = "^http(s?)://(.+\\.amazonaws\\.com).*";
 
 	const char *regionPart =
-		"^http[s]?://([^\\.]+\\.)?([^\\.]+)\\.amazonaws\\.com$";
+		"^http[s]?://([^\\.]+\\.)?([^\\.]+)\\.amazonaws\\.com";
 
 	/* Compile regular expressions. */
     #define COMPILE_REGEX( regex ) regexes.regex = \

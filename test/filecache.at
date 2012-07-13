@@ -35,8 +35,8 @@ AT_CLEANUP
 
 AT_SETUP([CreateLocalFile])
 AT_CHECK([test-filecache 2>&1 CreateLocalFile], [], [stdout])
-AT_CHECK([grep "^1: @<:@0-9@:>@\{1,3\}: \"@<:@a-zA-Z0-9@:>@\{6\}\", type=file$" stdout], [], [ignore])
-AT_CHECK([grep "^2: \(@<:@0-9@:>@\{1,3\}\)=\1: \"@<:@a-zA-Z0-9@:>@\{6\}\", type=file$" stdout], [], [ignore])
+AT_CHECK([grep "^1: @<:@0-9@:>@\{1,4\}: \"@<:@a-zA-Z0-9@:>@\{6\}\", type=file$" stdout], [], [ignore])
+AT_CHECK([grep "^2: \(@<:@0-9@:>@\{1,4\}\)=\1: \"@<:@a-zA-Z0-9@:>@\{6\}\", type=file$" stdout], [], [ignore])
 AT_CHECK([grep "^3: 0$" stdout], [], [ignore])
 AT_CLEANUP
 
@@ -105,8 +105,8 @@ AT_CLEANUP
 
 AT_SETUP([CreateLocalFile Query])
 AT_CHECK([test-filecache 2>&1 CreateLocalFileQuery], [], [stdout])
-AT_CHECK([grep "^1: id=5, file=FILE05, existed=0$" stdout], [], [ignore])
-AT_CHECK([grep "^2: id=5, file=FILE05, existed=1$" stdout], [], [ignore])
+AT_CHECK([grep "^1: id=1005, file=FILE05, existed=0$" stdout], [], [ignore])
+AT_CHECK([grep "^2: id=1005, file=FILE05, existed=1$" stdout], [], [ignore])
 AT_CHECK([grep "^Insert statement failed (19): foreign key constraint failed$" stdout], [], [ignore])
 AT_CHECK([grep "^3: id=0, file=FILE06" stdout], [], [ignore])
 AT_CLEANUP
@@ -120,13 +120,13 @@ AT_CLEANUP
 AT_SETUP([GetDownload Query])
 AT_CHECK([test-filecache 2>&1 GetDownload], [], [stdout])
 AT_CHECK([grep "^1: 1 - bucketname, http://remote2, FILE02, 1234, 5678$" stdout], [], [ignore])
-AT_CHECK([grep "^2: 0 - , , , , $" stdout], [], [ignore])
+AT_CHECK([grep "^2: 0 - (null), (null), (null), (null), (null)$" stdout], [], [ignore])
 AT_CLEANUP
 
 AT_SETUP([GetOwners Query])
 AT_CHECK([test-filecache 2>&1 GetOwners], [], [stdout])
 AT_CHECK([grep "^1: (1) DIR001 1000 1000 / FILE01 1000 1000 644$" stdout], [], [ignore])
-AT_CHECK([grep "^2: (0)  1000 1000 /  1000 1000 644$" stdout], [], [ignore])
+AT_CHECK([grep "^2: (0) (null) 1000 1000 / (null) 1000 1000 644$" stdout], [], [ignore])
 AT_CLEANUP
 
 AT_SETUP([DeleteTransfer Query])

@@ -37,12 +37,14 @@ struct dispatchTable
 struct CmdlineConfiguration;
 
 void PrintConfig( int testNo, const struct CmdlineConfiguration *config, bool verbose );
-
 void ReleaseConfig( struct CmdlineConfiguration *config );
-
 void ReadLiveConfig( const char *param );
 
 int ReadEntireMessage( int connectionHandle, char **clientMessage );
+
+void CheckSQLiteUtil( void );
+void CreateDatabase( void );
+void FillDatabase( void );
 
 
 #endif /* __TESTFUNCTIONS_H */

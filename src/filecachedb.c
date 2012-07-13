@@ -55,6 +55,7 @@ static struct
 	sqlite3_stmt *download;
 	sqlite3_stmt *allOwners;
 	sqlite3_stmt *deleteTransfer;
+	sqlite3_stmt *addDownload;
 } cacheDatabase;
 
 
@@ -110,6 +111,27 @@ InitializeFileCacheDatabase(
     int     rc;
 
     /* Open the database. */
+    rc = sqlite3_config( SQLITE_CONFIG_SERIALIZED );
+    if( rc != SQLITE_OK )
+    {
+        fprintf( stderr, "Cannot open database: %s\n",
+				 sqlite3_errmsg( cacheDb ) );
+		exit( EXIT_FAILURE );
+    }
+    rc = sqlite3_initialize( );
+    if( rc != SQLITE_OK )
+    {
+        fprintf( stderr, "Cannot open database: %s\n",
+				 sqlite3_errmsg( cacheDb ) );
+		exit( EXIT_FAILURE );
+    }
+    rc = sqlite3_enable_shared_cache( 1 );
+    if( rc != SQLITE_OK )
+    {
+        fprintf( stderr, "Cannot open database: %s\n",
+				 sqlite3_errmsg( cacheDb ) );
+		exit( EXIT_FAILURE );
+    }
     rc = sqlite3_open( CACHE_DATABASE, &cacheDb );
     if( rc != SQLITE_OK )
     {
@@ -151,8 +173,10 @@ ShutdownFileCacheDatabase(
 	CLEAR_QUERY( download );
 	CLEAR_QUERY( allOwners );
 	CLEAR_QUERY( deleteTransfer );
+	CLEAR_QUERY( addDownload );
 
     sqlite3_close( cacheDatabase.cacheDb );
+	sqlite3_shutdown( );
 }
 
 
@@ -305,12 +329,20 @@ CompileStandardQueries(
          WHERE remotename = ?;";
 
 	const char *const downloadSql =
+/*
 		"SELECT files.bucket, files.remotename, files.localname,  \
                 users.keyid, users.secretkey                      \
         FROM transfers                                            \
             LEFT JOIN files ON transfers.file = files.id          \
             LEFT JOIN users ON transfers.owner = users.uid        \
         WHERE files.id = ?;";
+*/
+		"SELECT files.bucket, files.remotename, files.localname,  \
+                users.keyid, users.secretkey                      \
+        FROM files, users, transfers                              \
+            WHERE transfers.file = files.id          \
+            AND   transfers.owner = users.uid        \
+            AND   files.id = ?;";
 
 	const char *const allOwnersSql =
 		"SELECT files.uid, files.gid, files.permissions, files.localname,  \
@@ -321,6 +353,9 @@ CompileStandardQueries(
 
 	const char *const deleteTransferSql =
 		"DELETE FROM transfers WHERE file = ?;";
+
+	const char *const addDownloadSql =
+		"INSERT INTO transfers( file, owner, direction ) VALUES( ?, ?, 'd' );";
 
 
     COMPILESQL( fileStat );
@@ -334,6 +369,7 @@ CompileStandardQueries(
 	COMPILESQL( download );
 	COMPILESQL( allOwners );
 	COMPILESQL( deleteTransfer );
+	COMPILESQL( addDownload );
 }
 
 
@@ -727,10 +763,10 @@ FindParent(
  * for the Amazon S3.
  * @param fileId [in] ID of the file in the files table.
  * @param bucket [out] Pointer to the file's bucket name string.
- * @param bucket [out] Pointer to the file's S3 path name string.
- * @param bucket [out] Pointer to the file's local path name string.
- * @param bucket [out] Pointer to the user's Amazon Key ID string.
- * @param bucket [out] Pointer to the user's Secret Key string.
+ * @param remotePath [out] Pointer to the file's S3 path name string.
+ * @param localPath [out] Pointer to the file's local path name string.
+ * @param keyId [out] Pointer to the user's Amazon Key ID string.
+ * @param secretKey [out] Pointer to the user's Secret Key string.
  * @return \a true if the information was found, or \a false otherwise.
  * Test: unit test (filecache.c).
  */
@@ -747,12 +783,7 @@ Query_GetDownload(
 	bool         status = false;
 	int          rc;
     sqlite3_stmt *filenamesQuery = cacheDatabase.download;
-	const char   *resBucket     = "";
-	const char   *resLocalname  = "";
-	const char   *resRemotename = "";
-	const char   *resKeyId      = "";
-	const char   *resSecretKey  = "";
-
+	int          rows = 0;
 
 	LockCache( );
     BIND_QUERY( rc, int( filenamesQuery, 1, fileId ), );
@@ -760,16 +791,26 @@ Query_GetDownload(
     {
 		while( ( rc = sqlite3_step( filenamesQuery ) ) == SQLITE_ROW )
 		{
-			resBucket     = (const char*)
-				            sqlite3_column_text( filenamesQuery, 0 );
-			resRemotename = (const char*)
-				            sqlite3_column_text( filenamesQuery, 1 );
-			resLocalname  = (const char*)
-				            sqlite3_column_text( filenamesQuery, 2 );
-			resKeyId      = (const char*)
-				            sqlite3_column_text( filenamesQuery, 3 );
-			resSecretKey  = (const char*)
-				            sqlite3_column_text( filenamesQuery, 4 );
+			if( rows++ != 0 )
+			{
+				fprintf( stderr, "WARNING: shouldn't return multiple rows" );
+				free( *bucket );
+				free( *remotePath );
+				free( *localPath );
+				free( *keyId );
+				free( *secretKey );
+			}
+
+			*bucket     = strdup( (const char*)
+								  sqlite3_column_text( filenamesQuery, 0 ) );
+			*remotePath = strdup( (const char*)
+								  sqlite3_column_text( filenamesQuery, 1 ) );
+			*localPath  = strdup( (const char*)
+								  sqlite3_column_text( filenamesQuery, 2 ) );
+			*keyId      = strdup( (const char*)
+								  sqlite3_column_text( filenamesQuery, 3 ) );
+			*secretKey  = strdup( (const char*)
+								  sqlite3_column_text( filenamesQuery, 4 ) );
 			status = true;
 		}
 		if( rc != SQLITE_DONE )
@@ -785,11 +826,18 @@ Query_GetDownload(
 				 rc, sqlite3_errmsg( cacheDatabase.cacheDb ) );
     }
 
-	*bucket     = strdup( resBucket );
-	*localPath  = strdup( resLocalname );
-	*remotePath = strdup( resRemotename );
-	*keyId      = strdup( resKeyId );
-	*secretKey  = strdup( resSecretKey );
+	#ifdef AUTOTEST
+	printf( "%s, %s, %s\n", *bucket, *remotePath, *localPath );
+	#endif
+
+	if( status != true )
+	{
+		*bucket = NULL;
+		*remotePath = NULL;
+		*localPath  = NULL;
+		*keyId      = NULL;
+		*secretKey  = NULL;
+	}
 
 	RESET_QUERY( download );
 	UnlockCache( );
@@ -844,6 +892,9 @@ Query_GetOwners(
 			*parentUid    = sqlite3_column_int( ownersQuery, 4 );
 			*parentGid    = sqlite3_column_int( ownersQuery, 5 );
 			resParentname = (char*) sqlite3_column_text( ownersQuery, 6 );
+
+			*parentname   = strdup( resParentname );
+			*filename     = strdup( resFilename );
 			status        = true;
 		}
 		if( rc != SQLITE_DONE )
@@ -860,8 +911,11 @@ Query_GetOwners(
 				 rc, sqlite3_errmsg( cacheDatabase.cacheDb ) );
     }
 
-	*parentname = strdup( resParentname );
-	*filename   = strdup( resFilename );
+	if( status != true )
+	{
+		*parentname = NULL;
+		*filename   = NULL;
+	}
 
 	RESET_QUERY( allOwners );
 	UnlockCache( );
@@ -880,7 +934,7 @@ Query_GetOwners(
 bool
 Query_DeleteTransfer(
 	sqlite3_int64 fileId
-	                 )
+	                       )
 {
 	bool         status = false;
 	int          deleted;
@@ -919,4 +973,144 @@ Query_DeleteTransfer(
 	UnlockCache( );
 
 	return( status );
+}
+
+
+
+/**
+ * Increment or decrement the number of subscribers to a file.
+ * @param fileId [in] ID of the file whose subscription count shall be
+ *        incremented or decremented.
+ * @param increment [in] \a true if the subscription count shall be incremented,
+ *        or \a false if it shall be decremented.
+ * @return \a true if the query succeeded, or \a false otherwise.
+ * Test: implied blackbox (test-downloadcache.c).
+ */
+static bool
+Query_IncrementOrDecrement(
+	sqlite3_int64 fileId,
+	bool          increment
+	                 )
+{
+	bool         status = false;
+	int          rc;
+    sqlite3_stmt *countQuery;
+
+	if( increment) countQuery = cacheDatabase.incrementSubscription;
+	else           countQuery = cacheDatabase.decrementSubscription;
+
+	LockCache( );
+    BIND_QUERY( rc, int( countQuery, 1, fileId ), );
+	if( rc == SQLITE_OK )
+    {
+		if( ( rc = sqlite3_step( countQuery ) ) == SQLITE_DONE )
+		{
+			if( sqlite3_changes( cacheDatabase.cacheDb ) == 1 )
+			{
+				status = true;
+			}
+			else
+			{
+				fprintf( stderr, "Invalid number of records changed\n" );
+			}
+		}
+		else
+		{
+			fprintf( stderr,
+					 "Select statement didn't finish with DONE (%i): %s\n",
+					 rc, sqlite3_errmsg( cacheDatabase.cacheDb ) );
+		}
+	}
+	else
+	{
+        fprintf( stderr, "Can't prepare select query (%i): %s\n",
+				 rc, sqlite3_errmsg( cacheDatabase.cacheDb ) );
+    }
+
+	if( increment) RESET_QUERY( incrementSubscription );
+	else           RESET_QUERY( decrementSubscription );
+	UnlockCache( );
+
+	return( status );
+}
+
+
+
+/**
+ * Increment the number of subscribers to a file.
+ * @param fileId [in] ID of the file whose subscription count shall be
+ *        incremented.
+ * @return \a true if the query succeeded, or \a false otherwise.
+ * Test: implied blackbox (test-downloadcache.c).
+ */
+bool
+Query_IncrementSubscriptionCount(
+	sqlite3_int64 fileId
+	                             )
+{
+	return( Query_IncrementOrDecrement( fileId, true ) );
+}
+
+
+
+/**
+ * Decrement the number of subscribers to a file.
+ * @param fileId [in] ID of the file whose subscription count shall be
+ *        decremented.
+ * @return \a true if the query succeeded, or \a false otherwise.
+ * Test: implied blackbox (test-downloadcache.c).
+ */
+bool
+Query_DecrementSubscriptionCount(
+	sqlite3_int64 fileId
+	                             )
+{
+	return( Query_IncrementOrDecrement( fileId, false ) );
+}
+
+
+
+/**
+ * Add a download transfer to the database.
+ * @param fileId [in] ID of the file which is about to be downloaded.
+ * @param owner [in] uid of the user that made the download request.
+ * @return \a true if the query succeeded, or \a false otherwise.
+ * Test: implied blackbox (test-downloadcache.c).
+ */
+bool
+Query_AddDownload(
+	sqlite3_int64 fileId,
+	uid_t         owner
+                  )
+{
+    int           rc;
+    sqlite3_stmt  *addQuery = cacheDatabase.addDownload;
+
+    LockCache( );
+    BIND_QUERY( rc, int( addQuery, 1, fileId ),
+	BIND_QUERY( rc, int( addQuery, 2, (int) owner ),
+		) );
+    if( rc == SQLITE_OK )
+	{
+		while( ( rc = sqlite3_step( addQuery ) ) == SQLITE_ROW )
+		{
+			/* No action. */
+		}
+		if( rc != SQLITE_DONE )
+		{
+			fprintf( stderr,
+					 "Select statement didn't finish with DONE (%i): %s\n",
+					 rc, sqlite3_errmsg( cacheDatabase.cacheDb ) );
+		}
+	}
+	else
+    {
+        fprintf( stderr, "Can't prepare select query (%i): %s\n",
+				 rc, sqlite3_errmsg( cacheDatabase.cacheDb ) );
+    }
+
+	RESET_QUERY( addDownload );
+    UnlockCache( );
+
+    return( fileId );
 }
