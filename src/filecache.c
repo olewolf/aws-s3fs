@@ -49,6 +49,11 @@ static pthread_t clientConnectionsListener;
 /* Used as a constant for blocking the SIGPIPE signal. */
 static sigset_t sigpipeMask;
 
+/* The grant module is called from this file only for testing purposes. */
+int testSocket;
+extern int SendGrantMessage( int socketHandle, const char *privopRequest,
+							 char *reply, int replyBufferLength );
+
 
 struct CacheClientConnection
 {
@@ -94,6 +99,9 @@ ClientRequestsLocalFilename(
 	struct CacheClientConnection *clientConnection, const char *request );
 STATIC int
 ClientRequestsShutdown(
+	struct CacheClientConnection *clientConnection, const char *request );
+static int
+ClientRequestsDebugMessage(
 	struct CacheClientConnection *clientConnection, const char *request );
 
 /*
@@ -470,7 +478,8 @@ CommandDispatcher(
 			{ "CREATE",     ClientRequestsCreate },
 			{ "CONNECT",    ClientConnects },
 			{ "DISCONNECT", ClientDisconnects },
-			{ "QUIT"      , ClientRequestsShutdown },
+			{ "QUIT",       ClientRequestsShutdown },
+			{ "DEBUG",      ClientRequestsDebugMessage },
 			{ NULL, NULL }
 		};
 
@@ -480,9 +489,7 @@ CommandDispatcher(
 	{
 		if( strncasecmp( message, command, strlen( command ) ) == 0 )
 		{
-#ifdef AUTOTEST
 			printf( "executing command %s\n", command );
-#endif
 			commandFunction = dispatchTable[ entry ].commandFunction;
 			status = commandFunction( clientConnection,
 									  &message[ strlen( command ) + 1 ] );
@@ -1067,3 +1074,28 @@ FreeRegexes(
 	g_regex_unref( regexes.regionPart );
 }
 
+
+
+/**
+ * This function tests that the permissions grant module is available.
+ * @param clientConnection [in] Unused.
+ * @param request [in] Unused.
+ * @return Always 0.
+ */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+static int
+ClientRequestsDebugMessage(
+    struct CacheClientConnection *clientConnection,
+	const char                   *request
+	                       )
+{
+	char buffer[ 50 ];
+
+	/* Send a message that does not carry a valid request. */
+	sprintf( buffer, "DEBUG test socket" );
+	SendGrantMessage( testSocket, buffer, buffer, sizeof( buffer ) );
+	write( clientConnection->connectionHandle, buffer, strlen( buffer ) + 1 );
+	return( 0 );
+}
+#pragma GCC diagnostic pop

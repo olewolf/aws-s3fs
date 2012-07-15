@@ -128,7 +128,7 @@ CreateClientDatagramSocket(
     struct sockaddr_un *socketAddressServer,
     const char         *socketPathClient,
     struct sockaddr_un *socketAddressClient
-			   )
+	                      )
 {
 }
 
@@ -139,7 +139,7 @@ SocketSendDatagramToServer(
     int        socketFd,
     const char *buffer,
     int        bufferLength
-			  )
+			               )
 {
     bool           success = true;
 
@@ -153,8 +153,9 @@ int
 SocketReceiveDatagramFromServer(
     int          socketFd,
     char         *buffer,
-    size_t       size
-			       )
+    size_t       size,
+	int          *fileHandle
+			                    )
 {
     return( 0 );
 }

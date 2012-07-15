@@ -40,6 +40,9 @@ static pthread_t downloadQueue;
 /* If the parent process is terminated, terminate also this pid, if > 0. */
 static pid_t killPid = -1;
 
+/* Used for testing only. */
+extern int testSocket;
+
 
 /**
  * Respond to HUP and TERM signals.
@@ -106,6 +109,7 @@ StartProcesses(
 	int              fileDesc;
 	int              stdIO;
 	struct sigaction sigAction;
+	int              enabled = 1;
 
 
 	/* Setup a socket pair for communication between the two processes. */
@@ -199,10 +203,10 @@ StartProcesses(
 				exit( EXIT_FAILURE );
 			}
 #endif
-
+			testSocket = socketPair[ 0 ];
 			/* Start the download queue as a thread. */
 			if( pthread_create( &downloadQueue, NULL,
-								ProcessDownloadQueue, &socketPair[ 1 ] ) != 0 )
+								ProcessDownloadQueue, &socketPair[ 0 ] ) != 0 )
 			{
 				fprintf( stderr, "Couldn't start download queue thread" );
 				exit( 1 );
@@ -220,8 +224,11 @@ StartProcesses(
 		{
 			/* Set the child pid to kill on termination. */
 			killPid = forkPid;
-
+			/* Turn on credentials passing. */
 			close( socketPair[ 0 ] );
+			setsockopt( socketPair[ 1 ], SOL_SOCKET, SO_PASSCRED,
+						&enabled, sizeof( enabled ) );
+
 			InitializePermissionsGrant( forkPid, socketPair[ 1 ] );
 		}
 	}

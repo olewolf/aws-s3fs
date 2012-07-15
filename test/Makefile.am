@@ -50,7 +50,9 @@ test_filecache_SOURCES= $(SHAREDTESTSOURCE) test-filecache.c src/filecache.h \
 test_downloadqueue_SOURCES= $(SHAREDTESTSOURCE) test-downloadqueue.c \
 	../src/downloadqueue.c ../src/filecache.h \
 	../src/filecache.c fakesocket.c ../src/grant.c
-test_process_SOURCES= $(SHAREDTESTSOURCE) test-process.c
+test_process_SOURCES= $(SHAREDTESTSOURCE) test-process.c \
+	../src/downloadqueue.c ../src/s3comms.c ../src/digest.c ../src/base64.c \
+	../src/filecache.c ../src/grant.c
 
 
 SHAREDTESTSOURCE = dispatch.c src/aws-s3fs.h shared.c testfunctions.h \

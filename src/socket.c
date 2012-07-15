@@ -21,8 +21,6 @@
  */
 
 
-/* See http://www.lst.de/~okir/blackhats/node121.html */
-
 #include <config.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -33,63 +31,6 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include "socket.h"
-
-
-
-/**
- * Create a server datagram unnamed socket pair and enable credentials so that
- * the server can receive the client's pid, uid, and gid. The function forks,
- * and the child continues from a function specified as a parameter.
- * @param socketPath [in] Name of the socket.
- * @param socketFd [out] Socket handle.
- * @param child [in] Function from which the child continues.
- * @return \a true on success, or \a false otherwise.
- */
-bool
-CreateSocketPairProcess( 
-    int        *socketFd,
-    void       (*child)( int socketFd )
-			)
-{
-    int   socketPair[ 2 ];
-    pid_t pid;
-    bool  success = false;
-
-    if( socketpair( PF_UNIX, SOCK_DGRAM, 0, socketPair ) < 0 )
-    {
-        fprintf( stderr, "Could not create socket\n" );
-    }
-    else
-    {
-        /* Spawn a child process. */
-	if( (pid = fork( ) ) < 0 )
-	{
-	    fprintf( stderr, "Could not fork process\n" );
-	}
-	else if( pid == 0 )
-	{
-	    /* Child continues here. */
-	    if( setuid( getuid( ) ) < 0 )
-	    {
-	        fprintf( stderr, "Unable to drop priviliges\n" );
-	    }
-	    else
-	    {
-	        /* Go the the specified child function and exit afterwards. */
-                close( socketPair[ 1 ] );
-		child( socketPair[ 0 ] );
-		exit( 0 );
-	    }
-        }
-
-	/* Parent continues here. */
-        close( socketPair[ 0 ] );
-        *socketFd = socketPair[ 1 ];
-	success = true;
-    }
-
-    return( success );
-}
 
 
 
@@ -192,30 +133,30 @@ CreateServerDatagramSocket(
         /* Bind the socket to the assigned address. */
         memset( socketAddress, 0, sizeof( struct sockaddr_un ) );
         socketAddress->sun_family = AF_UNIX;
-	strncpy( socketAddress->sun_path, socketPath,
-		 sizeof( socketAddress->sun_path ) /* = UNIX_PATH_MAX */ );
-	if( bind( *socketFd, socketAddress,
-		  sizeof( struct sockaddr_un ) ) != 0 )
-	{
-	    fprintf( stderr, "Cannot bind to socket.\n" );
-	}
-	else 
-	{
-	    /* Change rw access to everyone. */
-	    if( chmod( socketPath, DEFFILEMODE ) < 0 )
-	    {
-		fprintf( stderr, "Cannot set socket access permissions.\n" );
-	    }
-	    else
-	    {
-	        /* Enable credentials passing as ancillary data. */
-	        setsockopt( *socketFd, SOL_SOCKET, SO_PASSCRED,
-			    &credentialsOn, sizeof( credentialsOn ) );
+		strncpy( socketAddress->sun_path, socketPath,
+				 sizeof( socketAddress->sun_path ) /* = UNIX_PATH_MAX */ );
+		if( bind( *socketFd, socketAddress,
+				  sizeof( struct sockaddr_un ) ) != 0 )
+		{
+			fprintf( stderr, "Cannot bind to socket.\n" );
+		}
+		else 
+		{
+			/* Change rw access to everyone. */
+			if( chmod( socketPath, DEFFILEMODE ) < 0 )
+			{
+				fprintf( stderr, "Cannot set socket access permissions.\n" );
+			}
+			else
+			{
+				/* Enable credentials passing as ancillary data. */
+				setsockopt( *socketFd, SOL_SOCKET, SO_PASSCRED,
+							&credentialsOn, sizeof( credentialsOn ) );
 
-		/* Phew. */
-		success = true;
-	    }
-	}
+				/* Phew. */
+				success = true;
+			}
+		}
     }
 
     return( success );
@@ -240,7 +181,7 @@ SocketReceiveDatagramFromClient(
     size_t       size,
     struct ucred *credentials,
     int          *fileHandle
-			   )
+	                            )
 {
     char           control[ 1024 ];
     struct msghdr  message;
@@ -259,7 +200,7 @@ SocketReceiveDatagramFromClient(
 
     if( recvmsg( socketFd, &message, 0 ) < 0 )
     {
-	return( -1 );
+		return( -1 );
     }
 
     /* Receive ancillary message. */
@@ -269,24 +210,24 @@ SocketReceiveDatagramFromClient(
     {
         /* Store credentials. */
         if( ( cmessage->cmsg_level == SOL_SOCKET )
-	    && ( cmessage->cmsg_type == SCM_CREDENTIALS ) )
-	{
-	    memcpy( credentials, CMSG_DATA( cmessage ),
-		    sizeof( struct ucred ) );
-	    result = iovector.iov_len;
-	}
-	/* Store file handle. */
-	else if( ( cmessage->cmsg_level == SOL_SOCKET )
+			&& ( cmessage->cmsg_type == SCM_CREDENTIALS ) )
+		{
+			memcpy( credentials, CMSG_DATA( cmessage ),
+					sizeof( struct ucred ) );
+			result = iovector.iov_len;
+		}
+		/* Store file handle. */
+		else if( ( cmessage->cmsg_level == SOL_SOCKET )
                  && ( cmessage->cmsg_type == SCM_RIGHTS ) )
-	{
-	    *fileHandle = *( (int*) CMSG_DATA( cmessage ) );
-	    /*
-	    dispose_fds( (int*) CMSG_DATA( cmessage ),
-			 ( cmessage->cmsg_len - CMSG_LEN( 0 ) )
-			 / sizeof( int ) );
-	    */
-	}
-	cmessage = CMSG_NXTHDR( &message, cmessage );
+		{
+			*fileHandle = *( (int*) CMSG_DATA( cmessage ) );
+			/*
+			  dispose_fds( (int*) CMSG_DATA( cmessage ),
+			  ( cmessage->cmsg_len - CMSG_LEN( 0 ) )
+			  / sizeof( int ) );
+			*/
+		}
+		cmessage = CMSG_NXTHDR( &message, cmessage );
     }
 
     return( result );
@@ -321,34 +262,34 @@ SocketSendDatagramToClient(
     if( fileHandle < 0 )
     {
         if( write( socketFd, buffer, bufferLength ) < 0 )
-	{
-	    status = false;
-	}
+		{
+			status = false;
+		}
     }
     else
     {
-	/* Response with file handle attached as ancillary data: */
-	/* Compose response. */
-	iovector.iov_base = buffer;
-	iovector.iov_len  = bufferLength;
-	memset( &message, 0, sizeof( struct msghdr ) );
-	message.msg_iov        = &iovector;
-	message.msg_iovlen     = 1;
-	message.msg_control    = control;
-	message.msg_controllen = sizeof( control );
-	/* Attach file descriptor. */
-	cmessage = CMSG_FIRSTHDR( &message );
-	cmessage->cmsg_level = SOL_SOCKET;
-	cmessage->cmsg_type = SCM_RIGHTS;
-	cmessage->cmsg_len = CMSG_LEN( sizeof( int ) );
-	*(int*) CMSG_DATA( cmessage ) = fileHandle;
+		/* Response with file handle attached as ancillary data: */
+		/* Compose response. */
+		iovector.iov_base = buffer;
+		iovector.iov_len  = bufferLength;
+		memset( &message, 0, sizeof( struct msghdr ) );
+		message.msg_iov        = &iovector;
+		message.msg_iovlen     = 1;
+		message.msg_control    = control;
+		message.msg_controllen = sizeof( control );
+		/* Attach file descriptor. */
+		cmessage = CMSG_FIRSTHDR( &message );
+		cmessage->cmsg_level = SOL_SOCKET;
+		cmessage->cmsg_type = SCM_RIGHTS;
+		cmessage->cmsg_len = CMSG_LEN( sizeof( int ) );
+		*(int*) CMSG_DATA( cmessage ) = fileHandle;
 
-	message.msg_controllen = cmessage->cmsg_len;
-	if( sendmsg( socketFd, &message, 0 ) < 0 )
+		message.msg_controllen = cmessage->cmsg_len;
+		if( sendmsg( socketFd, &message, 0 ) < 0 )
         {
-	    fprintf( stderr, "Sendmsg failed\n" );
-	    status = false;
-	}
+			fprintf( stderr, "Sendmsg failed\n" );
+			status = false;
+		}
     }
 
     return( status );
@@ -452,7 +393,7 @@ SocketSendDatagramToServer(
 			  )
 {
     char           control[ sizeof( struct cmsghdr )
-			    + sizeof( struct ucred ) + 1 ];
+							+ sizeof( struct ucred ) + 1 ];
     struct msghdr  message;
     struct cmsghdr *cmessage;
     struct iovec   iovector;
@@ -472,17 +413,17 @@ SocketSendDatagramToServer(
     credentials.uid = getuid( );
     credentials.gid = getgid( );
     cmessage = CMSG_FIRSTHDR( &message );
-    cmessage->cmsg_level = SOL_SOCKET;
-    cmessage->cmsg_type = SCM_CREDENTIALS;
+    cmessage->cmsg_level   = SOL_SOCKET;
+    cmessage->cmsg_type    = SCM_CREDENTIALS;
     memcpy( CMSG_DATA( cmessage ), &credentials, sizeof( struct ucred ) );
-    cmessage->cmsg_len = CMSG_LEN( sizeof( struct ucred ) );
+    cmessage->cmsg_len     = CMSG_LEN( sizeof( struct ucred ) );
     message.msg_controllen = cmessage->cmsg_len;
 
     /* Send message and ancillary data. */
     if( sendmsg( socketFd, &message, 0 ) < 0 )
     {
         fprintf( stderr, "Couldn't send message\n" );
-	success = false;
+		success = false;
     }
 
     return success;
@@ -505,14 +446,15 @@ int
 SocketReceiveDatagramFromServer(
     int          socketFd,
     char         *buffer,
-    size_t       size
+    size_t       size,
+	int          *fileHandle
 			       )
 {
     char            control[ 1024 ];
     struct msghdr   message;
     struct cmsghdr  *cmessage;
     struct iovec    iovector;
-    int             fileHandle;
+	int             nBytes;
     
     memset( &message, 0, sizeof( struct msghdr ) );
     iovector.iov_base      = buffer;
@@ -522,7 +464,7 @@ SocketReceiveDatagramFromServer(
     message.msg_control    = control;
     message.msg_controllen = sizeof( control );
 
-    if( recvmsg( socketFd, &message, 0 ) < 0 )
+    if( ( nBytes = recvmsg( socketFd, &message, 0 ) ) < 0 )
     {
         fprintf( stderr, "Recvmsg failed\n" );
     }
@@ -530,22 +472,18 @@ SocketReceiveDatagramFromServer(
     {
         /* Data is now in 'buffer'. */
 
-
         /* Read control data. */
         cmessage = CMSG_FIRSTHDR( &message );
         while( cmessage != NULL )
-	{
-	    if( ( cmessage->cmsg_level == SOL_SOCKET )
-		&& ( cmessage->cmsg_type  == SCM_RIGHTS ) )
-	    {
-	        fileHandle = *(int*) CMSG_DATA( cmessage );
-	    }
-	    cmessage = CMSG_NXTHDR( &message, cmessage );
-        }
+		{
+			if( ( cmessage->cmsg_level == SOL_SOCKET )
+				&& ( cmessage->cmsg_type  == SCM_RIGHTS ) )
+			{
+				*fileHandle = *(int*) CMSG_DATA( cmessage );
+			}
+			cmessage = CMSG_NXTHDR( &message, cmessage );
+		}
     }
 
-    return( fileHandle );
+    return( nBytes );
 }
-
-
-

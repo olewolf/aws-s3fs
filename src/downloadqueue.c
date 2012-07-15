@@ -35,7 +35,7 @@
 #include "aws-s3fs.h"
 #include "filecache.h"
 #include "s3comms.h"
-
+#include "socket.h"
 
 
 STATIC GQueue          downloadQueue  = G_QUEUE_INIT;
@@ -87,10 +87,8 @@ STATIC bool MoveToSharedCache( int socketHandle,
 							   const char *parentname, uid_t parentUid,
 							   gid_t parentGid, const char *filename,
 							   uid_t uid, gid_t gid );
-
-#ifndef AUTOTEST
-static void SendGrantMessage( int socketHandle, const char *privopRequest );
-#endif
+int SendGrantMessage( int socketHandle, const char *privopRequest,
+					  char *reply, int replyMaxLength );
 
 
 
@@ -639,6 +637,7 @@ MoveToSharedCache(
 	              )
 {
 	char *chownRequest;
+	char reply[ 40 ];
 
 	/* Give the directory its original owners. It was created with proper
 	   permissions to begin with. */
@@ -646,9 +645,8 @@ MoveToSharedCache(
 						   + sizeof( char ) );
 	sprintf( chownRequest, "CHOWN %d:%d:", (int) parentUid, (int) parentGid );
 	strcat( chownRequest, parentname );
-#ifndef AUTOTEST
-	SendGrantMessage( socketHandle, chownRequest );
-#else
+	SendGrantMessage( socketHandle, chownRequest, reply, sizeof( reply ) );
+#ifdef AUTOTEST
 	printf( "1: %s\n", chownRequest );
 #endif
 	free( chownRequest );
@@ -658,9 +656,8 @@ MoveToSharedCache(
 						   + sizeof( char ) );
 	sprintf( chownRequest, "CHOWN %d:%d:", (int) uid, (int) gid );
 	strcat( chownRequest, filename );
-#ifndef AUTOTEST
-	SendGrantMessage( socketHandle, chownRequest );
-#else
+	SendGrantMessage( socketHandle, chownRequest, reply, sizeof( reply ) );
+#ifdef AUTOTEST
 	printf( "2: %s\n", chownRequest );
 #endif
 	free( chownRequest );
@@ -678,15 +675,35 @@ MoveToSharedCache(
  * until a reply is received from the privileged process.
  * @param privopRequest [in] Request message.
  * @return Nothing.
+ * Test: unit test (test-process.c).
  */
-#ifndef AUTOTEST
-static void
+int
 SendGrantMessage(
 	int        socketHandle,
-    const char *privopRequest
+    const char *privopRequest,
+	char       *reply,
+	int        replyMaxLength
 	             )
 {
-	/* Stub. */
-	printf( "Sending message via socket %d to privileged process: %s\n", socketHandle, privopRequest );
+	bool status;
+	int  nBytes;
+	int  fileHandle;
+
+	/* Send the message to the privileged process. */
+	status = SocketSendDatagramToServer( socketHandle, privopRequest,
+										 strlen( privopRequest ) + 1 );
+	if( status == true )
+	{
+		/* Receive the reply; the reply message is not used but serves only
+		   to block the thread until the server has completed its task. */
+		nBytes = SocketReceiveDatagramFromServer( socketHandle, reply,
+												  replyMaxLength,
+												  &fileHandle );
+	}
+	if( ( status == false ) || ( nBytes < 0 ) )
+	{
+		fprintf( stderr, "Error communicating with permissions grant\n" );
+	}
+
+	return( nBytes );
 }
-#endif /*AUTOTEST */

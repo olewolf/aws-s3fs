@@ -48,7 +48,8 @@ void CreateClientDatagramSocket( const char *socketPathServer, int *socketFd,
 				 struct sockaddr_un *socketAddressClient);
 int SocketSendDatagramToServer( int socketFd, const char *buffer,
 				int bufferLength );
-int SocketReceiveDatagramFromServer( int socketFd, char *buffer, size_t size );
+int SocketReceiveDatagramFromServer( int socketFd, char *buffer, size_t size,
+									 int *fileHandle );
 
 
 
