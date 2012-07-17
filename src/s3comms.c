@@ -469,7 +469,7 @@ AddHeaderValueToSignString(
  *        host name.
  * @return An allocated buffer with the S3 host name.
  */
-static char*
+char*
 GetS3HostNameByRegion(
 	enum bucketRegions region,
 	const char         *bucket
@@ -683,7 +683,6 @@ CreateAwsSignature(
 	free( (char*) signablePath );
 
     /* Sign the message and add the Authorization header. */
-	printf( "%s\n", messageToSign );
     signature = HMAC( (const unsigned char*) messageToSign,
 					  strlen( messageToSign ),
 					  (const char*) secretKey,

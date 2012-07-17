@@ -57,6 +57,8 @@ static struct
 	sqlite3_stmt *deleteTransfer;
 	sqlite3_stmt *addDownload;
 	sqlite3_stmt *addUser;
+	sqlite3_stmt *setCachedFlag;
+	sqlite3_stmt *checkCacheStatus;
 } cacheDatabase;
 
 
@@ -70,7 +72,6 @@ static void CreateDatabase( sqlite3* cacheDb; );
 static void CompileStandardQueries( sqlite3 *cacheDb );
 static bool CompileSqlStatement( sqlite3 *db, const char *const sql,
 								 sqlite3_stmt **query );
-STATIC sqlite3_int64 FindFile( const char *filename, char *localname );
 STATIC sqlite3_int64 FindParent( const char *path, char *localname );
 
 
@@ -176,6 +177,8 @@ ShutdownFileCacheDatabase(
 	CLEAR_QUERY( deleteTransfer );
 	CLEAR_QUERY( addDownload );
 	CLEAR_QUERY( addUser );
+	CLEAR_QUERY( setCachedFlag );
+	CLEAR_QUERY( checkCacheStatus );
 
     sqlite3_close( cacheDatabase.cacheDb );
 	sqlite3_shutdown( );
@@ -233,6 +236,7 @@ CreateDatabase(
             permissions INTEGER NOT NULL,                      \
             atime DATETIME NULL,                               \
             mtime DATETIME NULL,                               \
+            iscached BOOLEAN NOT NULL DEFAULT \'0\',           \
             statcacheinsync BOOLEAN NOT NULL DEFAULT \'1\',    \
             filechanged BOOLEAN NOT NULL DEFAULT \'0\',        \
             FOREIGN KEY( parent ) REFERENCES parents( id )     \
@@ -362,6 +366,11 @@ CompileStandardQueries(
 	const char *const addUserSql =
 		"INSERT INTO users( uid, keyid, secretkey ) VALUES( ?, ?, ? );";
 
+	const char *const setCachedFlagSql =
+		"UPDATE files SET iscached = '1' WHERE id = ?;";
+
+	const char *const checkCacheStatusSql =
+		"SELECT iscached FROM files WHERE id = ?;";
 
     COMPILESQL( fileStat );
     COMPILESQL( newFile );
@@ -376,6 +385,8 @@ CompileStandardQueries(
 	COMPILESQL( deleteTransfer );
 	COMPILESQL( addDownload );
 	COMPILESQL( addUser );
+	COMPILESQL( setCachedFlag );
+	COMPILESQL( checkCacheStatus );
 }
 
 
@@ -450,7 +461,7 @@ UnlockCache(
  * @return ID of the file if it is cached, or 0 otherwise.
  * Test: unit test (test-filecache.c).
  */
-STATIC sqlite3_int64
+sqlite3_int64
 FindFile(
     const char *path,
 	char       *localname
@@ -520,8 +531,8 @@ Query_GetLocalPath(
 		while( ( rc = sqlite3_step( searchQuery ) ) == SQLITE_ROW )
 		{
 			/* Get the directory and the basename. */
-			dirname  = (const char*) sqlite3_column_text( searchQuery, 0 );
-			basename = (const char*) sqlite3_column_text( searchQuery, 1 );
+			basename = (const char*) sqlite3_column_text( searchQuery, 0 );
+			dirname  = (const char*) sqlite3_column_text( searchQuery, 1 );
 			if( ( dirname != NULL ) && ( basename != NULL ) )
 			{
 				found = true;
@@ -1172,4 +1183,86 @@ Query_AddUser(
     UnlockCache( );
 
     return( status );
+}
+
+
+
+/**
+ * Mark a file as cached.
+ * @param fileId [in] ID of the file.
+ * @return Nothing.
+ */
+void
+Query_MarkFileAsCached(
+	sqlite3_int64 fileId
+	          )
+{
+    int           rc;
+    sqlite3_stmt  *setQuery = cacheDatabase.setCachedFlag;
+
+    LockCache( );
+    BIND_QUERY( rc, int( setQuery, 1, fileId ), );
+    if( rc == SQLITE_OK )
+	{
+		while( ( rc = sqlite3_step( setQuery ) ) == SQLITE_ROW )
+		{
+			/* No action. */
+		}
+		if( rc != SQLITE_DONE )
+		{
+			fprintf( stderr,
+					 "Select statement didn't finish with DONE (%i): %s\n",
+					 rc, sqlite3_errmsg( cacheDatabase.cacheDb ) );
+		}
+	}
+	else
+    {
+        fprintf( stderr, "Can't prepare select query (%i): %s\n",
+				 rc, sqlite3_errmsg( cacheDatabase.cacheDb ) );
+    }
+
+	RESET_QUERY( setCachedFlag );
+    UnlockCache( );
+}
+
+
+
+/**
+ * Determine whether a file is cached.
+ * @param fileId [in] ID of the file.
+ * @return \a true if the file is cached, or \a false otherwise.
+ */
+bool
+Query_IsFileCached(
+	sqlite3_int64 fileId
+	               )
+{
+    int           rc;
+    sqlite3_stmt  *checkQuery = cacheDatabase.checkCacheStatus;
+	int           cached;
+
+    LockCache( );
+    BIND_QUERY( rc, int( checkQuery, 1, fileId ), );
+    if( rc == SQLITE_OK )
+	{
+		while( ( rc = sqlite3_step( checkQuery ) ) == SQLITE_ROW )
+		{
+			cached = sqlite3_column_int( checkQuery, 0 );
+		}
+		if( rc != SQLITE_DONE )
+		{
+			fprintf( stderr,
+					 "Select statement didn't finish with DONE (%i): %s\n",
+					 rc, sqlite3_errmsg( cacheDatabase.cacheDb ) );
+		}
+	}
+	else
+    {
+        fprintf( stderr, "Can't prepare select query (%i): %s\n",
+				 rc, sqlite3_errmsg( cacheDatabase.cacheDb ) );
+    }
+	RESET_QUERY( checkCacheStatus );
+    UnlockCache( );
+
+	return( cached ? true : false );
 }

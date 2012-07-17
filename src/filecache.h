@@ -51,9 +51,12 @@ void InitializeFileCache( void );
 void ShutdownFileCache( void );
 void InitializeDownloadCache( void );
 void ShutdownDownloadQueue( void );
-bool ConnectToFileCache( const char *keyId, const char *secretKey );
-int OpenCacheFile( const char *path, uid_t uid, gid_t gid,
-				   int permissions, time_t mtime, char **localname );
+bool ConnectToFileCache( const char *bucket, const char *keyId,
+						 const char *secretKey );
+void DisconnectFromFileCache( void );
+int CreateCachedFile( const char *path, uid_t parentUid, gid_t parentGid,
+					  int parentPermissions, uid_t uid, gid_t gid,
+					  int permissions, time_t mtime );
 int DownloadCacheFile( const char *path );
 int CloseCacheFile( const char *path );
 const char *SendCacheRequest( const char *message );
@@ -85,6 +88,10 @@ bool Query_AddUser( uid_t uid, char keyId[ 21 ], char secretKey[ 41 ] );
 const char *Query_GetLocalPath( const char *remotename );
 bool Query_DecrementSubscriptionCount( sqlite3_int64 fileId );
 bool Query_IncrementSubscriptionCount( sqlite3_int64 fileId );
+sqlite3_int64 FindFile( const char *filename, char *localname );
+void Query_MarkFileAsCached( sqlite3_int64 fileId );
+bool Query_IsFileCached( sqlite3_int64 fileId );
+const char *GetLocalFilename( const char *remotepath );
 
 
 #endif /* __FILECACHE_H */

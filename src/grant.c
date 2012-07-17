@@ -217,7 +217,6 @@ GrantChown( const char *parameters )
 	/* Get the filename. */
 	pos += GetFileParameter( &parameters[ pos ], filename );
 	/* If the filename includes a parent directory, add the filename. */
-	printf( "... %s\n", &parameters[pos - 1] );
 	if( parameters[ pos - 1 ] == '/' )
 	{
 		hasDirectory = true;

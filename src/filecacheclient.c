@@ -52,6 +52,7 @@ static struct sockaddr_un cacheSocketAddress;
  */
 bool
 ConnectToFileCache(
+	const char *bucket,
     const char *keyId,
     const char *secretKey
 	               )
@@ -66,9 +67,12 @@ ConnectToFileCache(
 	if( 0 < cacheSocketFd )
 	{
 		/* Send connection data. */
-		request = malloc( strlen( "CONNECT :" ) + sizeof( char )
+		request = malloc( strlen( "CONNECT :::" ) + sizeof( char )
+						  + strlen( bucket )
+						  + 5 * sizeof( char )
 						  + strlen( keyId ) + strlen( secretKey ) );
-		sprintf( request, "CONNECT %s:%s", keyId, secretKey );
+		sprintf( request, "CONNECT %s:%d:%s:%s",
+				 bucket, (int) getuid( ), keyId, secretKey );
 		reply = (char*) SendCacheRequest( request );
 		free( request );
 
@@ -80,6 +84,19 @@ ConnectToFileCache(
 	}
 
     return( success );
+}
+
+
+
+void
+DisconnectFromFileCache(
+	void
+	                    )
+{
+    char *reply;
+
+	reply = (char*) SendCacheRequest( "DISCONNECT" );
+	free( reply );
 }
 
 
@@ -124,42 +141,50 @@ GetCachedFilename(
  * and returns it, but the file is otherwise left empty until the file access
  * functions are used.
  * @param path [in] Path name of the file to open.
- * @param localname [out] Local name relative to the cache directory.
+ * @param parentUid [in] uid of the file's parent directory.
+ * @param parentGid [in] gid of the file's parent directory.
+ * @param parentPermissions [in] Permissions of the file's parent directory.
+ * @param uid [in] The file's uid.
+ * @param gid [in] The file's gid.
+ * @param permissions [in] The file's permissions.
+ * @param mtime [in] The file's last modification time.
+ * @param localname [out] Pointer to the local file, relative to the cache dir.
+ * @param fileId [out] File ID of the file in the file cache database.
  * return 0 on success, or \a -errno on failure.
  */
 int
-OpenCacheFile(
+CreateCachedFile(
 	const char *path,
+	uid_t      parentUid,
+	gid_t      parentGid,
+	int        parentPermissions,
 	uid_t      uid,
 	gid_t      gid,
 	int        permissions,
-	time_t     mtime,
-	char       **localname
-	          )
+	time_t     mtime
+	             )
 {
 	char *request;
 	char *reply;
 	int  status;
 
 	/* Build a cache filename request. */
-	request = malloc( strlen( "CREATE " )
-					  + 5 + 5 + 4 + 21 + strlen( path ) + sizeof( char ) );
-	sprintf( request, "CREATE %5d:%5d:%5d:%20lld:%s", uid, gid, permissions,
-			 (long long) mtime, path);
-
+	request = malloc( 7 + 6 + 6 + 6 + 6 + 6 + 6 + 21 + strlen( path ) + 1 );
+	sprintf( request, "CREATE %5d:%5d:%5d:%5d:%5d:%5d:%20lld:%s",
+			 (int) parentUid, (int) parentGid, parentPermissions,
+			 (int) uid, (int) gid, permissions, (long long) mtime, path );
 	reply = (char*) SendCacheRequest( request );
 	if( strncmp( reply, "CREATED ", 8 ) == 0 )
 	{
 		status = 0;
-		*localname = strdup( &reply[ 8 ] );
 	}
 	else
 	{
 		/* Reply = "ERROR errno" */
 		status = atoi( &reply[ 7 ] );
-		*localname = NULL;
 	}
 	free( reply );
+	free( request );
 	return( status );
 }
 
@@ -169,7 +194,7 @@ OpenCacheFile(
  * Ask the file cache to retrieve a file from external storage. If the
  * file is already in the cache, the function returns immediately without
  * downloading the file.
- * @param path [in] Full S3 path name of the file.
+ * @param fileId [in] ID of the file in the file cache database.
  * @return 0 on success, or \a -errno on failure.
  */
 int
@@ -182,9 +207,13 @@ DownloadCacheFile(
 	int  status;
 
 	/* Build a cache filename request. */
-	request = malloc( strlen( "CACHE " ) + sizeof( char ) + strlen( path ) );
+	request = malloc( strlen( "CACHE " ) + strlen( path ) + sizeof( char ) );
 	strcpy( request, "CACHE " );
 	strcat( request, path );
+#if 0
+	request = malloc( strlen( "CACHE " ) + 22 * sizeof( char ) );
+	sprintf( request, "CACHE %lld", fileId );
+#endif
 	/* Tell the cache to start caching this file. */
 	reply = (char*) SendCacheRequest( request );
 	if( strncmp( reply, "OK", 2 ) == 0 )
@@ -199,6 +228,42 @@ DownloadCacheFile(
 	free( reply );
 
 	return( status );
+}
+
+
+
+/**
+ * Retrieve the local name, relative to the cache dir, of a cached file.
+ * @param remotepath [in] The name of the cached file in the S3 storage.
+ * @return Local name, or \a NULL if the file is not known by the cache.
+ */
+const char*
+GetLocalFilename(
+	const char *remotepath
+	             )
+{
+	char *request;
+	char *reply;
+	char *localfile;
+
+	request = malloc( strlen( remotepath ) + strlen( "FILE  " ) );
+	strcpy( request, "FILE " );
+	strcat( request, remotepath );
+	reply = (char*) SendCacheRequest( request );
+	if( strncmp( reply, "FILE -", 6 ) != 0 )
+	{
+		localfile = strdup( &reply[ 5 ] );
+	}
+	else
+	{
+		localfile = NULL;
+	}
+	printf( "reply: %s\n", reply );
+	printf( "%s is local file: %s\n", remotepath, localfile );
+	sleep( 1 );
+	free( reply );
+	free( request );
+	return( localfile );
 }
 
 

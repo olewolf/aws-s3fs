@@ -71,6 +71,7 @@ BuildS3Request( S3COMM *instance, const char *httpMethod,
 				const char *hostname, struct curl_slist *additionalHeaders,
 				const char *filename );
 void DeleteCurlSlistAndContents( struct curl_slist *toDelete );
+char* GetS3HostNameByRegion( enum bucketRegions region, const char *bucket );
 
 
 #endif /* __S3_COMMS_H */

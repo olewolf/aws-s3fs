@@ -872,11 +872,28 @@ ClientRequestsDownload(
 	                  )
 {
 	sqlite3_uint64 fileId;
+	char           localname[ 7 ]; /* unused */
+	bool           isCached;
 
-	fileId = atoll( request );
-	ReceiveDownload( fileId );
-	SendMessageToClient( clientConnection->connectionHandle, "OK" );
-
+	/* Determine the file ID for the path. */
+	fileId = FindFile( request, localname );
+	isCached = Query_IsFileCached( fileId );
+	if( isCached )
+	{
+		SendMessageToClient( clientConnection->connectionHandle, "OK" );
+	}
+	else
+	{
+		if( 0 < fileId )
+		{
+			ReceiveDownload( fileId );
+			SendMessageToClient( clientConnection->connectionHandle, "OK" );
+		}
+		else
+		{
+			SendMessageToClient( clientConnection->connectionHandle, "ERROR " );
+		}
+	}
 	return( 0 );
 }
 

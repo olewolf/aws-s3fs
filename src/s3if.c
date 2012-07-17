@@ -111,6 +111,13 @@ InitializeS3If(
     time_t    tnow;
     struct tm tm;
 
+	/* Connect to the file cache daemon. */
+	if( ! ConnectToFileCache( globalConfig.bucketName, 
+							  globalConfig.keyId, globalConfig.secretKey ) )
+	{
+		fprintf( stderr, "Cannot connect to the file cache daemon\n" );
+	}
+
 	/* Initialize CURL. */
 	curl_global_init( CURL_GLOBAL_ALL );
 
@@ -386,6 +393,7 @@ S3GetFileStat(
 		assert( newFileInfo != NULL );
 		/* Set default values. */
 		memset( newFileInfo, 0, sizeof( struct S3FileInfo ) );
+		/* If the file is known to not exist, cache that information here. */
 		newFileInfo->filenotfound = false;
 		newFileInfo->fileType    = 'f';
 		newFileInfo->permissions = 0644;
@@ -395,9 +403,13 @@ S3GetFileStat(
 			newFileInfo->fileType    = 'd';
 			newFileInfo->permissions = 0755;
 		}
+		/* By default, the current user's uid and gid. */
 		newFileInfo->uid = getuid( );
 		newFileInfo->gid = getgid( );
+		/* If the file is a symbolic link, cache the target here. */
 		newFileInfo->symlinkTarget = NULL;
+		/* No local file handle yet. */
+		newFileInfo->localFd = -1;
 		/* Translate header values to S3 File Info values. */
 		for( headerIdx = 0; headerIdx < length; headerIdx++ )
 		{
@@ -938,12 +950,8 @@ ReadXmlDirectory(
  *        read the entire directory.
  * @return 0 on success, or \a -errno on failure.
  */
-/* Disable warning that fi is unused. */
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
 int
 S3ReadDir(
-    struct S3FileInfo *fi,
     const char        *dirname,
     char              ***nameArray,
     int               *nFiles,
@@ -1157,7 +1165,7 @@ S3ReadDir(
 
     return( status );
 }
-#pragma GCC diagnostic pop
+
 
 
 /**
@@ -1203,6 +1211,7 @@ ConvertOpenFlagsToValue(
  * @param permissions [in] File permissions, if the file is to be created.
  * @return 0 on success, or \a -errno on failure.
  */
+#if 0
 int
 S3Create(
 	const char *path,
@@ -1241,8 +1250,30 @@ S3Create(
 			free( localname );
 		}
 	}
-
 	return( status );
+}
+#endif
+
+
+
+char*
+PrependHttpsToPath(
+	const char *path
+	             )
+{
+	const char *hostname;
+	char       *url;
+	size_t     toAlloc;
+
+	hostname = GetS3HostNameByRegion( globalConfig.region,
+									  globalConfig.bucketName );
+	toAlloc = strlen( hostname ) + strlen( "https://" )
+		      + strlen( path ) + sizeof( char );
+	url = malloc( toAlloc );
+	sprintf( url, "https://%s%s", hostname, path );
+	free( (char*) hostname );
+
+	return( url );
 }
 
 
@@ -1260,13 +1291,38 @@ S3Open(
 {
 	struct S3FileInfo *fi;
 	int               status;
-	char              *localname;
+	struct S3FileInfo *parentFi;
+	char              *parentDir;
+	char              *url;
+
+	printf( "s3Open %s\n", path );
 
 	status = S3FileStat( path, &fi );
 	if( status == 0 )
 	{
-		status = OpenCacheFile( path, fi->uid, fi->gid, fi->permissions,
-								fi->mtime, &localname );
+		/* Prepare to cache the file. */
+		if( fi->openFlags.of_RDONLY || fi->openFlags.of_RDWR
+			|| fi->openFlags.of_APPEND )
+		{
+			parentDir = g_path_get_dirname( path );
+			status = S3FileStat( parentDir, &parentFi );
+			g_free( parentDir );
+			if( status == 0 )
+			{
+				url = PrependHttpsToPath( path );
+				status = CreateCachedFile( url, parentFi->uid, parentFi->gid,
+										   parentFi->permissions,
+										   fi->uid, fi->gid, fi->permissions,
+										   fi->mtime );
+				free( url );
+				if( status == 0 )
+				{
+
+				}
+			}
+		}
+
+#if 0
 		if( status == 0 )
 		{
 			LockCaches( );
@@ -1274,10 +1330,9 @@ S3Open(
 			{
 				unlink( localname );
 			}
-			status = open( localname,
-						   ConvertOpenFlagsToValue( &fi->openFlags ) );
+//			status = open( localname,
+//						   ConvertOpenFlagsToValue( &fi->openFlags ) );
 			UnlockCaches( );
-
 			if( 0 <= status )
 			{
 				fi->localFd = status;
@@ -1285,8 +1340,9 @@ S3Open(
 				fi->atime = time( NULL );
 				status = 0;
 			}
-			free( localname );
+//			free( localname );
 		}
+#endif
 	}
 
 	return( status );
@@ -1343,47 +1399,47 @@ S3ReadFile(
 {
     struct S3FileInfo *fi;
     int               status;
+	char              *url;
+	const char        *localname;
+	char              *localpath;
+	int               nBytes;
+
+	printf( "s3ReadFile %s\n", path );
 
     status = S3FileStat( path, &fi );
     if( status == 0 )
     {
 		if( fi->fileType == 'f' )
 		{
-			/* Queue file for download and wait. */
-			status = DownloadCacheFile( path );
-			/* Turn over the file read to the local read function now
+			/* Queue file for download and wait until it is received. */
+			url = PrependHttpsToPath( path );
+			status = DownloadCacheFile( url );
+			/* Then turn over the file read to the local read function now
 			   that the file is stored locally. */
 			if( status == 0 )
 			{
-				status = pread( fi->localFd, buf, maxSize, offset );
-				if( 0 <= status )
+				if( fi->localFd < 0 )
 				{
-					*actuallyRead = status;
+					/* First access: open the file. */
+					localname = GetLocalFilename( url );
+					localpath = malloc( strlen( CACHE_FILES ) +
+										strlen( localname ) + sizeof( char ) );
+					strcpy( localpath, CACHE_FILES );
+					strcat( localpath, localname );
+					printf( "Attempting to open %s\n", localpath );
+					/* TODO: change the open flags to those requested by the
+					   open( ) function. */
+					fi->localFd = open( localpath, O_RDONLY );
+					free( localpath );
+					free( (char*) localname );
+				}
+				nBytes = pread( fi->localFd, buf, maxSize, offset );
+				if( 0 <= nBytes )
+				{
+					*actuallyRead = nBytes;
 				}
 			}
-
-#if 0
-    int               receivedSize;
-    char              *contents;
-    struct curl_slist *headers = NULL;
-    char              range[ 50 ];
-
-			/* Get the file contents between "offset" and the following
-			   "maxSize" bytes, both included. */
-			sprintf( range, "Range:bytes=%lld-%lld",
-					 (long long) offset, (long long) offset + maxSize - 1 );
-			headers = curl_slist_append( headers, strdup( range ) );
-			status  = s3_SubmitS3Request( s3comm, "GET", headers, path,
-										  (void**) &contents, &receivedSize );
-			if( status == 0 )
-			{
-				/* Copy the contents to the destination and free the local
-				   buffer. */
-				memcpy( buf, contents, receivedSize );
-				*actuallyRead = receivedSize;
-				free( contents );
-			}
-#endif
+			free( url );
 		}
 		else
 		{
@@ -1731,6 +1787,8 @@ S3Destroy(
 	s3_close( s3comm );
 #endif
 	curl_global_cleanup( );
+
+	DisconnectFromFileCache( );
 }
 
 
@@ -1928,7 +1986,7 @@ IsDirectoryEmpty(
     /* Read four files so that we can account for the secret file, the ".",
        the "..", and finally any file that makes the directory non-empty. */
     success = false;
-    status = S3ReadDir( NULL, dirname, &directory, &nFiles, 4 );
+    status = S3ReadDir( dirname, &directory, &nFiles, 4 );
     if( status == 0 )
     {
         /* We compare against two files instead of three (where above we

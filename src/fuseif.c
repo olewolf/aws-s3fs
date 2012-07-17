@@ -33,12 +33,12 @@
 #include <errno.h>
 #include <pthread.h>
 #include <fuse/fuse.h>
+#include <glib-2.0/glib.h>
+#include <pwd.h>
+#include <grp.h>
 #include "aws-s3fs.h"
 #include "fuseif.h"
 #include "s3if.h"
-
-
-#define MAX_S3_FILE_DESCRIPTORS ( ( MAX_FILE_DESCRIPTORS ) + 100 )
 
 
 
@@ -151,9 +151,6 @@ struct fuse_operations s3fsOperations =
 
 
 
-pthread_mutex_t fileDescriptorsMutex = PTHREAD_MUTEX_INITIALIZER;
-struct S3FileInfo *fileDescriptors[ MAX_S3_FILE_DESCRIPTORS ];
-
 static int VerifyPathSearchPermissions( const char *path );
 
 
@@ -167,6 +164,65 @@ static int VerifyPathSearchPermissions( const char *path );
  * @param myGid [in] The user's gid. 
  * @return \a true of the user is a member of the group; \a false otherwise.
  */
+static bool
+IsUserMemberOfGroup(
+    gid_t gid,
+	uid_t myUid
+		            )
+{
+	bool membership = false;
+
+	struct passwd pwd;
+	struct passwd *pwdresult;
+	char          *pwdbuf;
+	long          pwdbufsize;
+
+	struct group grp;
+	struct group *grpresult;
+	char         *grpbuf;
+	long         grpbufsize;
+	int          memberIdx;
+	char         *membername;
+
+	/* Get the user's login name and gid. */
+	pwdbufsize = sysconf( _SC_GETPW_R_SIZE_MAX );
+	pwdbuf     = malloc( pwdbufsize );
+	getpwuid_r( myUid, &pwd, pwdbuf, pwdbufsize, &pwdresult );
+	if( pwdresult != NULL )
+	{
+		/* Is this the user's own group? */
+		if( pwd.pw_gid == gid )
+		{
+			membership = true;
+		}
+		/* If not, see if the user is a member of the group. */
+		else
+		{
+			grpbufsize = sysconf( _SC_GETGR_R_SIZE_MAX );
+			grpbuf     = malloc( grpbufsize );
+			getgrgid_r( gid, &grp, grpbuf, grpbufsize, &grpresult );
+			if( grpresult != NULL )
+			{
+				memberIdx = 0;
+				while( ( membername = grp.gr_mem[ memberIdx++ ] ) != NULL )
+				{
+					if( strcmp( membername, pwd.pw_name ) == 0 )
+					{
+						membership = true;
+					}
+				}
+			}
+		}
+	}
+
+	free( grpbuf );
+	free( pwdbuf );
+	return( membership );
+}
+
+
+
+#if 0
 static bool
 IsUserMemberOfGroup(
     gid_t gid,
@@ -204,7 +260,7 @@ IsUserMemberOfGroup(
        implied. */
     if( myGid == gid )
     {
-	return( true );
+		return( true );
     }
 
     /* Find the user's group name and the allowed member names in one swoop. */
@@ -286,6 +342,7 @@ IsUserMemberOfGroup(
     }
     return( false );
 }
+#endif
 
 
 
@@ -299,6 +356,9 @@ IsUserMemberOfGroup(
  * @param mask [in] Permissions that must be honored.
  * @return \a true if the user has permission, or \a false otherwise.
  */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#pragma GCC diagnostic ignored "-Wunused-variable"
 static bool
 VerifyAccessPermission(
     int   permissions,
@@ -317,9 +377,9 @@ VerifyAccessPermission(
     if( getuid( ) == fileUid )
     {
         if( ( ( permissions >> 6 ) & mask ) == mask )
-	{
-	    return( true );
-	}
+		{
+			return( true );
+		}
     }
 
     /* If the group permissions match the mask, verify that the user is a
@@ -327,6 +387,7 @@ VerifyAccessPermission(
     if( ( ( permissions >> 3 ) & mask ) == mask )
     {
         return( IsUserMemberOfGroup( fileGid, getgid( ) ) );
+		return( true );
     }
 
     /* If the others permissions match the mask, verify that the user is NOT
@@ -347,6 +408,7 @@ VerifyAccessPermission(
     /* All else fails. */
     return( false );
 }
+#pragma GCC diagnostic pop
 
 
 
@@ -354,6 +416,7 @@ VerifyAccessPermission(
  * Allocate an unused file descriptor.
  * @return Allocated file descriptor, or -1 if all file descriptors are in use.
  */
+#if 0
 static int AllocateFileDescriptor( )
 {
     int fd;
@@ -372,6 +435,7 @@ static int AllocateFileDescriptor( )
 
     return( foundFd );
 }
+#endif
 
 
 
@@ -493,14 +557,14 @@ GetNextPathComponent(
 	   && ( ! ( ( ch == '/' ) && ( bool_equal( escaped, true ) ) ) ) )
     {
         if( ch == '\\' )
-	{
-	    escaped = ! escaped;
-	}
-	else
-	{
-	    escaped = false;
-	}
-	endPos++;
+		{
+			escaped = ! escaped;
+		}
+		else
+		{
+			escaped = false;
+		}
+		endPos++;
     }
 
     /* endPos is the position right after the first '/' encountered or right
@@ -512,24 +576,24 @@ GetNextPathComponent(
     if( endPos < (int) strlen( path ) )
     {
         while( ( ch = path[ endPos ] ) == '/' )
-	{
-	    endPos++;
-	}
+		{
+			endPos++;
+		}
     }
 
     /* Return the component length. */
     if( length != NULL )
     {
-	*length = componentLength;
+		*length = componentLength;
     }
 
     /* Copy the component into a new string. */
     if( 0 < componentLength )
     {
         *component = malloc( componentLength + sizeof( char ) );
-	strncpy( *component, path, componentLength );
-	(*component)[ componentLength ] = '\0';
-	return( endPos );
+		strncpy( *component, path, componentLength );
+		(*component)[ componentLength ] = '\0';
+		return( endPos );
     }
     /* No additional components found. */
     else
@@ -547,6 +611,7 @@ GetNextPathComponent(
  * @param path [in] Full path of the file.
  * @return Directory component or NULL if only the filename was specified.
  */
+#if 0
 static char*
 GetPathPrefix(
     const char *path
@@ -562,32 +627,33 @@ GetPathPrefix(
     while( ( ch = path[ idx ] ) != '\0' )
     {
         if( ! escaped )
-	{
-	    if( ch == '/' )
-	    {
-	        lastSlashPos = idx;
-	    }
-	    else if( ch == '\\' )
-	    {
-	        escaped = true;
-	    }
-	}
-	else
-	{
-	    escaped = false;
-	}
-	idx++;
+		{
+			if( ch == '/' )
+			{
+				lastSlashPos = idx;
+			}
+			else if( ch == '\\' )
+			{
+				escaped = true;
+			}
+		}
+		else
+		{
+			escaped = false;
+		}
+		idx++;
     }
     if( lastSlashPos >= 0 )
     {
         pathPrefix = malloc( lastSlashPos + 2 * sizeof( char ) );
-	strncpy( pathPrefix, path, lastSlashPos + 1 );
-	pathPrefix[ lastSlashPos + 1 ] = '\0';
-	return( pathPrefix );
+		strncpy( pathPrefix, path, lastSlashPos + 1 );
+		pathPrefix[ lastSlashPos + 1 ] = '\0';
+		return( pathPrefix );
     }
 
     return( NULL );
 }
+#endif
 
 
 
@@ -604,7 +670,7 @@ static int
 ValidateDirectoryComponents(
     const char *path,
     bool       verifyExecutionBit
-			    )
+			               )
 {
     char              *pathPrefix;
     char              *pathComponent;
@@ -617,58 +683,59 @@ ValidateDirectoryComponents(
 
     status = 0;
 
-    pathPrefix = GetPathPrefix( path );
+//    pathPrefix = GetPathPrefix( path );
+	pathPrefix = g_path_get_dirname( path );
     if( pathPrefix != NULL )
     {
         accumulatedPath      = malloc( strlen( pathPrefix )
 				       + 2 * sizeof( char ) );
-	accumulatedPath[ 0 ] = '\0';
-	position             = 0;
-	position = GetNextPathComponent( &pathPrefix[ position ],
-					 &pathComponent, &componentLength );
-	while( componentLength > 0 )
-	{
-	    /* Grow a path from the path components. */
-	    strcat( accumulatedPath, pathComponent );
-
-	    /* Examine the path at its current depth. */
-	    status = S3FileStat( accumulatedPath, &fileInfo );
-	    if( status == 0 )
-	    {
-	        /* If any component of the path prefix is not a
-		   directory, the error is ENOTDIR. */
-	        if( fileInfo->fileType != 'd' )
+		accumulatedPath[ 0 ] = '\0';
+		position             = 0;
+		position = GetNextPathComponent( &pathPrefix[ position ],
+										 &pathComponent, &componentLength );
+		while( componentLength > 0 )
 		{
-		    status = -ENOTDIR;
-		    break;
-		}
-		if( verifyExecutionBit )
-		{
-		    /* Check permissions. The directory must be searchable
-		       by the user's gid and uid.  */
-		    if( ! IsExecutable( fileInfo ) )
-		    {
-			status = -EACCES;
-			break;
-		    }
-		}
-	    }
-	    else
-	    {
-	        /* If any component of the path does not exist, the error
-		   is ENOENT. */
-	        status = -ENOENT;
-		break;
-	    }
+			/* Grow a path from the path components. */
+			strcat( accumulatedPath, pathComponent );
 
-	    free( pathComponent );
-	    strcat( accumulatedPath, "/" );
-	    position += GetNextPathComponent( &pathPrefix[ position ],
-					      &pathComponent,
-					      &componentLength );
-	}
-	free( accumulatedPath );
-	free( pathPrefix );
+			/* Examine the path at its current depth. */
+			status = S3FileStat( accumulatedPath, &fileInfo );
+			if( status == 0 )
+			{
+				/* If any component of the path prefix is not a
+				   directory, the error is ENOTDIR. */
+				if( fileInfo->fileType != 'd' )
+				{
+					status = -ENOTDIR;
+					break;
+				}
+				if( verifyExecutionBit )
+				{
+					/* Check permissions. The directory must be searchable
+					   by the user's gid and uid.  */
+					if( ! IsExecutable( fileInfo ) )
+					{
+						status = -EACCES;
+						break;
+					}
+				}
+			}
+			else
+			{
+				/* If any component of the path does not exist, the error
+				   is ENOENT. */
+				status = -ENOENT;
+				break;
+			}
+
+			free( pathComponent );
+			strcat( accumulatedPath, "/" );
+			position += GetNextPathComponent( &pathPrefix[ position ],
+											  &pathComponent,
+											  &componentLength );
+		}
+		free( accumulatedPath );
+		g_free( pathPrefix );
     }
 
     return( status );
@@ -786,14 +853,16 @@ s3fs_getattr(
  * @param fi [in/out] FUSE file info structure.
  * @return 0 on success, or \a -errno on failure.
 */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#pragma GCC diagnostic ignored "-Wunused-variable"
 static int
 s3fs_open(
     const char            *path,
     struct fuse_file_info *fi
-	  )
+	      )
 {
     int               status    = 0;
-    int               fh        = 0;
     struct S3FileInfo *fileInfo;
     struct OpenFlags  *openFlags;
     struct S3FileInfo *parentFi;
@@ -814,10 +883,13 @@ s3fs_open(
     {
 		return( status );
     }
+
 	/* The parent directory  must be searchable to allow file access, so stat
 	   the parent directory to find its properties. */
-    parent = GetPathPrefix( path );
+//    parent = GetPathPrefix( path );
+    parent = g_path_get_dirname( path );
     status = S3FileStat( parent, &parentFi );
+	g_free( parent );
     if( status != 0 )
     {
         return( -EACCES );
@@ -828,110 +900,84 @@ s3fs_open(
         return( -EACCES );
     }
 
-    /* Allocate a file handle. */
-    fh = AllocateFileDescriptor( );
-    if( fh != -1 )
-    {
-        status = -EACCES;
+	status = -EACCES;
 
-		/* The file stat cache provides information about the file. */
-		status = S3FileStat( path, &fileInfo );
-		if( status != 0 )
+	/* The file stat cache provides information about the file. */
+	status = S3FileStat( path, &fileInfo );
+	if( status != 0 )
+	{
+		status = -ENOENT;
+	}
+	else
+	{
+		status = -EACCES;
+
+////			Syslog( log_DEBUG, "File handle %d allocated\n", fh );
+		openFlags = &fileInfo->openFlags;
+		SetOpenFlags( openFlags, fi->flags );
+		/* Do not follow symbolic links. */
+		if( ( openFlags->of_NOFOLLOW ) && ( fileInfo->fileType == 'l' ) )
 		{
-			status = -ENOENT;
+			status = -EACCES;
+			goto open_end;
+		}
+		if( openFlags->of_WRONLY || openFlags->of_RDWR )
+		{
+			/* O_WRONLY or O_RDWR applied to a directory. */
+			if( fileInfo->fileType == 'd' )
+			{
+				status = -EISDIR;
+				goto open_end;
+			}
+			/* If a write is specified, the parent must have write
+			   permissions. */
+			if( ! IsExecutable( parentFi ) )
+			{
+				return( -EACCES );
+			}
+		}
+		/* O_WRONLY is allowed if the file exists and has write
+		   permissions. (If the file doesn't exist, the O_CREAT flag
+		   must also be set. However, this flag isn't passed to this
+		   function. Or? There's something about kernel 2.6 and FUSE.)
+		   See if the file exists and has write permissions. */
+		if( ( openFlags->of_WRONLY ) && IsWriteable( fileInfo ) )
+		{
+			status = 0;
+		}
+		/* For O_RDONLY, the file must have read permissions. For
+		   O_RDWR and O_APPEND, the file must have both read and write
+		   permissions. */
+		else if( openFlags->of_RDONLY || openFlags->of_RDWR
+				 || openFlags->of_APPEND )
+		{
+			/* Todo: if O_RDWR and O_TRUNC are set, the file will be
+			   created if necessary. The O_TRUNC indicates an atomic
+			   operation in this case. */
+			if( IsReadable( fileInfo ) )
+			{
+				status = 0;
+			}
+			if( ( openFlags->of_RDWR || openFlags->of_APPEND )
+				&& ( ! IsWriteable( fileInfo ) ) )
+			{
+				status = -EACCES;
+			}
 		}
 		else
 		{
 			status = -EACCES;
-
-			fileDescriptors[ fh ] = fileInfo;
-			Syslog( log_DEBUG, "File handle %d allocated\n", fh );
-			openFlags = &fileInfo->openFlags;
-			SetOpenFlags( openFlags, fi->flags );
-
-			/* Do not follow symbolic links. */
-			if( ( openFlags->of_NOFOLLOW ) && ( fileInfo->fileType == 'l' ) )
-			{
-				status = -EACCES;
-				goto open_end;
-			}
-			if( openFlags->of_WRONLY || openFlags->of_RDWR )
-			{
-				/* O_WRONLY or O_RDWR applied to a directory. */
-				if( fileInfo->fileType == 'd' )
-				{
-					status = -EISDIR;
-					goto open_end;
-				}
-				/* If a write is specified, the parent must have write
-				   permissions. */
-				if( ! IsExecutable( parentFi ) )
-				{
-					return( -EACCES );
-				}
-			}
-			/* O_WRONLY is allowed if the file exists and has write
-			   permissions. (If the file doesn't exist, the O_CREAT flag
-			   must also be set. However, this flag isn't passed to this
-			   function. Or? There's something about kernel 2.6 and FUSE.)
-			   See if the file exists and has write permissions. */
-			if( ( openFlags->of_WRONLY ) && IsWriteable( fileInfo ) )
-			{
-				status = 0;
-			}
-			/* For O_RDONLY, the file must have read permissions. For
-			   O_RDWR and O_APPEND, the file must have both read and write
-			   permissions. */
-			else if( openFlags->of_RDONLY || openFlags->of_RDWR
-					 || openFlags->of_APPEND )
-			{
-				/* Todo: if O_RDWR and O_TRUNC are set, the file will be
-				   created if necessary. The O_TRUNC indicates an atomic
-				   operation in this case. */
-				if( IsReadable( fileInfo ) )
-				{
-					status = 0;
-				}
-				if( ( openFlags->of_RDWR || openFlags->of_APPEND )
-					&& ( ! IsWriteable( fileInfo ) ) )
-				{
-					status = -EACCES;
-				}
-			}
-			else
-			{
-				status = -EACCES;
-			}
 		}
-    }
-    /* All file descriptors in use. */
-    else
-    {
-        status = -EMFILE;
-		Syslog( log_INFO, "All file handles in use\n" );
-    }
+	}
 
  open_end:
-    if( parent != NULL )
-    {
-		free( parent );
-    }
-
-    if( status != 0 )
-    {
-        /* The file info structure is released when it expires from
-		   the stat cache. */
-        fileDescriptors[ fh ] = NULL;
-		fh = -1;
-    }
-	else
+    if( status == 0 )
 	{
 		status = S3Open( path );
 	}
-
-    fi->fh = fh;
-    return status;
+    return( status );
 }
+#pragma GCC diagnostic pop
 
 
 
@@ -941,6 +987,9 @@ s3fs_open(
  * @param fi [out] FUSE file info structure.
  * @return 0 on success, or \a -errno on failure.
  */
+/* Disable warning that fi isn't used. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 static int
 s3fs_opendir(
     const char            *dir,
@@ -958,29 +1007,20 @@ s3fs_opendir(
         /* The path must be a directory. The O_DIRECTORY flag (if set) is
 	   ignored, because we'll check the file type either way. */
         if( fileInfo->fileType != 'd' )
-	{
-  	    return( -ENOTDIR );
-	}
+		{
+			return( -ENOTDIR );
+		}
 
         /* Determine if the user may open the directory. */
         if( IsExecutable( fileInfo ) )
-	{
-	    /* If allowed, allocate a file descriptor and return. */
-	    dh = AllocateFileDescriptor( );
-	    if( dh != -1 )
-	    {
-	        fileDescriptors[ dh ] = fileInfo;
-		fi->fh = dh;
-	    }
-	    else
-	    {
-		status = -ENFILE;
-	    }
-	}
-	else
-	{
-	    status = -EACCES;
-	}
+		{
+			/* If allowed, allocate a file descriptor and return. */
+			status = 0;
+		}
+		else
+		{
+			status = -EACCES;
+		}
     }
     else
     {
@@ -989,6 +1029,7 @@ s3fs_opendir(
     printf( "s3fs_opendir %s, status %d, file handle %d\n", dir, status, dh );
     return( status );
 }
+#pragma GCC diagnostic pop
 
 
 
@@ -1014,7 +1055,6 @@ s3fs_readdir(
     struct fuse_file_info *fi
 	     )
 {
-    int  dh;
     int  status;
     char **s3Directory = NULL;
     int  nFiles        = 0;
@@ -1023,17 +1063,8 @@ s3fs_readdir(
 
     printf( "s3fs_readdir: %s\n", dir );
 
-    /* Get directory handle. */
-    dh = fi->fh;
-    if( fileDescriptors[ dh ] == NULL )
-    {
-        status = -EBADF;
-    }
-    else
-    {
-        /* Read the directory from the S3 storage. */
-        status = S3ReadDir( fileDescriptors[ dh ], dir, &s3Directory, &nFiles,
-			    -1 );
+	/* Read the directory from the S3 storage. */
+	status = S3ReadDir( dir, &s3Directory, &nFiles, -1 );
 	if( status == 0 )
 	{
 	    /* Copy the entire directory to into the buffer. */
@@ -1041,12 +1072,11 @@ s3fs_readdir(
 	    {
 	        dirEntry = s3Directory[ i ];
 	        /* Call the filler with names unless an error has occurred. */
-		if( status == 0 )
-		{
-		    status = filler( buffer, dirEntry, NULL, 0 );
-		}
+			if( status == 0 )
+			{
+				status = filler( buffer, dirEntry, NULL, 0 );
+			}
 	    }
-	}
     }
 
     return( status );
@@ -1061,7 +1091,7 @@ s3fs_readdir(
  * @param fi [in] FUSE file info structure.
  * @return 0 if the directory was released, \a -errno otherwise.
  */
-/* Disable warning that dir is not used. */
+/* Disable warning that neither dir nor fi are not used. */
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 static int
@@ -1071,21 +1101,8 @@ s3fs_releasedir(
 		)
 {
     int status;
-    int dh = fi->fh;
 
-    if( fileDescriptors[ dh ] == NULL )
-    {
-        status = -ESTALE;
-	/* Or EBADF? */
-    }
-    else
-    {
-        /* Clear the file descriptor. */
-        fileDescriptors[ dh ] = NULL;
-	/* The file info structure will be deleted from memory when it
-	   expires from the stat cache. */
 	status = 0;
-    }
     printf( "s3fs_releasedir %s, fh = %d\n", dir, (int)fi->fh );
 
     return( status );
@@ -1222,12 +1239,10 @@ s3fs_fgetattr(
     struct S3FileInfo *fileInfo;
     int               status;
 
-    printf( "s3fs_fgetattr %s, fh = %d\n", path, (int)fi->fh );
+    printf( "s3fs_fgetattr %s\n", path );
 
     /* Stat the file. */
-    fileInfo = fileDescriptors[ fi->fh ];
-    status = 0;
-
+    status = S3FileStat( path, &fileInfo );
     /* Update the stat structure with file information. */
     CopyFileInfoToFileStat( fileInfo, stat );
 
@@ -1271,6 +1286,9 @@ s3fs_flush(
  * @param fi [in] FUSE file info.
  * @return 0 on success, or \a -errno on failure.
  */
+/* Disable warning that fi is not used. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 static int
 s3fs_release(
     const char            *path,
@@ -1281,11 +1299,10 @@ s3fs_release(
 
     status = S3FileClose( path );
 
-    /* Deallocate the file handle. */
-    fileDescriptors[ fi->fh ] = NULL;
-
     return( status );
 }
+/* Disable warning that fi is not used. */
+#pragma GCC diagnostic pop
 
 
 

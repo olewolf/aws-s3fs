@@ -396,8 +396,6 @@ HostnameToRegion(
 	g_regex_match( regexes.regionPart, url, 0, &matchInfo );
 	regionStr = g_match_info_fetch( matchInfo, 2 );
 	g_match_info_free( matchInfo );
-
-	printf( "url %s yields region string: %s\n", url, regionStr );
 	if( regionStr != NULL )
 	{
 		for( region = 0;
@@ -499,11 +497,13 @@ BeginDownload(
 	s3Comm->bucket    = (char*) bucket;
 	s3Comm->keyId     = (char*) keyId;
 	s3Comm->secretKey = (char*) secretKey;
+//	s3Comm->region    = region;
 	s3Comm->region    = HostnameToRegion( remotePath );
 
 	g_regex_match( regexes.removeHost, remotePath, 0, &matchInfo );
 	filepath = g_match_info_fetch( matchInfo, 1 );
 	headers = BuildS3Request( s3Comm, "GET", hostname, NULL, filepath );
+//	headers = BuildS3Request( s3Comm, "GET", hostname, NULL, remotePath );
 	free( bucket );
 	free( keyId );
 	free( secretKey );
@@ -552,6 +552,7 @@ BeginDownload(
 		/* Remove the file from the download queue and the downloads table. */
 		g_queue_remove( &downloadQueue, subscription );
 		status = Query_DeleteTransfer( subscription->fileId );
+		Query_MarkFileAsCached( subscription->fileId );
 		/* Mark the downloader as ready for another download. */
 		downloaders[ downloader ].isReady = true;
 		/* Before signaling to the subscribers that the file is available,
