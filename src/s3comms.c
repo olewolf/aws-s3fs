@@ -683,6 +683,7 @@ CreateAwsSignature(
 	free( (char*) signablePath );
 
     /* Sign the message and add the Authorization header. */
+	printf( "%s\n", messageToSign );
     signature = HMAC( (const unsigned char*) messageToSign,
 					  strlen( messageToSign ),
 					  (const char*) secretKey,

@@ -34,15 +34,6 @@ aws_s3fs_queued_LDADD = libaws-s3fs0.la
 aws_s3fs_queued_SOURCES = $(HDR) sysdirs.h filecache.c socket.c \
 	filecachedb.c downloadqueue.c grant.c aws-s3fs-queued.c
 
-#test_client_LDADD = libaws-s3fs0.la
-#test_client_SOURCES = config.h socket.h filecache.c socket.c filecachedb.c \
-#	test-client.c grant.c downloadqueue.c
-
-#test_server_LDADD = libaws-s3fs0.la
-#test_server_SOURCES = config.h aws-s3fs.h socket.h filecache.c socket.c \
-#	filecachedb.c test-server.c downloadqueue.c grant.c
-
-
 lib_LTLIBRARIES = libaws-s3fs0.la
 libaws_s3fs0_la_SOURCES = sysdirs.h digest.h digest.c \
 	base64.h base64.c s3comms.h s3comms.c

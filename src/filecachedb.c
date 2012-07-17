@@ -56,6 +56,7 @@ static struct
 	sqlite3_stmt *allOwners;
 	sqlite3_stmt *deleteTransfer;
 	sqlite3_stmt *addDownload;
+	sqlite3_stmt *addUser;
 } cacheDatabase;
 
 
@@ -174,6 +175,7 @@ ShutdownFileCacheDatabase(
 	CLEAR_QUERY( allOwners );
 	CLEAR_QUERY( deleteTransfer );
 	CLEAR_QUERY( addDownload );
+	CLEAR_QUERY( addUser );
 
     sqlite3_close( cacheDatabase.cacheDb );
 	sqlite3_shutdown( );
@@ -357,6 +359,9 @@ CompileStandardQueries(
 	const char *const addDownloadSql =
 		"INSERT INTO transfers( file, owner, direction ) VALUES( ?, ?, 'd' );";
 
+	const char *const addUserSql =
+		"INSERT INTO users( uid, keyid, secretkey ) VALUES( ?, ?, ? );";
+
 
     COMPILESQL( fileStat );
     COMPILESQL( newFile );
@@ -370,6 +375,7 @@ CompileStandardQueries(
 	COMPILESQL( allOwners );
 	COMPILESQL( deleteTransfer );
 	COMPILESQL( addDownload );
+	COMPILESQL( addUser );
 }
 
 
@@ -1084,6 +1090,7 @@ Query_AddDownload(
                   )
 {
     int           rc;
+	bool          status    = false;
     sqlite3_stmt  *addQuery = cacheDatabase.addDownload;
 
     LockCache( );
@@ -1094,13 +1101,14 @@ Query_AddDownload(
 	{
 		while( ( rc = sqlite3_step( addQuery ) ) == SQLITE_ROW )
 		{
-			/* No action. */
+			status = true;
 		}
 		if( rc != SQLITE_DONE )
 		{
 			fprintf( stderr,
 					 "Select statement didn't finish with DONE (%i): %s\n",
 					 rc, sqlite3_errmsg( cacheDatabase.cacheDb ) );
+			status = false;
 		}
 	}
 	else
@@ -1112,5 +1120,56 @@ Query_AddDownload(
 	RESET_QUERY( addDownload );
     UnlockCache( );
 
-    return( fileId );
+    return( status );
+}
+
+
+
+/**
+ * Add a user to the database.
+ * @param uid [in] The user's uid.
+ * @param keyid [in] The user's Amazon Access ID.
+ * @param secretKey [in] The user's secret key.
+ * @return \a true if the query succeeded, or \a false otherwise.
+ */
+bool
+Query_AddUser(
+	uid_t uid,
+	char  keyId[ 21 ],
+	char  secretKey[ 41 ]
+	          )
+{
+	bool          status;
+    int           rc;
+    sqlite3_stmt  *addQuery = cacheDatabase.addUser;
+
+    LockCache( );
+    BIND_QUERY( rc, int( addQuery, 1, (int) uid ),
+    BIND_QUERY( rc, text( addQuery, 2, keyId, -1, NULL ),
+    BIND_QUERY( rc, text( addQuery, 3, secretKey, -1, NULL ),
+		) ) );
+    if( rc == SQLITE_OK )
+	{
+		while( ( rc = sqlite3_step( addQuery ) ) == SQLITE_ROW )
+		{
+			status = true;
+		}
+		if( rc != SQLITE_DONE )
+		{
+			fprintf( stderr,
+					 "Select statement didn't finish with DONE (%i): %s\n",
+					 rc, sqlite3_errmsg( cacheDatabase.cacheDb ) );
+			status = false;
+		}
+	}
+	else
+    {
+        fprintf( stderr, "Can't prepare select query (%i): %s\n",
+				 rc, sqlite3_errmsg( cacheDatabase.cacheDb ) );
+    }
+
+	RESET_QUERY( addUser );
+    UnlockCache( );
+
+    return( status );
 }

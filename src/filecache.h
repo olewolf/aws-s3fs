@@ -26,18 +26,8 @@
 #include <sqlite3.h>
 #include <stdbool.h>
 #include <glib-2.0/glib.h>
+#include "aws-s3fs.h"
 
-
-//#ifdef AUTOTEST
-#undef CACHE_DIR
-#define CACHE_DIR "./cachedir"
-#undef SOCKET_NAME
-#define SOCKET_NAME "cachedir/aws-s3fs.sock"
-//#endif
-
-#define CACHE_DATABASE   CACHE_DIR "/cache.sl3"
-#define CACHE_FILES      CACHE_DIR "/files/"
-#define CACHE_INPROGRESS CACHE_FILES "unfinished/"
 
 #define MAX_SIMULTANEOUS_DOWNLOADS 6
 
@@ -51,6 +41,7 @@ struct RegularExpressions
 	GRegex *rename;
 	GRegex *hostname;
 	GRegex *regionPart;
+	GRegex *removeHost;
 };
 
 extern struct RegularExpressions regexes;
@@ -90,6 +81,7 @@ bool Query_GetOwners( sqlite3_int64 fileId, char **parentdir,
 					  uid_t *uid, gid_t *gid, int *permissions );
 bool Query_DeleteTransfer( sqlite3_int64 fileId );
 bool Query_AddDownload( sqlite3_int64 fileId, uid_t uid );
+bool Query_AddUser( uid_t uid, char keyId[ 21 ], char secretKey[ 41 ] );
 const char *Query_GetLocalPath( const char *remotename );
 bool Query_DecrementSubscriptionCount( sqlite3_int64 fileId );
 bool Query_IncrementSubscriptionCount( sqlite3_int64 fileId );

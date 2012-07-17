@@ -378,17 +378,18 @@ static void test_ClientConnects( const char *param )
 {
 	struct CacheClientConnection clientConnection;
 
+	FillDatabase( );
 	CompileRegexes( );
 
 	printf( "1: " );
-	ClientConnects( &clientConnection, " bucketname : aAzZ56789+1/34567890 : 123/5+7aAzZ23456789012345678901234567890 " );
+	ClientConnects( &clientConnection, " bucketname : 1000 : aAzZ56789+1/34567890 : 123/5+7aAzZ23456789012345678901234567890 " );
 	printf( "1: %s, %s:%s\n", clientConnection.bucket, clientConnection.keyId, clientConnection.secretKey );
 	printf( "2: " );
-	ClientConnects( &clientConnection, " bucketname : 2345678901234567890 : 1234567890123456789012345678901234567890 " );
+	ClientConnects( &clientConnection, " bucketname : 1001: 2345678901234567890 : 1234567890123456789012345678901234567890 " );
 	printf( "3: " );
-	ClientConnects( &clientConnection, " bucketname : 12345678901234567890 : 12345678901234567890123456789012345678901 " );
+	ClientConnects( &clientConnection, " bucketname : 1002: 12345678901234567890 : 12345678901234567890123456789012345678901 " );
 	printf( "4: " );
-	ClientConnects( &clientConnection, " bucketname : 12345678901234567890 ; 1234567890123456789012345678901234567890 " );
+	ClientConnects( &clientConnection, " bucketname : 1003 : 12345678901234567890 ; 1234567890123456789012345678901234567890 " );
 }
 
 
@@ -470,7 +471,7 @@ int ReadEntireMessage( int connectionHandle, char **clientMessage )
 	char       *message;
 	char       *messages[ ] =
 	{
-		"CONNECT bucketname:12345678901234567890:1234567890123456789012345678901234567890",
+		"CONNECT bucketname:1000:12345678901234567890:1234567890123456789012345678901234567890",
 		"CREATE 1001:1002:493:1000:1003:420:100:http://remotetest1",
 		"DISCONNECT",
 		NULL
@@ -499,6 +500,7 @@ static void test_ReceiveRequests( const char *param )
 	FillDatabase( );
 	CompileRegexes( );
 
+	/* The function uses the simulated ReceiveAllMessages function, above. */
 	pthread_create( &thread, NULL, ReceiveRequests, &clientConnection );
 	pthread_join( thread, NULL );
 }
@@ -512,7 +514,7 @@ static void test_CommandDispatcher( const char *param )
 	FillDatabase( );
 	CompileRegexes( );
 
-	status = CommandDispatcher( &clientConnection, "CONNECT bucketname:12345678901234567890:1234567890123456789012345678901234567890" );
+	status = CommandDispatcher( &clientConnection, "CONNECT bucketname:1000:12345678901234567890:1234567890123456789012345678901234567890" );
 	printf( "1: Status: %d\n", status );
 	status = CommandDispatcher( &clientConnection, "And now for something completely different" );
 	printf( "2: Status: %d\n", status );

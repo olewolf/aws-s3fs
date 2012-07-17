@@ -32,12 +32,26 @@
 #include "s3comms.h"
 
 
+/* Cache dir. CACHE_DIRECTORY may be defined in the Makefile for testing
+   purposes.  Otherwise, define it here. */
+#ifndef CACHE_DIRECTORY
+#define CACHE_DIR LOCALSTATEDIR "/cache/aws-s3fs"
+#define SOCKET_NAME LOCALSTATEDIR "/aws-s3fs.sock"
+#else
+#define STRINGIFY1(x) #x
+#define STRINGIFY2(x) STRINGIFY1(x)
+#define CACHE_DIR STRINGIFY2(CACHE_DIRECTORY)
+#define SOCKET_NAME CACHE_DIR "/aws-s3fs.sock"
+#endif
+#define CACHE_DATABASE   CACHE_DIR "/cache.sl3"
+#define CACHE_FILES      CACHE_DIR "/files/"
+#define CACHE_INPROGRESS CACHE_FILES "unfinished/"
+
+
 #define DEFAULT_TMP_DIR "/tmp"
 
 /* Maximum number of open files. */
 #define MAX_FILE_DESCRIPTORS 16
-
-#define SOCKET_NAME LOCALSTATEDIR "/aws-s3fs.sock"
 
 
 /* Make room for 5,000 files in the stat cache. */
@@ -48,9 +62,6 @@
 
 /* Lock dir. */
 #define LOCK_DIR LOCALSTATEDIR "/lock"
-
-/* Chache dir. */
-#define CACHE_DIR LOCALSTATEDIR "/cache/aws-s3fs"
 
 
 #ifdef AUTOTEST

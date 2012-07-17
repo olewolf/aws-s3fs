@@ -57,7 +57,7 @@ AT_CLEANUP
 
 AT_SETUP([ClientRequestsCreate])
 AT_CHECK([test-filecache 2>&1 ClientRequestsCreate], [], [stdout])
-AT_CHECK([grep "^1: Sent: \"CREATED @<:@a-zA-Z0-9@:>@\{6\}\"$" stdout], [], [ignore])
+AT_CHECK([grep "^1: Sent: \"CREATED @<:@a-zA-Z0-9@:>@\{6\} 1005\"$" stdout], [], [ignore])
 AT_CHECK([grep "^1: @<:@a-zA-Z0-9@:>@\{6\} (1000 1003 644 100) /=@<:@a-zA-Z0-9@:>@\{6\} (1001 1002 755)$" stdout], [], [ignore])
 AT_CLEANUP
 
@@ -72,7 +72,7 @@ AT_CLEANUP
 AT_SETUP([ReceiveRequests])
 AT_CHECK([test-filecache 2>&1 ReceiveRequests], [], [stdout])
 AT_CHECK([grep "^Sent: \"CONNECTED\"$" stdout], [], [ignore])
-AT_CHECK([grep "^Sent: \"CREATED @<:@0-9a-zA-Z@:>@\{6\}\"$" stdout], [], [ignore])
+AT_CHECK([grep "^Sent: \"CREATED @<:@0-9a-zA-Z@:>@\{6\} 1005\"$" stdout], [], [ignore])
 AT_CLEANUP
 
 
@@ -144,3 +144,13 @@ AT_CHECK([grep "^Reply: CONNECTED$" stdout], [], [ignore])
 AT_CHECK([grep "^Process terminated$" stdout], [], [ignore])
 AT_CHECK([grep "^Reply: ACK$" stdout], [], [ignore])
 AT_CLEANUP
+
+AT_SETUP([Download (Live Test)])
+AT_CHECK([test-process 2>&1 LiveDownload ../../testdata/livetest.ini], [], [stdout])
+AT_CHECK([grep "^Reply: CREATED @<:@0-9a-zA-Z@:>@\{6\} 1$" stdout], [], [ignore])
+AT_CHECK([grep "^drwx------ .\+ @<:@0-9a-zA-Z@:>@\{6\}$" stdout], [], [ignore])
+AT_CHECK([grep "^-rw------- .\+ @<:@0-9a-zA-Z@:>@\{6\}$" stdout], [], [ignore])
+AT_CHECK([grep "^Requesting download of file id 1$" stdout], [], [ignore])
+AT_CHECK([test "`md5sum cachedir/files/??????/?????? | sed -n "s^\(@<:@0-9a-f@:>@\{32\}\).*^\1^p"`  -" = "`md5sum < ../../../README`"], [], [ignore])
+AT_CLEANUP
+

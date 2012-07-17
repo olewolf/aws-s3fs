@@ -23,7 +23,7 @@ TESTSCRIPTS = commandline.at config.at common.at logging.at cache.at hash.at \
 
 noinst_PROGRAMS = test-decodecmdline test-config test-common \
 	test-logging test-cache test-hash test-s3if test-filecache \
-	test-downloadqueue test-process
+	test-downloadqueue test-process aws-s3fs-queued
 
 test_decodecmdline_SOURCES = $(SHAREDTESTSOURCE) test-decodecmdline.c \
 	../src/decodecmdline.c ../src/config.c ../src/configfile.c \
@@ -53,12 +53,19 @@ test_downloadqueue_SOURCES= $(SHAREDTESTSOURCE) test-downloadqueue.c \
 test_process_SOURCES= $(SHAREDTESTSOURCE) test-process.c \
 	../src/downloadqueue.c ../src/s3comms.c ../src/digest.c ../src/base64.c \
 	../src/filecache.c ../src/grant.c
+aws_s3fs_queued_SOURCES = ../src/config.h aws-s3fs.h sysdirs.h filecache.h \
+	../src/base64.h digest.h s3comms.h ../src/socket.h \
+	../src/filecache.c ../src/socket.c ../src/filecachedb.c \
+	../src/downloadqueue.c ../src/grant.c ../src/base64.c ../src/digest.c \
+	../src/s3comms.c ../src/aws-s3fs-queued.c
 
-
-SHAREDTESTSOURCE = dispatch.c src/aws-s3fs.h shared.c testfunctions.h \
+SHAREDTESTSOURCE = dispatch.c aws-s3fs.h shared.c testfunctions.h \
 	../src/filecachedb.c
 
-AM_CFLAGS = -I../src -DAUTOTEST -DDEBUG -O0 -g
+# Replace the ReadEntireMessage function with a simulation.
+test_filecache_CFLAGS = $(AM_CFLAGS) -DAUTOTEST_SKIP_COMMUNICATIONS
+
+AM_CFLAGS = -I../src -DAUTOTEST -DCACHE_DIRECTORY="./cachedir" -DDEBUG -O0 -g
 if MAKE_OPENSSL_TESTS
 AM_CFLAGS += -DMAKE_OPENSSL_TESTS
 endif

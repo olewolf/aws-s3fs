@@ -64,7 +64,7 @@ AT_CLEANUP
 AT_SETUP([MoveToSharedCache])
 AT_CHECK([test-downloadqueue MoveToSharedCache], [], [stdout])
 AT_CHECK([grep '^1: CHOWN 1010:1011:DIR001$' stdout], [], [ignore])
-AT_CHECK([grep '^2: CHOWN 1001:1002:FILE01$' stdout], [], [ignore])
+AT_CHECK([grep '^2: CHOWN 1001:1002:DIR001/FILE01$' stdout], [], [ignore])
 AT_CLEANUP
 
 AT_SETUP([BeginDownload])

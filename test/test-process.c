@@ -39,13 +39,14 @@ struct Configuration globalConfig;
 extern void SendGrantMessage( int socketHandle, const char *privopRequest );
 
 static void test_Daemon( const char *param );
+static void test_LiveDownload( const char *param );
 
 
 #define DISPATCHENTRY( x ) { #x, test_##x }
 const struct dispatchTable dispatchTable[ ] =
 {
 	DISPATCHENTRY( Daemon ),
-
+	DISPATCHENTRY( LiveDownload ),
     { NULL, NULL }
 };
 
@@ -73,7 +74,7 @@ static void test_Daemon( const char *param )
 	unlink( SOCKET_NAME );
 
 	/* Start the daemon. */
-	system( "../../../src/aws-s3fs-queued &" );
+	system( "../../aws-s3fs-queued &" );
 	while( stat( SOCKET_NAME, &statInfo ) != 0 ) sleep( 1 );
 
 	/* Test the file cache thread. */
@@ -82,7 +83,7 @@ static void test_Daemon( const char *param )
 
     if( socketFd != -1 )
     {
-		strcpy( buffer, "CONNECT bucket:12345678901234567890:"
+		strcpy( buffer, "CONNECT bucket:1000:12345678901234567890:"
 				"1234567890123456789012345678901234567890" );
 		write( socketFd, buffer, strlen( buffer ) );
 		read( socketFd, buffer, 100 );
@@ -95,7 +96,7 @@ static void test_Daemon( const char *param )
 
 	/* Start the daemon. */
 	unlink( SOCKET_NAME );
-	system( "../../../src/aws-s3fs-queued &" );
+	system( "../../aws-s3fs-queued &" );
 	while( stat( SOCKET_NAME, &statInfo ) != 0 ) sleep( 1 );
     CreateClientStreamSocket( SOCKET_NAME, &socketFd, &socketAddress );
 
@@ -117,3 +118,95 @@ static void test_Daemon( const char *param )
 	write( socketFd, buffer, strlen( buffer ) );
 	printf( "Process terminated\n" );
 }
+
+
+
+void test_LiveDownload( const char *param )
+{
+	const char *hosts[ ] =
+	{
+		NULL,
+		"s3-us-west-2",
+		"s3-us-west-1",
+		"s3-eu-west-1",
+		"s3-ap-southeast-1",
+		"s3-ap-northeast-1",
+		"s3-sa-east-1"
+	};
+	struct stat        statInfo;
+	int                socketFd;
+	struct sockaddr_un socketAddress;
+
+	char          url[ 200 ];
+	char          request[ 200 ];
+	char          reply[ 40 ];
+	uid_t         uid;
+	gid_t         gid;
+	sqlite3_int64 fileId;
+
+#ifndef MAKE_OPENSSL_TESTS
+	exit( 77 );
+#endif
+
+	ReadLiveConfig( param );
+
+	mkdir( CACHE_DIR, 0750 );
+	mkdir( CACHE_FILES, 0755 );
+	mkdir( CACHE_INPROGRESS, 0700 );
+
+	/* Start the daemon. */
+	unlink( SOCKET_NAME );
+	system( "../../aws-s3fs-queued &" );
+	while( stat( SOCKET_NAME, &statInfo ) != 0 ) sleep( 1 );
+    CreateClientStreamSocket( SOCKET_NAME, &socketFd, &socketAddress );
+
+	/* Connect to the daemon. */
+	sprintf( request, "CONNECT %s:%d:%s:%s", globalConfig.bucketName,
+			 getuid( ), globalConfig.keyId, globalConfig.secretKey );
+	write( socketFd, request, strlen( request ) );
+	read( socketFd, reply, sizeof( reply ) );
+	if( strncmp( reply, "CONNECTED", strlen( "CONNECTED" ) ) != 0 )
+	{
+		printf( "Not connected\n" );
+		exit( 1 );
+	}
+
+	/* Create local files and database entries. */
+	if( globalConfig.region == US_STANDARD )
+	{
+		sprintf( url, "https://s3.amazonaws.com/%s/README",
+				 globalConfig.bucketName );
+	}
+	else
+	{
+		sprintf( url, "https://%s.%s.amazonaws.com/README",
+				 globalConfig.bucketName, hosts[ globalConfig.region ] );
+	}
+	uid = getuid( );
+	gid = getgid( );
+	sprintf( request, "CREATE %d:%d:%d:%d:%d:%d:100:%s",
+			 (int) uid, (int) gid, 0750, (int) uid, (int) gid, 0640, url );
+	write( socketFd, request, strlen( request ) );
+	read( socketFd, reply, sizeof( reply ) );
+	printf( "Reply: %s\n", reply );
+	if( strncmp( reply, "CREATED", 7 ) != 0 )
+	{
+		printf( "Could not create local files\n" );
+		exit( 1 );
+	}
+	sprintf( request, "ls -lgG -1 %s", CACHE_INPROGRESS );
+	system( request );
+
+	/* Request download of the file. */
+	fileId = atoll( &reply[ 15 ] );
+	printf( "Requesting download of file id %lld\n", fileId );
+	sprintf( request, "CACHE %lld", fileId );
+	write( socketFd, request, strlen( request ) );
+	read( socketFd, reply, sizeof( reply ) );
+	printf( "Reply: %s\n", reply );
+
+	strcpy( request, "QUIT" );
+	write( socketFd, request, strlen( request ) );
+	read( socketFd, reply, sizeof( reply ) );
+}
+

@@ -18,6 +18,13 @@ int main( int argc, char **argv )
 		exit( 1 );
 	}
 
+	printf( "Cache dir2: %s\n", CACHE_DIR2 );
+
+	printf( "Cache dir: %s\n", CACHE_DIR );
+	printf( "Cache files: %s\n", CACHE_FILES );
+
+
+/*
     int                socketFd;
     struct sockaddr_un socketAddress;
 
@@ -44,4 +51,5 @@ int main( int argc, char **argv )
 			}
 		}
     }
+*/
 }

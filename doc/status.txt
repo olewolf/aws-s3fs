@@ -1,8 +1,18 @@
+2012-07-17:
+	Live download via the download queue tested.
+	Milestone met: download via download queue.
+
+2012-07-16:
+	TODO: test integration of daemon and frontend.
+
+2012-07-15:
+	Daemon unit tests completed.
+
 2012-07-13:
 	Unit tests for downloadqueue completed.
 	Unit tests for filecache.c completed.
 	Daemon startup completed.
-	Unit test for daemon completed.
+	Unit test program for daemon completed.
 
 2012-07-12:
 	Additional unit tests for filecache.c created.

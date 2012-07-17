@@ -38,7 +38,7 @@
 #include "socket.h"
 
 
-STATIC GQueue          downloadQueue  = G_QUEUE_INIT;
+STATIC GQueue downloadQueue = G_QUEUE_INIT;
 
 /* Event trigger and queue lock for the download manager. */
 STATIC pthread_mutex_t mainLoop_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -396,6 +396,8 @@ HostnameToRegion(
 	g_regex_match( regexes.regionPart, url, 0, &matchInfo );
 	regionStr = g_match_info_fetch( matchInfo, 2 );
 	g_match_info_free( matchInfo );
+
+	printf( "url %s yields region string: %s\n", url, regionStr );
 	if( regionStr != NULL )
 	{
 		for( region = 0;
@@ -450,6 +452,7 @@ BeginDownload(
 	const char        *hostname;
 	GMatchInfo        *matchInfo;
 	int               status;
+	const char        *filepath;
 
 	char              *parentname;
 	uid_t             parentUid;
@@ -476,9 +479,6 @@ BeginDownload(
 	pthread_mutex_lock( &mainLoop_mutex );
 	Query_GetDownload( subscription->fileId, &bucket, &remotePath,
 					   &downloadPath, &keyId, &secretKey );
-#ifdef AUTOTEST
-//	printf( "GetDownload: %d - %d, %s, %s, %s\n", downloader, (int)subscription->fileId, bucket, remotePath, downloadPath );
-#endif
 	/* Set the path for the local file and open it for writing. */
 	downloadFile = malloc( strlen( CACHE_INPROGRESS )
 						   + strlen( downloadPath ) + sizeof( char ) );
@@ -488,7 +488,9 @@ BeginDownload(
 	downFile = fopen( downloadFile, "w" );
 	/* Set user write-only and mandatory locking (the latter is indicated by
 	   group-execute off and set-group-ID on). */
+/* OW: removed while debugging.
 	chmod( downloadFile, S_IWUSR | S_ISGID );
+*/
 
 	/* Extract the hostname from the remote filename. */
 	g_regex_match( regexes.hostname, remotePath, 0, &matchInfo );
@@ -497,26 +499,33 @@ BeginDownload(
 	s3Comm->bucket    = (char*) bucket;
 	s3Comm->keyId     = (char*) keyId;
 	s3Comm->secretKey = (char*) secretKey;
-	s3Comm->region    = HostnameToRegion( hostname );
-	headers = BuildS3Request( s3Comm, "GET", hostname, NULL, remotePath );
+	s3Comm->region    = HostnameToRegion( remotePath );
+
+	g_regex_match( regexes.removeHost, remotePath, 0, &matchInfo );
+	filepath = g_match_info_fetch( matchInfo, 1 );
+	headers = BuildS3Request( s3Comm, "GET", hostname, NULL, filepath );
 	free( bucket );
 	free( keyId );
 	free( secretKey );
 	free( (char*) hostname );
+	free( (char*) filepath );
 
 	/* Download the file and wait until it has been received. */
 	curl_easy_reset( curl );
 	curl_easy_setopt( curl, CURLOPT_WRITEDATA, downFile );
+	curl_easy_setopt( curl, CURLOPT_HTTPHEADER, headers );
+
 	curl_easy_setopt( curl, CURLOPT_URL, remotePath );
-	free( remotePath );
-	DeleteCurlSlistAndContents( headers );
 
 	pthread_mutex_unlock( &mainLoop_mutex );
-#ifndef AUTOTEST
-	status = curl_easy_perform( curl );
-#else
+#ifdef AUTOTEST_SKIP_COMMUNICATIONS
 	status = 0;
+#else
+	printf( "Executing HTTP request\n" );
+	status = curl_easy_perform( curl );
 #endif
+	DeleteCurlSlistAndContents( headers );
+	free( remotePath );
 	fclose( downFile );
 
 	if( status == 0 )
@@ -637,6 +646,7 @@ MoveToSharedCache(
 	              )
 {
 	char *chownRequest;
+	char *publishRequest;
 	char reply[ 40 ];
 
 	/* Give the directory its original owners. It was created with proper
@@ -652,15 +662,24 @@ MoveToSharedCache(
 	free( chownRequest );
 
 	/* Similarly, give the downloaded file appropriate ownership. */
-	chownRequest = malloc( strlen( filename ) + strlen( "chown xxxxx xxxxx " )
+	chownRequest = malloc( strlen( parentname ) + sizeof( char )
+						   + strlen( filename ) + strlen( "chown xxxxx xxxxx " )
 						   + sizeof( char ) );
 	sprintf( chownRequest, "CHOWN %d:%d:", (int) uid, (int) gid );
+	strcat( chownRequest, parentname );
+	strcat( chownRequest, "/" );
 	strcat( chownRequest, filename );
 	SendGrantMessage( socketHandle, chownRequest, reply, sizeof( reply ) );
 #ifdef AUTOTEST
 	printf( "2: %s\n", chownRequest );
 #endif
 	free( chownRequest );
+
+	/* Move the file to the shared directory. */
+	publishRequest = malloc( strlen( parentname ) + strlen( filename ) +
+							 strlen( "publish :" ) + sizeof( char ) );
+	sprintf( publishRequest, "PUBLISH %s:%s", parentname, filename );
+	SendGrantMessage( socketHandle, publishRequest, reply, sizeof( reply ) );
 
 	return( true );
 }

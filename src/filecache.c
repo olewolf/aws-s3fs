@@ -75,7 +75,7 @@ STATIC void CompileRegexes( void );
 static void FreeRegexes( void );
 STATIC void *ReceiveRequests( void* );
 static void *ClientConnectionsListener( void* );
-#ifdef AUTOTEST
+#ifdef AUTOTEST_SKIP_COMMUNICATIONS
 extern int ReadEntireMessage( int connectionHandle, char **clientMessage );
 #else
 static int ReadEntireMessage( int connectionHandle, char **clientMessage );
@@ -86,10 +86,6 @@ STATIC char *TrimString( char *original );
 
 STATIC int ClientConnects(
 	struct CacheClientConnection *clientConnection, const char *request );
-/*
-STATIC int ClientRequestsCaching(
-	struct CacheClientConnection *clientConnection, const char *request );
-*/
 STATIC int ClientRequestsCreate(
 	struct CacheClientConnection *clientConnection, const char *request );
 STATIC int ClientDisconnects(
@@ -103,13 +99,8 @@ ClientRequestsShutdown(
 static int
 ClientRequestsDebugMessage(
 	struct CacheClientConnection *clientConnection, const char *request );
-
-/*
-static int ClientRequestsMkdir(
-    struct CacheClientConnection *clientConnection, const char *request );
-*/
-//static int ClientRequestsDownload(
-//	struct CacheClientConnection *clientConnection, const char *request );
+static int ClientRequestsDownload(
+	struct CacheClientConnection *clientConnection, const char *request );
 
 
 
@@ -218,18 +209,19 @@ SendMessageToClient(
 	/* Block the SIGPIPE signal if the client happens to have disconnected. */
 	BlockSigpipeSignal( &wasPending, &wasBlocked );
 	/* Send the message to the client. */
-#ifndef AUTOTEST
+#ifdef AUTOTEST_SKIP_COMMUNICATIONS
+	status = strlen( message ) + sizeof( char );
+#else
 	status = write( connectionHandle, message,
 					strlen( message ) + sizeof( char ) );
-#else
+#endif
+#ifdef AUTOTEST
 	printf( "Sent: \"%s\"\n", message );
-	status = strlen( message ) + sizeof( char );
 #endif
 	/* Restore the SIGPIPE signal action. */
 	RestoreSigpipeSignal( wasPending, wasBlocked );
 	return( status );
 }
-
 
 
 
@@ -321,8 +313,9 @@ ShutdownFileCache(
  * @param clientMessage [out] Message received from the client.
  * @return Number of bytes read.
  */
-/* During automated unit tests, this function is replaced by a simulation. */
-#ifndef AUTOTEST
+/* During one of the automated unit tests, this function is replaced by a
+   simulation. */
+#ifndef AUTOTEST_SKIP_COMMUNICATIONS
 static int
 ReadEntireMessage(
     int  connectionHandle,
@@ -384,7 +377,7 @@ ReadEntireMessage(
 	*clientMessage = message;
 	return( messageSize );
 }
-#endif /* AUTOTEST */
+#endif /* AUTOTEST_SKIP_COMMUNICATIONS */
 
 
 
@@ -474,7 +467,7 @@ CommandDispatcher(
 	} dispatchTable[ ] =
 	    {
 			{ "FILE",       ClientRequestsLocalFilename },
-//			{ "CACHE",      ClientRequestsCaching },
+			{ "CACHE",      ClientRequestsDownload },
 			{ "CREATE",     ClientRequestsCreate },
 			{ "CONNECT",    ClientConnects },
 			{ "DISCONNECT", ClientDisconnects },
@@ -763,9 +756,11 @@ ClientConnects(
 	          )
 {
 	char       *bucket;
+	char       *uidStr;
 	char       *keyId;
 	char       *secretKey;
 	GMatchInfo *matchInfo;
+    uid_t      uid;
 	int        status = -EINVAL;
 
 	/* Grep the bucket, the key, and the secret key. */
@@ -773,8 +768,9 @@ ClientConnects(
 	if( g_regex_match( regexes.connectAuth, request, 0, &matchInfo ) )
 	{
 		bucket    = g_match_info_fetch( matchInfo, 1 );
-		keyId     = g_match_info_fetch( matchInfo, 2 );
-		secretKey = g_match_info_fetch( matchInfo, 3 );
+		uidStr    = g_match_info_fetch( matchInfo, 2 );
+		keyId     = g_match_info_fetch( matchInfo, 3 );
+		secretKey = g_match_info_fetch( matchInfo, 4 );
 		g_match_info_free( matchInfo );
 
 		/* Store the bucket name and the keys in the client connection info
@@ -787,6 +783,9 @@ ClientConnects(
 					 sizeof( clientConnection->keyId ) );
 			strncpy( clientConnection->secretKey, secretKey,
 					 sizeof( clientConnection->secretKey ) );
+			/* Add the user to the database. */
+			uid = atoi( uidStr );
+			Query_AddUser( uid, keyId, secretKey );
 			SendMessageToClient( clientConnection->connectionHandle,
 								 "CONNECTED" );
 			status = 0;
@@ -859,19 +858,42 @@ ClientRequestsLocalFilename(
 
 
 /**
- * The client sends a local file creation file, and the filecache server
- * creates a local parent and a local file as appropriate.
- * @param clientConnection [in/out] CacheClientConnection structure for the
- *        client.
- * @param request [in] Creation request parameters.
- * @return 0 on success, or \a -errno on failure.
- * Test: unit test (test-filecache.c).
+ * Enter client subscribtion to a file for download.
+ * @param clientConnection [in] Client Connection structure.
+ * @param request [in] Request parameters.
+ * @return Always \a 0.
  */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 STATIC int
-ClientRequestsCreate(
+ClientRequestsDownload(
     struct CacheClientConnection *clientConnection,
 	const char                   *request
-	                 )
+	                  )
+{
+	sqlite3_uint64 fileId;
+
+	fileId = atoll( request );
+	ReceiveDownload( fileId );
+	SendMessageToClient( clientConnection->connectionHandle, "OK" );
+
+	return( 0 );
+}
+
+
+
+/**
+ * 
+ * @param clientConnection [in/out] CacheClientConnection structure for the
+ *        client.
+ * @param request [in] Subscription request parameters.
+ * @return 0 on success, or \a -errno on failure.
+ * Test: implied blackbox (test-filecache.c and test-process.c).
+ */
+STATIC int ClientRequestsCreate(
+    struct CacheClientConnection *clientConnection,
+	const char                   *request
+	                           )
 {
 	int         status;
 
@@ -897,6 +919,7 @@ ClientRequestsCreate(
 	char          *filename;
 	char          *localfile;
 	char          *reply;
+	sqlite3_int64 fileId;
 
 	/* Extract parent uid, parent gid, parent permissions, uid, gid,
 	   permissions, mtime, and filename. */
@@ -944,13 +967,14 @@ ClientRequestsCreate(
 		if( 0 < parentId )
 		{
 			/* Create a local file for the filename and return the name. */
-			if( CreateLocalFile( clientConnection->bucket, filename,
-								 uid, gid, permissions,
-								 mtime, parentId, &localfile ) )
+			if( ( fileId = CreateLocalFile( clientConnection->bucket, filename,
+											uid, gid, permissions,
+											mtime, parentId, &localfile ) )
+				> 0 )
 			{
 				reply = malloc( strlen( "CREATED " ) + sizeof( localfile )
-								+ sizeof( char ) );
-				sprintf( reply, "CREATED %s", localfile );
+								+ 15 + sizeof( char ) );
+				sprintf( reply, "CREATED %s %lld", localfile, fileId );
 				SendMessageToClient( clientConnection->connectionHandle,
 									 reply );
 				free( reply );
@@ -1020,9 +1044,10 @@ CompileRegexes(
     void
 	           )
 {
-	/* Grep "bucket:keyid:secretkey" from the parameter string. */
+	/* Grep "bucket:uid:keyid:secretkey" from the parameter string. */
 	const char *connectAuth =
-		"^\\s*([a-zA-Z0-9-\\+_]+)\\s*:\\s*([a-zA-Z0-9\\+/=]{20})\\s*:\\s*([a-zA-Z0-9\\+/=]{40})\\s*$";
+		"^\\s*([a-zA-Z0-9-\\+_]+)\\s*:\\s*([0-9]{1,5})\\s*:\\s*"
+		"([a-zA-Z0-9\\+/=]{20})\\s*:\\s*([a-zA-Z0-9\\+/=]{40})\\s*$";
 
 	/* Grep uid:gid:perm:mtime:string */
 	const char *createFileOptions =
@@ -1039,8 +1064,13 @@ CompileRegexes(
 	/* Extract the hostname from a URL. */
 	const char *hostname = "^http(s?)://(.+\\.amazonaws\\.com).*";
 
+	/* Extract the region from a URL. */
 	const char *regionPart =
 		"^http[s]?://([^\\.]+\\.)?([^\\.]+)\\.amazonaws\\.com";
+
+	/* Extract the file path from a URL. */
+	const char *removeHost = "^http[s]?://.+\\.amazonaws\\.com(/.*)$";
+
 
 	/* Compile regular expressions. */
     #define COMPILE_REGEX( regex ) regexes.regex = \
@@ -1052,6 +1082,7 @@ CompileRegexes(
 	COMPILE_REGEX( rename );
 	COMPILE_REGEX( hostname );
 	COMPILE_REGEX( regionPart );
+	COMPILE_REGEX( removeHost );
 }
 
 
@@ -1072,6 +1103,7 @@ FreeRegexes(
 	g_regex_unref( regexes.rename );
 	g_regex_unref( regexes.hostname );
 	g_regex_unref( regexes.regionPart );
+	g_regex_unref( regexes.removeHost );
 }
 
 
@@ -1095,7 +1127,7 @@ ClientRequestsDebugMessage(
 	/* Send a message that does not carry a valid request. */
 	sprintf( buffer, "DEBUG test socket" );
 	SendGrantMessage( testSocket, buffer, buffer, sizeof( buffer ) );
-	write( clientConnection->connectionHandle, buffer, strlen( buffer ) + 1 );
+	SendMessageToClient( clientConnection->connectionHandle, buffer );
 	return( 0 );
 }
 #pragma GCC diagnostic pop
