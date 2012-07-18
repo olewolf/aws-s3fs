@@ -142,11 +142,6 @@ void test_LiveDownload( const char *param )
 	char          reply[ 40 ];
 	uid_t         uid;
 	gid_t         gid;
-	sqlite3_int64 fileId;
-
-#ifndef MAKE_OPENSSL_TESTS
-	exit( 77 );
-#endif
 
 	ReadLiveConfig( param );
 
@@ -198,9 +193,8 @@ void test_LiveDownload( const char *param )
 	system( request );
 
 	/* Request download of the file. */
-	fileId = atoll( &reply[ 15 ] );
-	printf( "Requesting download of file id %lld\n", fileId );
-	sprintf( request, "CACHE %lld", fileId );
+	printf( "Requesting download of file %s\n", url );
+	sprintf( request, "CACHE %s", url );
 	write( socketFd, request, strlen( request ) );
 	read( socketFd, reply, sizeof( reply ) );
 	printf( "Reply: %s\n", reply );

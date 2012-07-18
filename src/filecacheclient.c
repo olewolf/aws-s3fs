@@ -210,10 +210,6 @@ DownloadCacheFile(
 	request = malloc( strlen( "CACHE " ) + strlen( path ) + sizeof( char ) );
 	strcpy( request, "CACHE " );
 	strcat( request, path );
-#if 0
-	request = malloc( strlen( "CACHE " ) + 22 * sizeof( char ) );
-	sprintf( request, "CACHE %lld", fileId );
-#endif
 	/* Tell the cache to start caching this file. */
 	reply = (char*) SendCacheRequest( request );
 	if( strncmp( reply, "OK", 2 ) == 0 )
@@ -258,9 +254,6 @@ GetLocalFilename(
 	{
 		localfile = NULL;
 	}
-	printf( "reply: %s\n", reply );
-	printf( "%s is local file: %s\n", remotepath, localfile );
-	sleep( 1 );
 	free( reply );
 	free( request );
 	return( localfile );
@@ -274,17 +267,23 @@ GetLocalFilename(
  * @param path [in] Path name of the file.
  * @return 0 on success, or \a -errno on failure.
  */
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
 int
 CloseCacheFile(
 	const char *path
 	           )
 {
-	/* Stub */
+	char *request;
+	char *reply;
+
+	request = malloc( strlen( path ) + strlen( "DROP  " ) );
+	strcpy( request, "DROP " );
+	strcat( request, path );
+	reply = (char*) SendCacheRequest( request );
+	free( request );
+	free( reply );
+
 	return( 0 );
 }
-#pragma GCC diagnostic pop
 
 
 

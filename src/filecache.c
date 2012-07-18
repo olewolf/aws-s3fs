@@ -101,6 +101,8 @@ ClientRequestsDebugMessage(
 	struct CacheClientConnection *clientConnection, const char *request );
 static int ClientRequestsDownload(
 	struct CacheClientConnection *clientConnection, const char *request );
+static int ClientRequestsFileClose(
+	struct CacheClientConnection *clientConnection, const char *request );
 
 
 
@@ -153,7 +155,7 @@ void
 RestoreSigpipeSignal( 
 	bool wasPending,
 	bool wasBlocked
-	               )
+	                 )
 {
 	sigset_t                     pendingSignal;
 	static const struct timespec zeroWait = { 0, 0 };
@@ -467,8 +469,9 @@ CommandDispatcher(
 	} dispatchTable[ ] =
 	    {
 			{ "FILE",       ClientRequestsLocalFilename },
-			{ "CACHE",      ClientRequestsDownload },
 			{ "CREATE",     ClientRequestsCreate },
+			{ "CACHE",      ClientRequestsDownload },
+			{ "DROP",       ClientRequestsFileClose },
 			{ "CONNECT",    ClientConnects },
 			{ "DISCONNECT", ClientDisconnects },
 			{ "QUIT",       ClientRequestsShutdown },
@@ -983,7 +986,8 @@ STATIC int ClientRequestsCreate(
 		free( parentdir );
 		if( 0 < parentId )
 		{
-			/* Create a local file for the filename and return the name. */
+			/* Create a local file for the filename and return the name.
+			   The creation automatically increments the subscription count. */
 			if( ( fileId = CreateLocalFile( clientConnection->bucket, filename,
 											uid, gid, permissions,
 											mtime, parentId, &localfile ) )
@@ -1148,3 +1152,26 @@ ClientRequestsDebugMessage(
 	return( 0 );
 }
 #pragma GCC diagnostic pop
+
+
+
+static int
+ClientRequestsFileClose(
+	struct CacheClientConnection *clientConnection,
+    const char                   *request
+	                    )
+{
+	sqlite3_int64 fileId;
+	char localname[ 14 ];
+
+	bool result;
+
+	fileId = FindFile( request, localname );
+	if( fileId > 0 )
+	{
+		result = Query_DecrementSubscriptionCount( fileId );
+		printf( "Decremented subscription count for %d with status %d\n", (int)fileId, result );
+	}
+	SendMessageToClient( clientConnection->connectionHandle, "OK" );
+	return( 0 );
+}

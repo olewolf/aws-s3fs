@@ -1,3 +1,7 @@
+2012-07-18:
+	Brought the test suite up to date to account for yesterday's code changes.
+	Added "Close File" functionality.
+
 2012-07-17:
 	Live download via the download queue tested.
 	Milestone met: download via download queue.

@@ -92,7 +92,7 @@ void
 static inline void
 UnlockCaches(
 void
-	   )
+	         )
 {
     pthread_mutex_unlock( &cache_mutex );
 }
@@ -1357,21 +1357,24 @@ S3Open(
  * @return 0 on success, or \a -errno on failure.
  */
 int
-S3Close(
+S3FileClose(
 	const char *path
-	   )
+	        )
 {
 	struct S3FileInfo *fi;
-	int               success = -EIO;
+	int               success;
+	char              *url;
 
+	printf( "S3FileClose %s\n", path );
 	success = S3FileStat( path, &fi );
 	if( success == 0 )
 	{
 		success = close( fi->localFd );
 		fi->localFd = -1;
 	}
-
-	CloseCacheFile( path );
+	url = PrependHttpsToPath( path );
+	CloseCacheFile( url );
+	free( url );
 
 	return( success );
 }
@@ -1458,18 +1461,6 @@ S3ReadFile(
 int S3FlushBuffers( const char *path )
 {
     /* There currently aren't any buffers to flush, so just return. */
-    return 0;
-}
-#pragma GCC diagnostic pop
-
-
-
-/* Disable warning that userdata is unused. */
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-int S3FileClose( const char *path )
-{
-    /* Update the last access time, and stat the file. */
     return 0;
 }
 #pragma GCC diagnostic pop

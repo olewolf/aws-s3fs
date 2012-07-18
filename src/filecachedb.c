@@ -327,29 +327,28 @@ CompileStandardQueries(
          WHERE files.remotename = ?;";
 
     const char *const incrementSubscriptionSql = 
-        "UPDATE files SET subscriptions = subscriptions + 1   \
-         WHERE remotename = ?;";
+        "UPDATE files SET subscriptions = subscriptions + 1 WHERE id = ?;";
 
     const char *const decrementSubscriptionSql = 
-        "UPDATE files SET subscriptions = subscriptions - 1   \
-         WHERE remotename = ?;";
+        "UPDATE files SET subscriptions = subscriptions - 1 WHERE id = ?;";
 
 	const char *const downloadSql =
-/*
+
 		"SELECT files.bucket, files.remotename, files.localname,  \
                 users.keyid, users.secretkey                      \
         FROM transfers                                            \
             LEFT JOIN files ON transfers.file = files.id          \
             LEFT JOIN users ON transfers.owner = users.uid        \
         WHERE files.id = ?;";
-*/
+
+/*
 		"SELECT files.bucket, files.remotename, files.localname,  \
                 users.keyid, users.secretkey                      \
         FROM files, users, transfers                              \
             WHERE transfers.file = files.id          \
             AND   transfers.owner = users.uid        \
             AND   files.id = ?;";
-
+*/
 	const char *const allOwnersSql =
 		"SELECT files.uid, files.gid, files.permissions, files.localname,  \
                 parents.uid, parents.gid, parents.localname                \
@@ -605,6 +604,7 @@ Query_CreateLocalFile(
 	/* Return the file ID if the file is already cached. */
 	if( ( id = FindFile( path, localname ) ) != 0 )
 	{
+	    Query_IncrementSubscriptionCount( id );
 		strncpy( localfile, localname, 7 );
 		*alreadyExists = true;
 		return( id );

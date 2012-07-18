@@ -53,35 +53,35 @@ AT_CHECK([grep '^8: Authorization: AWS @<:@a-zA-Z0-9@:>@\+:@<:@a-zA-Z0-9+/=@:>@\
 AT_CLEANUP
 
 AT_SETUP([SubmitS3Request Headers (Live Test)])
-AT_CHECK([test-s3if SubmitS3RequestHead ../../testdata/livetest.ini], [], [stdout])
+AT_CHECK([test-s3if 2>&1 SubmitS3RequestHead ../../testdata/livetest.ini], [], [stdout])
 AT_CHECK([MD5SUM="`(md5sum ../../../README | sed -n "s^\(@<:@0-9a-f@:>@\{32\}\).*^\1^p")`"; grep "^ETag: \"$MD5SUM\"" stdout], [], [ignore])
 AT_CLEANUP
 
 AT_SETUP([SubmitS3Request Body (Live Test)])
-AT_CHECK([test-s3if SubmitS3RequestData ../../testdata/livetest.ini], [], [stdout])
+AT_CHECK([test-s3if 2>&1 SubmitS3RequestData ../../testdata/livetest.ini], [], [stdout])
 AT_CHECK([grep "<Contents><Key>directory/COPYING</Key><LastModified>" stdout], [], [ignore])
 AT_CLEANUP
 
 AT_SETUP([S3GetFileStat (Live Test)])
-AT_CHECK([test-s3if S3GetFileStat ../../testdata/livetest.ini], [], [stdout])
+AT_CHECK([test-s3if 2>&1 S3GetFileStat ../../testdata/livetest.ini], [], [stdout])
 AT_CHECK([grep "^t=f s=`stat -c \"%s\" ../../../README` p=644 uid=`id -u` gid=`id -g`$" stdout], [], [ignore])
 AT_CHECK([grep "^m=@<:@(Mon\|Tue\|Wed\|Thu\|Fri\|Sat\|Sun)@:>@@<:@@<:@:space:@:>@@:>@(Jan\|Feb\|Mar\|Apr\|May\|Jun\|Jul\|Aug\|Sep\|Oct\|Nov\|Dec)@<:@@<:@:space:@:>@@:>@@<:@1-3@:>@\?@<:@0-9@:>@@<:@@<:@:space:@:>@@:>@@<:@0-3@:>@@<:@0-9@:>@:@<:@0-5@:>@@<:@0-9@:>@@<:@0-5@:>@@<:@0-9@:>@@<:@@<:@:space:@:>@@:>@20@<:@0-9@:>@\{2\}$" stdout], [], [ignore])
 AT_CLEANUP
 
 AT_SETUP([S3FileStat File (Live Test)])
-AT_CHECK([test-s3if S3FileStatFile ../../testdata/livetest.ini], [], [stdout])
+AT_CHECK([test-s3if 2>&1 S3FileStatFile ../../testdata/livetest.ini], [], [stdout])
 AT_CHECK([grep "^t=f s=`stat -c \"%s\" ../../../README` p=644 uid=`id -u` gid=`id -g`$" stdout], [], [ignore])
 AT_CHECK([grep "^m=@<:@(Mon\|Tue\|Wed\|Thu\|Fri\|Sat\|Sun)@:>@@<:@@<:@:space:@:>@@:>@(Jan\|Feb\|Mar\|Apr\|May\|Jun\|Jul\|Aug\|Sep\|Oct\|Nov\|Dec)@<:@@<:@:space:@:>@@:>@@<:@1-3@:>@\?@<:@0-9@:>@@<:@@<:@:space:@:>@@:>@@<:@0-3@:>@@<:@0-9@:>@:@<:@0-5@:>@@<:@0-9@:>@@<:@0-5@:>@@<:@0-9@:>@@<:@@<:@:space:@:>@@:>@20@<:@0-9@:>@\{2\}$" stdout], [], [ignore])
 AT_CLEANUP
 
 AT_SETUP([S3FileStat Directory (Live Test)])
-AT_CHECK([test-s3if S3FileStatDir ../../testdata/livetest.ini], [], [stdout])
+AT_CHECK([test-s3if 2>&1 S3FileStatDir ../../testdata/livetest.ini], [], [stdout])
 AT_CHECK([grep "^t=d s=0 p=755 uid=`id -u` gid=`id -g`$" stdout], [], [ignore])
 AT_CHECK([grep "^m=@<:@(Mon\|Tue\|Wed\|Thu\|Fri\|Sat\|Sun)@:>@@<:@@<:@:space:@:>@@:>@(Jan\|Feb\|Mar\|Apr\|May\|Jun\|Jul\|Aug\|Sep\|Oct\|Nov\|Dec)@<:@@<:@:space:@:>@@:>@@<:@1-3@:>@\?@<:@0-9@:>@@<:@@<:@:space:@:>@@:>@@<:@0-3@:>@@<:@0-9@:>@:@<:@0-5@:>@@<:@0-9@:>@@<:@0-5@:>@@<:@0-9@:>@@<:@@<:@:space:@:>@@:>@20@<:@0-9@:>@\{2\}$" stdout], [], [ignore])
 AT_CLEANUP
 
 AT_SETUP([S3ReadDir (Live Test)])
-AT_CHECK([test-s3if S3ReadDir ../../testdata/livetest.ini], [], [stdout])
+AT_CHECK([test-s3if 2>&1 S3ReadDir ../../testdata/livetest.ini], [], [stdout])
 AT_CHECK([grep "^0: \.$" stdout], [], [ignore])
 AT_CHECK([grep "^1: \.\.$" stdout], [], [ignore])
 AT_CHECK([grep "^2: COPYING$" stdout], [], [ignore])
