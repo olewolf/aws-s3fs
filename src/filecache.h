@@ -29,8 +29,10 @@
 #include "aws-s3fs.h"
 
 
-#define MAX_SIMULTANEOUS_DOWNLOADS 6
+#define MAX_SIMULTANEOUS_TRANSFERS 3
 
+/* The preferred upload part size for multipart uploads, in megabytes. */
+#define PREFERRED_CHUNK_SIZE 25
 
 
 struct RegularExpressions
@@ -42,6 +44,7 @@ struct RegularExpressions
 	GRegex *hostname;
 	GRegex *regionPart;
 	GRegex *removeHost;
+	GRegex *getUploadId;
 };
 
 extern struct RegularExpressions regexes;
@@ -63,7 +66,10 @@ const char *SendCacheRequest( const char *message );
 const char *ReceiveCacheReply( void );
 void InitializePermissionsGrant( pid_t childPid, int socketHandle );
 void *ProcessDownloadQueue( void *socket );
-void ReceiveDownload( sqlite3_int64 fileId );
+void ReceiveDownload( sqlite3_int64 fileId, uid_t owner );
+int NumberOfMultiparts( long long int filesize );
+int CreateFilePart( int socket, const char *filename, int part,
+					long long int filesize, const char **localPath );
 
 
 /* Database */
@@ -79,6 +85,11 @@ sqlite3_int64 Query_CreateLocalDir( const char *path, int uid, int gid,
 									bool *alreadyExists );
 bool Query_GetDownload( sqlite3_int64 fileId, char **bucket, char **remotepath,
 						char **localfile, char **keyId, char **secretKey );
+bool Query_GetUpload( sqlite3_int64 fileId, int *part, char **bucket,
+					  char **remotePath, char **uploadId,
+					  uid_t *uid, gid_t *gid, int *permissions,
+					  long long int *filesize, char **localPath,
+					  char **keyId, char **secretKey );
 bool Query_GetOwners( sqlite3_int64 fileId, char **parentdir,
 					  uid_t *parentUid, gid_t *parentGid, char **filename,
 					  uid_t *uid, gid_t *gid, int *permissions );
@@ -92,6 +103,15 @@ sqlite3_int64 FindFile( const char *filename, char *localname );
 void Query_MarkFileAsCached( sqlite3_int64 fileId );
 bool Query_IsFileCached( sqlite3_int64 fileId );
 const char *GetLocalFilename( const char *remotepath );
+void Query_CreateMultiparts( sqlite3_int64 fileId, int parts );
+bool Query_AddUpload( sqlite3_int64 fileId, uid_t owner,
+					  long long int filesize );
+void Query_SetUploadId( sqlite3_int64, char *uploadId );
+sqlite3_int64 Query_FindPendingUpload( void );
+void Query_SetPartETag( sqlite3_int64 fileId, int part, const char *md5sum );
+bool Query_AllPartsUploaded( sqlite3_int64 fileId );
+const char *Query_GetPartETag( sqlite3_int64 fileId, int part );
+bool Query_DeleteUploadTransfer( sqlite3_int64 fileId );
 
 
 #endif /* __FILECACHE_H */

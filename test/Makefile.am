@@ -44,26 +44,25 @@ test_s3if_SOURCES= $(SHAREDTESTSOURCE) test-s3if.c ../src/s3if.c \
 	src/dircache.h src/s3comms.h ../src/s3comms.c \
 	../src/filecacheclient.c fakesocket.c
 test_filecache_SOURCES= $(SHAREDTESTSOURCE) test-filecache.c src/filecache.h \
-	../src/filecache.c src/socket.h fakesocket.c \
+	../src/filecache.c ../src/filecachedb.c src/socket.h fakesocket.c \
 	../src/downloadqueue.c ../src/grant.c ../src/s3comms.c src/s3comms.h \
 	../src/digest.c src/digest.h src/base64.h ../src/base64.c
 test_downloadqueue_SOURCES= $(SHAREDTESTSOURCE) test-downloadqueue.c \
-	../src/downloadqueue.c ../src/filecache.h \
-	../src/filecache.c fakesocket.c ../src/grant.c
+	../src/filecache.h ../src/downloadqueue.c ../src/filecachedb.c \
+	../src/filecache.c ../src/grant.c s3comms.h \
+	../src/digest.c ../src/digest.h ../src/base64.c ../src/base64.h \
+	fakesocket.c
 test_process_SOURCES= $(SHAREDTESTSOURCE) test-process.c \
 	../src/downloadqueue.c ../src/s3comms.c ../src/digest.c ../src/base64.c \
-	../src/filecache.c ../src/grant.c
+	../src/digest.h ../src/base64.h ../src/s3comms.h \
+	filecache.h ../src/filecache.c ../src/grant.c ../src/filecachedb.c
 aws_s3fs_queued_SOURCES = ../src/config.h aws-s3fs.h sysdirs.h filecache.h \
 	../src/base64.h digest.h s3comms.h ../src/socket.h \
 	../src/filecache.c ../src/socket.c ../src/filecachedb.c \
 	../src/downloadqueue.c ../src/grant.c ../src/base64.c ../src/digest.c \
 	../src/s3comms.c ../src/aws-s3fs-queued.c
 
-SHAREDTESTSOURCE = dispatch.c aws-s3fs.h shared.c testfunctions.h \
-	../src/filecachedb.c
-
-# Replace the ReadEntireMessage function with a simulation.
-test_filecache_CFLAGS = $(AM_CFLAGS) -DAUTOTEST_SKIP_COMMUNICATIONS
+SHAREDTESTSOURCE = dispatch.c aws-s3fs.h shared.c testfunctions.h
 
 AM_CFLAGS = -I../src -DAUTOTEST -DCACHE_DIRECTORY="./cachedir" -DDEBUG -O0 -g
 if MAKE_OPENSSL_TESTS
@@ -72,6 +71,12 @@ endif
 if HAVE_SQLITE_UTIL
 AM_CFLAGS += -DHAVE_SQLITE_UTIL
 endif
+
+test_filecache_CFLAGS = $(AM_CFLAGS) -DAUTOTEST_SKIP_COMMUNICATIONS \
+	-DAUTOTEST_WITH_FILECACHE
+test_downloadqueue_CFLAGS = $(AM_CFLAGS) -DAUTOTEST_WITH_FILECACHE
+test_process_CFLAGS = $(AM_CFLAGS) -DAUTOTEST_WITH_FILECACHE
+aws_s3fs_queued_CFLAGS = $(AM_CFLAGS) -DAUTOTEST_WITH_FILECACHE
 
 
 # See 

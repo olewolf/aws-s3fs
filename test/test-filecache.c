@@ -276,9 +276,9 @@ static void test_DeleteTransfer( const char *param )
 	bool  status;
 
 	FillDatabase( );
-	status = Query_DeleteTransfer( 2 );
+	status = Query_DeleteTransfer( 2 ); /* deletes transfer.id = 1 */
 	printf( "1: %d\n", status );
-	status = Query_DeleteTransfer( 3 );
+	status = Query_DeleteTransfer( 3 ); /* deletes transfer.id = 2 */
 	printf( "2: %d\n", status );
 	status = Query_DeleteTransfer( 200 );
 	printf( "3: %d\n", status );

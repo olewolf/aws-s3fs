@@ -50,12 +50,11 @@
 
 #define DEFAULT_TMP_DIR "/tmp"
 
-/* Maximum number of open files. */
-#define MAX_FILE_DESCRIPTORS 16
+/* Define a file cache size of 1 GByte. */
+#define FILE_CACHE_SIZE ( 1 * 1024 * (1024*1024) )
 
-
-/* Make room for 5,000 files in the stat cache. */
-#define MAX_STAT_CACHE_SIZE 5000l
+/* Make room for 2,000 files in the stat cache. */
+#define MAX_STAT_CACHE_SIZE 2000l
 
 /* Default, system-wide aws-s3fs.conf file. */
 #define DEFAULT_CONFIG_FILENAME SYSCONFDIR "/aws-s3fs.conf"

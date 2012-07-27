@@ -18,8 +18,8 @@
 
 AT_BANNER([Download Queue])
 
-AT_SETUP([GetSubscriptionFromQueue])
-AT_CHECK([test-downloadqueue GetSubscriptionFromQueue], [], [stdout])
+AT_SETUP([GetSubscriptionFromDownloadQueue])
+AT_CHECK([test-downloadqueue GetSubscriptionFromDownloadQueue], [], [stdout])
 AT_CHECK([grep '^1: 2$' stdout], [], [ignore])
 AT_CHECK([grep '^2: 3$' stdout], [], [ignore])
 AT_CHECK([grep '^3: 4$' stdout], [], [ignore])

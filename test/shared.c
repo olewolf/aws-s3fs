@@ -170,6 +170,7 @@ void CheckSQLiteUtil( void )
 }
 
 
+#ifdef AUTOTEST_WITH_FILECACHE
 void CreateDatabase( void )
 {
 	unlink( CACHE_DATABASE );
@@ -189,5 +190,5 @@ void FillDatabase( void )
 		exit( EXIT_FAILURE );
 	}
 }
-
+#endif /* AUTOTEST_WITH_FILECACHE */
 

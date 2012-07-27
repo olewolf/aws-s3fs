@@ -30,6 +30,8 @@
 #include <assert.h>
 #include <ctype.h>
 #include "socket.h"
+#include <sys/stat.h>
+#include <fcntl.h>
 #include "aws-s3fs.h"
 #include "filecache.h"
 
@@ -39,6 +41,13 @@
 		( strncasecmp( x, y, strlen( y ) ) == 0 ) ) ? 0 : 1 )
 
 
+/**
+ * Extract the next integer parameter from a string whose parameters are
+ * separated by ':'.
+ * @param parameterlist [in] Parameter string.
+ * @param result [out] Value of the integer parameter.
+ * @return Number of bytes processed in the parameter string.
+ */
 static int
 GetIntParameter(
 	const char *parameterlist,
@@ -75,6 +84,13 @@ GetIntParameter(
 
 
 
+/**
+ * Extract the next six-character file name from a string whose parameters are
+ * separated by ':'.
+ * @param parameterlist [in] Parameter string.
+ * @param result [out] Null-terminated file name.
+ * @return Number of bytes processed in the parameter string.
+ */
 static int
 GetFileParameter(
 	const char *parameterlist,
@@ -106,6 +122,12 @@ GetFileParameter(
 
 
 
+/**
+ * Verify that a file name consists of exactly six characters in the set
+ * [0-9a-zA-Z].
+ * @param filename [in] Filename to verify.
+ * @return \a true if the file name is valid, or \a false otherwise.
+ */
 static bool
 VerifyFilename( char filename[ 7 ] )
 {
@@ -129,6 +151,13 @@ VerifyFilename( char filename[ 7 ] )
 
 
 
+/**
+ * Move a file from the in-progress cache directory into the shared cache
+ * folder.
+ * @param parameters [in] String with six-character parent directory name
+ * and six-character filename, separated by '/'.
+ * @return Nothing.
+ */
 static void
 GrantPublish( const char *parameters )
 {
@@ -153,15 +182,25 @@ GrantPublish( const char *parameters )
 		valid = VerifyFilename( filename );
 		if( valid )
 		{
-			/* Move the directory to CACHE_DIR/directory. */
-			dirpath = malloc( strlen( CACHE_INPROGRESS )
-							  + 7 * sizeof( char ) );
-			strcpy( dirpath, CACHE_INPROGRESS );
-			strcat( dirpath, directory );
+			/* The directory may already exist in the shared cache directory,
+			   so it cannot simply be moved out of the in-progress directory.
+			   Instead, attempt to move it ignoring any errors that are caused
+			   because it already exists.  Then remove it from the in-progress
+			   directory ignoring any errors that are caused because it is
+			   not empty.  (It ought to be empty because no files are supposed
+			   to be stored in it.) */
+
+			/* Move the directory in the CACHE_DIR/directory. */
 			destpath = malloc( strlen( CACHE_FILES ) + 7 * sizeof( char ) );
 			strcpy( destpath, CACHE_FILES );
 			strcat( destpath, directory );
+			dirpath = malloc( strlen( CACHE_INPROGRESS ) + 7 * sizeof( char ) );
+			strcpy( dirpath, CACHE_INPROGRESS );
+			strcat( dirpath, directory );
 			rename( dirpath, destpath );
+			/* Remove the directory from the in-progress directory. */
+			rmdir( dirpath );
+			free( dirpath );
 
 			/* Move the file to CACHE_DIR/directory/filename. */
 			filepath = malloc( strlen( CACHE_INPROGRESS )
@@ -175,21 +214,19 @@ GrantPublish( const char *parameters )
 			strcat( destpath, "/" );
 			strcat( destpath, filename );
 			rename( filepath, destpath );
-
 			free( filepath );
 			free( destpath );
-
-			/* Remove the directory if it is empty. Such directories are
-			   created if other files from the host were copied from the same
-			   directory. In this case, the directory already exists in its
-			   destination directory and thus cannot be moved. */
-			rmdir( dirpath );
 		}
 	}
 }
 
 
 
+/**
+ * Change ownership of a file in the shared cache directory.
+ * @param parameters [in] uid, gid, and filename separated by ':'.
+ * @return Nothing.
+ */
 static void
 GrantChown( const char *parameters )
 {
@@ -225,8 +262,8 @@ GrantChown( const char *parameters )
 		filename[ 13 ] = '\0';
 	}
 
-	/* Sanity check that the directory and the filename are both 6-letter
-	   names consisting of [0-9a-zA-Z]. */
+	/* Sanity check that both directory and filename are 6-letter names
+	   consisting of [0-9a-zA-Z]. */
 	valid = VerifyFilename( filename );
 	if( valid )
 	{
@@ -242,6 +279,129 @@ GrantChown( const char *parameters )
 			strcpy( filepath, CACHE_FILES );
 			strcat( filepath, filename );
 			chown( filepath, uid, gid );
+		}
+	}
+}
+
+
+
+/**
+ * Copy a chunk from a file into the in-progress directory, preparing it for
+ * an S3 multipart upload.  The chunk offset and size is determined by the
+ * part number and the file size.
+ * @parameters [in] Part number and file path relative to the shared cache
+ *             directory, separated by ':'.
+ * @return Nothing.
+ */
+static void
+CreateFileChunk( const char *parameters )
+{
+	int  part;
+	char filename[ 14 ];
+	char *srcfilepath;
+	char *destfilepath;
+	bool valid;
+	bool hasDirectory = false;
+	int  pos;
+
+	struct stat   fileStat;
+	int           status;
+	long long int filesize;
+	int           parts;
+	int           partSize;
+	long long int offset;
+	int           src;
+	int           dest;
+	int           relativeOffset;
+	int           index;
+	int           bytesCopied;
+	unsigned char *chunk;
+	int           nBytes;
+
+	/* Get the part number. */
+	pos = GetIntParameter( parameters, &part );
+	/* Sanity check the part number. */
+	if( ( part < 0 ) || ( 10000 < part ) )
+	{
+		return;
+	}
+
+	/* Get the first filename. */
+	pos += GetFileParameter( &parameters[ pos ], filename );
+	/* If the filename includes a parent directory, add the filename. */
+	if( parameters[ pos - 1 ] == '/' )
+	{
+		hasDirectory = true;
+		filename[ 6 ] = '\0';
+		pos += GetFileParameter( &parameters[ pos ], &filename[ 7 ] );
+		filename[ 13 ] = '\0';
+	}
+	/* Sanity check that the directory and the filename are both 6-letter
+	   names consisting of [0-9a-zA-Z]. */
+	valid = VerifyFilename( filename );
+	if( valid )
+	{
+		if( hasDirectory )
+		{
+			filename[ 6 ] = '/';
+			valid = VerifyFilename( &filename[ 7 ] );
+		}
+		if( valid )
+		{
+			/* Create the full source file path. */
+			srcfilepath = malloc( strlen( CACHE_FILES ) + strlen( filename )
+							   + sizeof( char ) );
+			strcpy( srcfilepath, CACHE_FILES );
+			strcat( srcfilepath, filename );
+
+			/* Get the second filename and sanity check it. */
+			pos += GetFileParameter( &parameters[ pos ], filename );
+			valid = VerifyFilename( filename );
+			if( valid )
+			{
+				/* Build the full destination file path. */
+				destfilepath = malloc( strlen( CACHE_INPROGRESS )
+									   + strlen( filename ) + sizeof( char ) );
+				strcpy( destfilepath, CACHE_INPROGRESS );
+				strcat( destfilepath, filename );
+
+				/* Copy the file chunk in, well, chunks. */
+				chunk = malloc( 65536 );
+				if( chunk != NULL )
+				{
+					/* Calculate the number of bytes to copy, and the offset
+					   into the source file. */
+					status = stat( srcfilepath, &fileStat );
+					if( 0 < status )
+					{
+						filesize = fileStat.st_size;
+						parts    = NumberOfMultiparts( filesize );
+						partSize = ( filesize + filesize - 1 ) / parts;
+					}
+					offset = (long long int) (part - 1 )
+						* (long long int) partSize;
+					/* Copy small chunks. */
+					src  = open( srcfilepath, O_RDONLY );
+					dest = open( destfilepath, O_WRONLY );
+					if( ( 0 <= src ) && ( 0 <= dest ) && ( 0 < status ) )
+					{
+						index       = 0;
+						bytesCopied = 0;
+						do
+						{
+							relativeOffset = index * 65536;
+							nBytes = pread( src, chunk,
+											65536, offset + relativeOffset );
+							if( 0 < nBytes )
+							{
+								write( dest, chunk, nBytes );
+								bytesCopied = bytesCopied + nBytes;
+							}
+							index++;
+						} while( ( 0 < nBytes ) && ( bytesCopied < partSize ) );
+					}
+				}
+			}
 		}
 	}
 }
@@ -286,6 +446,10 @@ InitializePermissionsGrant(
 			else if( COMPARESTRINGS( request, "PUBLISH " ) == 0 )
 			{
 				GrantPublish( &request[ 8 ] );
+			}
+			else if( COMPARESTRINGS( request, "CHUNK " ) == 0 )
+			{
+				CreateFileChunk( &request[ 6 ] );
 			}
 			else if( COMPARESTRINGS( request, "DELETE " ) == 0 )
 			{

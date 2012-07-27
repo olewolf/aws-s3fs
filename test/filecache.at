@@ -132,8 +132,7 @@ AT_CLEANUP
 AT_SETUP([DeleteTransfer Query])
 AT_CHECK([test-filecache 2>&1 DeleteTransfer], [], [stdout])
 AT_CHECK([grep "^1: 1$" stdout], [], [ignore])
-AT_CHECK([grep "foreign key constraint failed$" stdout], [], [ignore])
-AT_CHECK([grep "^2: 0$" stdout], [], [ignore])
+AT_CHECK([grep "^2: 1$" stdout], [], [ignore])
 AT_CHECK([grep "^3: 0$" stdout], [], [ignore])
 AT_CLEANUP
 

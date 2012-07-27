@@ -43,6 +43,10 @@
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #endif
 
+#define MEGABYTES ( 1024 * 1024 );
+#define GIGABYTES ( 1024 * MEGABYTES );
+#define TERABYTES ( 1024 * GIGABYTES );
+
 
 static pthread_t clientConnectionsListener;
 
@@ -889,7 +893,7 @@ ClientRequestsDownload(
 	{
 		if( 0 < fileId )
 		{
-			ReceiveDownload( fileId );
+			ReceiveDownload( fileId, clientConnection->uid );
 			SendMessageToClient( clientConnection->connectionHandle, "OK" );
 		}
 		else
@@ -1066,31 +1070,34 @@ CompileRegexes(
 	           )
 {
 	/* Grep "bucket:uid:keyid:secretkey" from the parameter string. */
-	const char *connectAuth =
+	const char const *connectAuth =
 		"^\\s*([a-zA-Z0-9-\\+_]+)\\s*:\\s*([0-9]{1,5})\\s*:\\s*"
 		"([a-zA-Z0-9\\+/=]{20})\\s*:\\s*([a-zA-Z0-9\\+/=]{40})\\s*$";
 
 	/* Grep uid:gid:perm:mtime:string */
-	const char *createFileOptions =
+	const char const *createFileOptions =
 		"([0-9]{1,5})\\s*:\\s*([0-9]{1,5})\\s*:\\s*([0-9]{1,3})\\s*:\\s*"
 		"([0-9]{1,5})\\s*:\\s*([0-9]{1,5})\\s*:\\s*([0-9]{1,3})\\s*:\\s*"
 		"([0-9]{1,20})\\s*:\\s*(.+)";
 
     /* Replace leading and trailing spaces. */
-	const char *trimString = "^[\\s]+|[\\s]+$";
+	const char const *trimString = "^[\\s]+|[\\s]+$";
 
 	/* Rename a file or directory. */
-	const char *rename = "(FILE|DIR)\\s*(.+)";
+	const char const *rename = "(FILE|DIR)\\s*(.+)";
 
 	/* Extract the hostname from a URL. */
-	const char *hostname = "^http(s?)://(.+\\.amazonaws\\.com).*";
+	const char const *hostname = "^http(s?)://(.+\\.amazonaws\\.com).*";
 
 	/* Extract the region from a URL. */
-	const char *regionPart =
+	const char const *regionPart =
 		"^http[s]?://([^\\.]+\\.)?([^\\.]+)\\.amazonaws\\.com";
 
 	/* Extract the file path from a URL. */
-	const char *removeHost = "^http[s]?://.+\\.amazonaws\\.com(/.*)$";
+	const char const *removeHost = "^http[s]?://.+\\.amazonaws\\.com(/.*)$";
+
+	/* Extract the upload ID from an S3 response. */
+	const char const *getUploadId = "<UploadId>[\\s]*(.+)[\\s]*</UploadId>";
 
 
 	/* Compile regular expressions. */
@@ -1104,6 +1111,7 @@ CompileRegexes(
 	COMPILE_REGEX( hostname );
 	COMPILE_REGEX( regionPart );
 	COMPILE_REGEX( removeHost );
+	COMPILE_REGEX( getUploadId );
 }
 
 
@@ -1125,6 +1133,7 @@ FreeRegexes(
 	g_regex_unref( regexes.hostname );
 	g_regex_unref( regexes.regionPart );
 	g_regex_unref( regexes.removeHost );
+	g_regex_unref( regexes.getUploadId );
 }
 
 
@@ -1175,3 +1184,46 @@ ClientRequestsFileClose(
 	SendMessageToClient( clientConnection->connectionHandle, "OK" );
 	return( 0 );
 }
+
+
+
+/**
+ * Calculate how many parts a multipart upload should be divided into.
+ * Anything above 5 GBytes must be split into multiple uploads, but much
+ * smaller files may be split as well.  This is preferred on computers
+ * that may not be on 24/7 or which have limited upload bandwidth or
+ * unstable connectivity.  These computers may benefit from partial uploads
+ * allowing the upload to be cancelled and resumed later.  The maximum
+ * number of parts may not exceed 10,000 transfers, and each part must be
+ * at least 5 MBytes.
+ * @param filesize [in] The total file size.
+ * @return Number of multipart uploads for this file.
+ */
+int
+NumberOfMultiparts(
+	long long int filesize
+	               )
+{
+
+	const int           CHUNK_SIZE         = PREFERRED_CHUNK_SIZE * MEGABYTES;
+	const int           MAXIMUM_MULTIPARTS = 10000;
+
+	int                 parts;
+
+	/* Attempt to divide the file into chunks of the preferred size. */
+	if( filesize <= CHUNK_SIZE * MAXIMUM_MULTIPARTS )
+	{
+		parts = ( filesize + CHUNK_SIZE - 1 ) / CHUNK_SIZE;
+	}
+	/* If that is not possible, we'll have to accept the fact that the
+	   upload chunks are bigger than the preferred size. */
+	else
+	{
+		parts = MAXIMUM_MULTIPARTS;
+	}
+
+	return( parts );
+}
+
+
+

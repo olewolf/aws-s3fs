@@ -38,7 +38,7 @@ extern struct
 	bool   isReady;
 	CURL   *curl;
 	S3COMM *s3Comm;
-} downloaders[ MAX_SIMULTANEOUS_DOWNLOADS ];
+} downloaders[ MAX_SIMULTANEOUS_TRANSFERS ];
 
 
 struct DownloadStarter
@@ -71,13 +71,13 @@ extern pthread_cond_t  mainLoop_cond;
 extern sqlite3_int64 FindFile( const char *path, char *localname );
 extern void LockDownloadQueue( void );
 extern void UnlockDownloadQueue( void );
-extern struct DownloadSubscription *GetSubscriptionFromQueue( void );
+extern struct DownloadSubscription *GetSubscriptionFromDownloadQueue( void );
 extern int FindAvailableDownloader( void );
 extern enum bucketRegions HostnameToRegion( const char *hostname );
 extern void CompileRegexes( void );
 extern void UnsubscribeFromDownload( struct DownloadSubscription *sub );
 extern void *BeginDownload( void *ctx );
-extern struct DownloadSubscription *GetSubscriptionFromQueue( void );
+extern struct DownloadSubscription *GetSubscriptionFromDownloadQueue( void );
 extern bool MoveToSharedCache( int socketHandle, const char *parentname,
 							   uid_t parentUid, gid_t parentGid,
 							   const char *filename, uid_t uid, gid_t gid );
@@ -90,7 +90,7 @@ static void test_HostnameToRegion( const char *param );
 static void test_UnsubscribeFromDownload( const char *param );
 static void test_MoveToSharedCache( const char *param );
 static void test_BeginDownload( const char *param );
-static void test_GetSubscriptionFromQueue( const char *param );
+static void test_GetSubscriptionFromDownloadQueue( const char *param );
 static void test_ProcessDownloadQueue( const char *param );
 
 
@@ -105,10 +105,14 @@ struct curl_slist* BuildS3Request( S3COMM *instance, const char *httpMethod,
 {
 	return( NULL );
 }
-
-
-
-/* Dummy function to allow the test program to compile. */
+/* Dummy function for testing. */
+int s3_SubmitS3Request( S3COMM *handle, const char *httpVerb,
+						struct curl_slist *headers, const char *filename,
+						void **data, int *dataLength )
+{
+	return( 0 );
+}
+/* Dummy function for testing. */
 int ReadEntireMessage( int connectionHandle, char **clientMessage )
 {
 	return( 0 );
@@ -124,7 +128,7 @@ const struct dispatchTable dispatchTable[ ] =
     DISPATCHENTRY( HostnameToRegion ),
     DISPATCHENTRY( UnsubscribeFromDownload ),
     DISPATCHENTRY( BeginDownload ),
-    DISPATCHENTRY( GetSubscriptionFromQueue ),
+    DISPATCHENTRY( GetSubscriptionFromDownloadQueue ),
     DISPATCHENTRY( MoveToSharedCache ),
     { NULL, NULL }
 };
@@ -199,7 +203,7 @@ static void *test_ReceiveDownload_Monitor( void *data )
 		{
 //			printf( "Monitor: Download slot available\n" );
 			/* Find an entry in the queue that isn't processed yet. */
-			subscription = GetSubscriptionFromQueue( );
+			subscription = GetSubscriptionFromDownloadQueue( );
 			if( subscription )
 			{
 //				printf( "Monitor: Download subscription found\n" );
@@ -240,7 +244,7 @@ static void *test_ReceiveDownload_Subscribe( void *data )
 	sqlite3_int64 fileId = * (sqlite3_int64*) data;
 
 	printf( "Subscribe (%d): Subscribing to download of file %d\n", ++test_ReceiveDownload_counter, (int) fileId );
-	ReceiveDownload( fileId );
+	ReceiveDownload( fileId, getuid( ) );
 
 	printf( "Subscribe (%d): Download of file %d complete\n", ++test_ReceiveDownload_counter, (int) fileId );
 	pthread_mutex_lock( &mainLoop_mutex );
@@ -293,16 +297,16 @@ static void test_FindAvailableDownloader( const char *param )
 {
 	int i;
 
-	for( i = 0; i < MAX_SIMULTANEOUS_DOWNLOADS; i++ )
+	for( i = 0; i < MAX_SIMULTANEOUS_TRANSFERS; i++ )
 	{
 		downloaders[ i ].isReady = true;
 	}
 	printf( "1: %d\n", FindAvailableDownloader( ) );
 	downloaders[ 0 ].isReady = false;
 	printf( "2: %d\n", FindAvailableDownloader( ) );
-	downloaders[ MAX_SIMULTANEOUS_DOWNLOADS - 1 ].isReady = false;
+	downloaders[ MAX_SIMULTANEOUS_TRANSFERS - 1 ].isReady = false;
 	printf( "3: %d\n", FindAvailableDownloader( ) );
-	for( i = 0; i < MAX_SIMULTANEOUS_DOWNLOADS; i++ )
+	for( i = 0; i < MAX_SIMULTANEOUS_TRANSFERS; i++ )
 	{
 		downloaders[ i ].isReady = false;
 	}
@@ -453,7 +457,7 @@ static void test_BeginDownload( const char *param )
 
 
 
-static void test_GetSubscriptionFromQueue( const char *param )
+static void test_GetSubscriptionFromDownloadQueue( const char *param )
 {
 	struct DownloadSubscription subscription1;
 	struct DownloadSubscription subscription2;
@@ -475,13 +479,13 @@ static void test_GetSubscriptionFromQueue( const char *param )
 	g_queue_push_tail( &downloadQueue, &subscription3 );
 	g_queue_push_tail( &downloadQueue, &subscription4 );
 
-	subscription = GetSubscriptionFromQueue( );
+	subscription = GetSubscriptionFromDownloadQueue( );
 	printf( "1: %d\n", (int) subscription->fileId );
 	subscription2.downloadActive = true;
-	subscription = GetSubscriptionFromQueue( );
+	subscription = GetSubscriptionFromDownloadQueue( );
 	printf( "2: %d\n", (int) subscription->fileId );
 	g_queue_remove( &downloadQueue, &subscription3 );
-	subscription = GetSubscriptionFromQueue( );
+	subscription = GetSubscriptionFromDownloadQueue( );
 	printf( "3: %d\n", (int) subscription->fileId );
 }
 
@@ -500,7 +504,7 @@ static void *test_ProcessDownloadQueue_Downloads( void *data )
 	sqlite3_int64 fileId;
 
 	fileId = * ( sqlite3_int64*) data;
-	ReceiveDownload( fileId );
+	ReceiveDownload( fileId, getuid( ) );
 	pthread_mutex_lock( &mainLoop_mutex );
 	test_ReceiveDownload_processed++;
 	printf( "Processed download %d\n", test_ReceiveDownload_processed );

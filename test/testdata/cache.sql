@@ -26,4 +26,3 @@ INSERT INTO transfers( owner, file, direction ) VALUES( '1005', '5', 'd' );
 -- Create multi-upload queue.
 INSERT INTO transferparts( transfer, part, inprogress, etag ) VALUES( '2', '1', '0', 'etagadlh5w4e3' );
 INSERT INTO transferparts( transfer, part, inprogress, etag ) VALUES( '2', '2', '0', 'etaga398aetkh' );
-

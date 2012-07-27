@@ -1,3 +1,9 @@
+2012-07-27:
+	Upload functionality largely complete, but not yet tested.
+
+2012-07-19:
+	Work begun on upload functionality.
+
 2012-07-18:
 	Brought the test suite up to date to account for yesterday's code changes.
 	Added "Close File" functionality.
