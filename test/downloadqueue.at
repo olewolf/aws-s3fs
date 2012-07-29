@@ -51,14 +51,15 @@ AT_CHECK([grep '^Received signal; 0 subscribers$' stdout], [], [ignore])
 AT_CLEANUP
 
 AT_SETUP([ReceiveDownload])
-AT_CHECK([test-downloadqueue ReceiveDownload], [], [stdout])
+AT_CHECK([test-downloadqueue 2>&1 ReceiveDownload], [], [stdout])
 AT_CHECK([grep '^Subscribe (1): Subscribing to download of file 1$' stdout], [], [ignore])
 AT_CHECK([grep '^Subscribe (2): Subscribing to download of file 1$' stdout], [], [ignore])
 AT_CHECK([grep '^Subscribe (3): Subscribing to download of file 3$' stdout], [], [ignore])
 AT_CHECK([grep '^Subscribe (4): Download of file @<:@13@:>@ complete$' stdout], [], [ignore])
 AT_CHECK([grep '^Subscribe (5): Download of file @<:@13@:>@ complete$' stdout], [], [ignore])
 AT_CHECK([grep '^Subscribe (6): Download of file @<:@13@:>@ complete$' stdout], [], [ignore])
-AT_CHECK([grep '^Downloader: Signaling @<:@12@:>@ subscriber(s)' stdout], [], [ignore])
+AT_CHECK([grep '^Downloader: Signaling 1 subscriber(s)' stdout], [], [ignore])
+AT_CHECK([grep '^Downloader: Signaling 2 subscriber(s)' stdout], [], [ignore])
 AT_CLEANUP
 
 AT_SETUP([MoveToSharedCache])

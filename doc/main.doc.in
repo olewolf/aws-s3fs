@@ -34,10 +34,10 @@ as part of the documentation.
 
 The following software is needed to run aws-s3fs:
 
-@li Timoty Kay's aws script <http://www.timkay.com/aws/>
 @li curl
 @li libfuse
 @li libconfig
+@li libsqlite3
 
 @section installation Installation
  
@@ -50,17 +50,16 @@ The aws-s3fs package uses the GNU autotools compilation and installation
 framework. The following commands should build aws-s3fs:
 
 @code
-
 $ tar -xvf aws-s3fs-@VERSION@.tar.gz
 $ cd aws-s3fs-@VERSION@
 $ ./configure
 $ make
-$ sudo make install
-
+# sudo make install
 @endcode
 
 Checkout the @c INSTALL file for installation and the generated doxygen
-documentation for more information.
+documentation for more information. The software design is described in
+Design.odt (open with LibreOffice).
 
 @subsection installation_deb Debian (Ubuntu) Repository
 
@@ -80,10 +79,6 @@ aws-s3fs searches the following files to load its configuration:
 
 @li The environment variable @c AWS_S3FS_KEY can be used to store the Amazon
 Access Key ID and the Secret Key.
-
-@section thanks Thanks
-
-@li Timothy Kay for his work on aws, which serves as the backend for aws-s3fs.
 
 @section copyright Copyright
 

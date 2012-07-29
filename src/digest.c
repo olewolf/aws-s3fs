@@ -10,6 +10,8 @@
  * Original SHA1 code copyright (C) 1998, 2009 Paul E. Jones
  * <paulej@packetizer.com> licensed as freeware.
  *
+ * See ./original for their code.
+ *
  * Modifications to the original code:
  *   * Functional modifications:
  *     - Made the MD5 code re-entrant.
@@ -57,7 +59,7 @@
 
 
 /* It is unfortunate that C does not provide an operator for
-   cyclic rotation. Hope the C compiler is smart enough.  */
+   cyclic rotation.  Hope the C compiler is smart enough.  */
 #ifdef NO_MACRO_FUNCTIONS
 static inline void
 ROTATE(
@@ -391,7 +393,7 @@ RestoreState(
 /**
  * Process the remaining bytes in the internal buffer to produce the final
  * MD5 digest.
- * @param state [in/out] MD5 state variables.
+ * @param ctx [in/out] MD5 state variables.
  * @param resbuf [out] 16 byte buffer where the MD5 digest is eventually stored.
  * @return Nothing.
  */
@@ -625,7 +627,7 @@ DigestStream(
  * Process a continuous buffer.
  * @param buffer [in] Buffer.
  * @param len [in] Number of bytes in the buffer.
- * @param state [in/out] MD5 state.
+ * @param ctx [in/out] MD5 state.
  * @return Nothing.
  */
 static void

@@ -90,6 +90,14 @@ static void test_ClientRequestsCreate( const char *param );
 static void test_ReceiveRequests( const char *param );
 static void test_CommandDispatcher( const char *param );
 static void test_ClientRequestsLocalFilename( const char *param );
+static void test_AddUploadQuery( const char *param );
+static void test_CreateMultiparts( const char *param );
+static void test_GetUpload( const char *param );
+static void test_SetUploadId( const char *param );
+static void test_AllPartsUploaded( const char *param );
+static void test_PartETag( const char *param );
+static void test_FindPendingUpload( const char *param );
+
 
 
 #define DISPATCHENTRY( x ) { #x, test_##x }
@@ -105,6 +113,13 @@ const struct dispatchTable dispatchTable[ ] =
 	DISPATCHENTRY( GetDownload ),
 	DISPATCHENTRY( GetOwners),
 	DISPATCHENTRY( DeleteTransfer ),
+	DISPATCHENTRY( AddUploadQuery ),
+	DISPATCHENTRY( CreateMultiparts ),
+	DISPATCHENTRY( GetUpload ),
+	DISPATCHENTRY( SetUploadId ),
+	DISPATCHENTRY( AllPartsUploaded ),
+	DISPATCHENTRY( PartETag ),
+	DISPATCHENTRY( FindPendingUpload ),
 
 	DISPATCHENTRY( TrimString ),
 	DISPATCHENTRY( CreateLocalDir ),
@@ -549,3 +564,167 @@ static void test_ClientRequestsLocalFilename( const char *param )
 	printf( "2: " );
 	ClientRequestsLocalFilename( &clientConnection, "http://nonexistent" );
 }
+
+
+
+static void test_AddUploadQuery( const char *param )
+{
+	bool status;
+
+	CheckSQLiteUtil( );
+	FillDatabase( );
+
+	status = Query_AddUpload( 4, 1005, 30*1024*1024 );
+	printf( "1: %d\n", status );
+	system( "echo \"SELECT filesize FROM transfers WHERE file = 4;\" | sqlite3 cachedir/cache.sl3" );
+	status = Query_AddUpload( 4, 1005, 130*1024*1024 );
+	printf( "2: %d\n", status );
+}
+
+
+
+static void test_CreateMultiparts( const char *param )
+{
+	bool status;
+
+	CheckSQLiteUtil( );
+	FillDatabase( );
+
+	status = Query_AddUpload( 4, 1005, 70*1024*1024 );
+	printf( "1: %d\n", status );
+	Query_CreateMultiparts( 4, 3 );
+	system( "echo \"SELECT COUNT(part) FROM transferparts WHERE transfer = 4;\" | sqlite3 cachedir/cache.sl3" );
+}
+
+
+
+static void test_GetUpload( const char *param )
+{
+	int           part;
+	char          *bucket;
+	char          *remotepath;
+	char          *uploadid;
+	long long int filesize;
+	uid_t         uid;
+	gid_t         gid;
+	int           permissions;
+	char          *localpath;
+	char          *keyid;
+	char          *secretkey;
+	bool          status;
+
+	CheckSQLiteUtil( );
+	FillDatabase( );
+
+	Query_AddUpload( 4, 1005, 70*1024*1024 );
+	Query_CreateMultiparts( 4, 3 );
+
+	status = Query_GetUpload( 4, &part, &bucket, &remotepath, &uploadid,
+							  &uid, &gid, &permissions, &filesize,
+							  &localpath, &keyid, &secretkey );
+	printf( "%d - %s : %s : %s : %d:%d - %d : %lld %s %s %s\n", status,
+			bucket, remotepath, uploadid, (int)uid, (int)gid, permissions,
+			filesize, localpath, keyid, secretkey );
+}
+
+
+
+static void test_SetUploadId( const char *param )
+{
+	int           part;
+	char          *bucket;
+	char          *remotepath;
+	char          *uploadid;
+	long long int filesize;
+	uid_t         uid;
+	gid_t         gid;
+	int           permissions;
+	char          *localpath;
+	char          *keyid;
+	char          *secretkey;
+	bool          status;
+
+	CheckSQLiteUtil( );
+	FillDatabase( );
+
+	Query_AddUpload( 4, 1005, 70*1024*1024 );
+	Query_SetUploadId( 4, "2537akdgalk56t45lJGHKGHJ" );
+	Query_CreateMultiparts( 4, 3 );
+
+	status = Query_GetUpload( 4, &part, &bucket, &remotepath, &uploadid,
+							  &uid, &gid, &permissions, &filesize,
+							  &localpath, &keyid, &secretkey );
+	printf( "%d - %s : %s : %s : %d:%d - %d : %lld %s %s %s\n", status,
+			bucket, remotepath, uploadid, (int)uid, (int)gid, permissions,
+			filesize, localpath, keyid, secretkey );
+}
+
+
+
+static void test_AllPartsUploaded( const char *param )
+{
+	CheckSQLiteUtil( );
+	FillDatabase( );
+
+	Query_AddUpload( 4, 1005, 70*1024*1024 );
+	Query_CreateMultiparts( 4, 3 );
+	system( "echo \"UPDATE transferparts SET inprogress = '1' WHERE part = '4';\" | sqlite3 cachedir/cache.sl3" );
+	printf( "1: %d\n", Query_AllPartsUploaded( 4 ) );
+
+	system( "echo \"UPDATE transferparts SET inprogress = '0' WHERE part = '4';\" | sqlite3 cachedir/cache.sl3" );
+	printf( "2: %d\n", Query_AllPartsUploaded( 4 ) );
+
+	system( "echo \"UPDATE transferparts SET completed = '1' WHERE part = '4';\" | sqlite3 cachedir/cache.sl3" );
+	printf( "3: %d\n", Query_AllPartsUploaded( 4 ) );
+
+	system( "echo \"UPDATE transferparts SET completed = '1' WHERE part = '5';\" | sqlite3 cachedir/cache.sl3" );
+	system( "echo \"UPDATE transferparts SET inprogress = '1' WHERE part = '3';\" | sqlite3 cachedir/cache.sl3" );
+	printf( "4: %d\n", Query_AllPartsUploaded( 4 ) );
+
+	system( "echo \"UPDATE transferparts SET completed = '1', inprogress = '0' WHERE 1;\" | sqlite3 cachedir/cache.sl3" );
+	printf( "5: %d\n", Query_AllPartsUploaded( 4 ) );
+}
+
+
+
+static void test_PartETag( const char *param )
+{
+	const char *etag;
+
+	FillDatabase( );
+
+	Query_AddUpload( 4, 1005, 70*1024*1024 );
+	Query_CreateMultiparts( 4, 3 );
+	Query_SetPartETag( 4, 2, "Etag 1" );
+
+	etag = Query_GetPartETag( 4, 2 );
+	printf( "1: Etag = %s\n", etag );
+	etag = Query_GetPartETag( 4, 1 );
+	printf( "2: Etag = %s\n", etag );
+}
+
+
+
+static void test_FindPendingUpload( const char *param )
+{
+	sqlite3_int64 fileId;
+
+	FillDatabase( );
+
+	fileId = Query_FindPendingUpload( );
+	printf( "1: %d\n", (int)fileId );
+
+	Query_AddUpload( 4, 1005, 70*1024*1024 );
+	Query_CreateMultiparts( 4, 3 );
+	fileId = Query_FindPendingUpload( );
+	printf( "2: %d\n", (int)fileId );
+
+	Query_DeleteUploadTransfer( 3 );
+	fileId = Query_FindPendingUpload( );
+	printf( "3: %d\n", (int)fileId );
+
+	Query_DeleteUploadTransfer( 4 );
+	fileId = Query_FindPendingUpload( );
+	printf( "4: %d\n", (int)fileId );
+}
+

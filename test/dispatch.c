@@ -43,19 +43,20 @@ main( int argc, char **argv )
     if( ( argc != 2 ) && ( argc != 3 ) )
     {
         printf( "Error: Must be invoked with a script name\n" );
-	exit( EXIT_FAILURE );
+		exit( EXIT_FAILURE );
     }
 
     do
     {
         if( strcasecmp( dispatchTable[ i ].script, script ) == 0 )
-	{
-	    (*dispatchTable[ i ].function)( parameters );
-	    exit( EXIT_SUCCESS );
-	}
+		{
+			(*dispatchTable[ i ].function)( parameters );
+			exit( EXIT_SUCCESS );
+		}
         i++;
     } while( dispatchTable[ i ].script != NULL );
 
+	printf( "Error: Invalid script name\n" );
     exit( EXIT_FAILURE );
 }
 

@@ -136,6 +136,64 @@ AT_CHECK([grep "^2: 1$" stdout], [], [ignore])
 AT_CHECK([grep "^3: 0$" stdout], [], [ignore])
 AT_CLEANUP
 
+
+AT_SETUP([AddUpload Query])
+AT_CHECK([test-filecache 2>&1 AddUploadQuery], [], [stdout])
+AT_CHECK([grep "^1: 1$" stdout], [], [ignore])
+AT_CHECK([grep "^31457280$" stdout], [], [ignore])
+AT_CHECK([grep "^Select statement didn't finish with DONE (19): column file is not unique$" stdout], [], [ignore])
+AT_CHECK([grep "^2: 0$" stdout], [], [ignore])
+AT_CLEANUP
+
+AT_SETUP([CreateMultiparts])
+AT_CHECK([test-filecache 2>&1 CreateMultiparts], [], [stdout])
+AT_CHECK([grep "^1: 1$" stdout], [], [ignore])
+AT_CHECK([grep "^3$" stdout], [], [ignore])
+AT_CLEANUP
+
+AT_SETUP([GetUpload Query])
+AT_CHECK([test-filecache 2>&1 GetUpload], [], [stdout])
+AT_CHECK([grep "^1 - bucketname : http://remote4 : (null) : 1001:1001 - 420 : 0 DIR002/FILE04 1234 5678$" stdout], [], [ignore])
+AT_CLEANUP
+
+AT_SETUP([SetUploadId Query])
+AT_CHECK([test-filecache 2>&1 SetUploadId], [], [stdout])
+AT_CHECK([grep "^1 - bucketname : http://remote4 : 2537akdgalk56t45lJGHKGHJ : 1001:1001 - 420 : 0 DIR002/FILE04 1234 5678$" stdout], [], [ignore])
+AT_CLEANUP
+
+AT_SETUP([AllPartsUploaded Query])
+AT_CHECK([test-filecache 2>&1 AllPartsUploaded], [], [stdout])
+AT_CHECK([grep "^1: 0$" stdout], [], [ignore])
+AT_CHECK([grep "^2: 0$" stdout], [], [ignore])
+AT_CHECK([grep "^3: 0$" stdout], [], [ignore])
+AT_CHECK([grep "^4: 0$" stdout], [], [ignore])
+AT_CHECK([grep "^5: 1$" stdout], [], [ignore])
+AT_CLEANUP
+
+AT_SETUP([Get/Set PartETag Queries])
+AT_CHECK([test-filecache 2>&1 PartETag], [], [stdout])
+AT_CHECK([grep "^1: Etag = Etag 1$" stdout], [], [ignore])
+AT_CHECK([grep "^2: Etag = (null)$" stdout], [], [ignore])
+AT_CLEANUP
+
+AT_SETUP([FindPendingUpload Query])
+AT_CHECK([test-filecache 2>&1 FindPendingUpload], [], [stdout])
+AT_CHECK([grep "^1: 3$" stdout], [], [ignore])
+AT_CHECK([grep "^2: 3$" stdout], [], [ignore])
+AT_CHECK([grep "^3: 4$" stdout], [], [ignore])
+AT_CHECK([grep "^4: 0$" stdout], [], [ignore])
+AT_CLEANUP
+
+
+
+
+
+
+
+
+
+
+
 AT_SETUP([Daemons])
 AT_CHECK([test-process 2>&1 Daemon], [], [stdout])
 AT_CHECK([grep "^Connected to socket .\+/aws-s3fs\.sock$" stdout], [], [ignore])

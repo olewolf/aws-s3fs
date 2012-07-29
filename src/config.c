@@ -351,13 +351,6 @@ ConfigSetKey(
  *        be initialized.
  * @return Nothing.
  */
-/**
- * Copy a string, allocating memory for the destination. If the destination
- * string already exists, its memory is first freed.
- * @param key [out] Pointer to the destination string.
- * @param value [in] Input string to be copied.
- * @return Nothing.
- */
 void
 InitializeConfiguration(
     struct Configuration *configuration

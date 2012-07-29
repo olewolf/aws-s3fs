@@ -18,12 +18,12 @@
 
 TESTSCRIPTS = commandline.at config.at common.at logging.at cache.at hash.at \
 	s3if.at filecache.at downloadqueue.at
-#TESTSCRIPTS = downloadqueue.at
+#TESTSCRIPTS = uploadqueue.at
 
 
 noinst_PROGRAMS = test-decodecmdline test-config test-common \
 	test-logging test-cache test-hash test-s3if test-filecache \
-	test-downloadqueue test-process aws-s3fs-queued
+	test-downloadqueue test-process test-uploadqueue aws-s3fs-queued
 
 test_decodecmdline_SOURCES = $(SHAREDTESTSOURCE) test-decodecmdline.c \
 	../src/decodecmdline.c ../src/config.c ../src/configfile.c \
@@ -52,6 +52,11 @@ test_downloadqueue_SOURCES= $(SHAREDTESTSOURCE) test-downloadqueue.c \
 	../src/filecache.c ../src/grant.c s3comms.h \
 	../src/digest.c ../src/digest.h ../src/base64.c ../src/base64.h \
 	fakesocket.c
+test_uploadqueue_SOURCES = $(SHAREDTESTSOURCE) test-uploadqueue.c \
+	../src/filecache.h ../src/downloadqueue.c ../src/filecachedb.c \
+	../src/filecache.c ../src/grant.c s3comms.h \
+	../src/digest.c ../src/digest.h ../src/base64.c ../src/base64.h \
+	fakesocket.c
 test_process_SOURCES= $(SHAREDTESTSOURCE) test-process.c \
 	../src/downloadqueue.c ../src/s3comms.c ../src/digest.c ../src/base64.c \
 	../src/digest.h ../src/base64.h ../src/s3comms.h \
@@ -75,6 +80,7 @@ endif
 test_filecache_CFLAGS = $(AM_CFLAGS) -DAUTOTEST_SKIP_COMMUNICATIONS \
 	-DAUTOTEST_WITH_FILECACHE
 test_downloadqueue_CFLAGS = $(AM_CFLAGS) -DAUTOTEST_WITH_FILECACHE
+test_uploadqueue_CFLAGS = $(AM_CFLAGS) -DAUTOTEST_WITH_FILECACHE
 test_process_CFLAGS = $(AM_CFLAGS) -DAUTOTEST_WITH_FILECACHE
 aws_s3fs_queued_CFLAGS = $(AM_CFLAGS) -DAUTOTEST_WITH_FILECACHE
 

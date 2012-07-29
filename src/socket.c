@@ -105,69 +105,9 @@ CreateServerStreamSocket(
 
 
 /**
- * Create a named socket for the server and enable credentials so that the
- * server can receive the client's pid, uid, and gid.
- * @param socketPath [in] Name of the socket.
- * @param socketFd [out] File handle of the socket.
- * @param socketAddress [in/out] Memory area assigned to the socket.
- * @return \a true if the socket was created, or \a false otherwise.
- */
-bool
-CreateServerDatagramSocket(
-    const char         *socketPath,
-    int                *socketFd,
-    struct sockaddr_un *socketAddress
-			   )
-{
-    bool success       = false;
-    int  credentialsOn = 1;
-
-
-    /* Create a socket. */
-    if( ( *socketFd = socket( AF_UNIX, SOCK_DGRAM, 0 ) ) < 0 )
-    {
-        fprintf( stderr, "Cannot create socket.\n" );
-    }
-    else
-    {
-        /* Bind the socket to the assigned address. */
-        memset( socketAddress, 0, sizeof( struct sockaddr_un ) );
-        socketAddress->sun_family = AF_UNIX;
-		strncpy( socketAddress->sun_path, socketPath,
-				 sizeof( socketAddress->sun_path ) /* = UNIX_PATH_MAX */ );
-		if( bind( *socketFd, socketAddress,
-				  sizeof( struct sockaddr_un ) ) != 0 )
-		{
-			fprintf( stderr, "Cannot bind to socket.\n" );
-		}
-		else 
-		{
-			/* Change rw access to everyone. */
-			if( chmod( socketPath, DEFFILEMODE ) < 0 )
-			{
-				fprintf( stderr, "Cannot set socket access permissions.\n" );
-			}
-			else
-			{
-				/* Enable credentials passing as ancillary data. */
-				setsockopt( *socketFd, SOL_SOCKET, SO_PASSCRED,
-							&credentialsOn, sizeof( credentialsOn ) );
-
-				/* Phew. */
-				success = true;
-			}
-		}
-    }
-
-    return( success );
-}
-
-
-
-/**
  * Receive socket client message and ancillary data (credentials and file
  * descriptors. The file descriptors are properly disposed of for now.
- * @param fd [in] File descriptor for the socket connection.
+ * @param socketFd [in] File descriptor for the socket connection.
  * @param buffer [out] Destination buffer for the message.
  * @param size [in] Maximum length of the message.
  * @param credentials [out] Credentials of the client (pid, uid, gid).
@@ -244,7 +184,7 @@ SocketReceiveDatagramFromClient(
  *        no file handle should be sent.
  * @return \a true if the message was sent, or \a false otherwise.
  */
-int
+bool
 SocketSendDatagramToClient(
     int  socketFd,
     char *buffer,
@@ -334,63 +274,18 @@ CreateClientStreamSocket(
 
 
 /**
- * Create a socket for the client.
- * @param socketPath [in] Name of the socket.
- * @param socketFd [out] File handle of the socket.
- * @param socketAddress [in/out] Memory area assigned to the socket.
- * @return \a true if the socket was created, or \a false otherwise.
+ * Send a message that includes the user credentials a socket server.
+ * @param socketFd [in] Socket file handle.
+ * @param buffer [in] Message to send to the client.
+ * @param bufferLength [in] Length of the message.
+ * @return \a true if the message was sent, or \a false otherwise.
  */
-void
-CreateClientDatagramSocket(
-    const char         *socketPathServer,
-    int                *socketFd,
-    struct sockaddr_un *socketAddressServer,
-    const char         *socketPathClient,
-    struct sockaddr_un *socketAddressClient
-			   )
-{
-
-    if( ( *socketFd = socket( AF_UNIX, SOCK_DGRAM, 0 ) ) < 0 )
-    {
-        fprintf( stderr, "Error creating socket\n" );
-        exit( 1 );
-    }
-
-    memset( socketAddressClient, 0, sizeof( struct sockaddr_un ) );
-    socketAddressClient->sun_family = AF_UNIX;
-    strcpy( socketAddressClient->sun_path, socketPathClient );
-    if( bind( *socketFd, socketAddressClient,
-	      sizeof( struct sockaddr_un ) ) < 0 )
-    {
-        fprintf( stderr, "Error binding to socket\n" );
-        exit( 1 );
-    }
-
-    memset( socketAddressServer, 0, sizeof( struct sockaddr_un ) );
-    socketAddressServer->sun_family = AF_UNIX;
-    strcpy( socketAddressServer->sun_path, socketPathServer );
-
-    /*
-    bytes_sent = sendto(socket_fd, (char *) &integer_buffer, sizeof(int), 0,
-                     (struct sockaddr *) &server_address, 
-                     sizeof(struct sockaddr_un));
-
-    address_length = sizeof(struct sockaddr_un);
-    bytes_received = recvfrom(socket_fd, (char *) &integer_buffer, sizeof(int), 0, 
-                           (struct sockaddr *) &(server_address),
-                           &address_length);
-    */
-
-}
-
-
-
-int
+bool
 SocketSendDatagramToServer(
     int        socketFd,
     const char *buffer,
     int        bufferLength
-			  )
+	                       )
 {
     char           control[ sizeof( struct cmsghdr )
 							+ sizeof( struct ucred ) + 1 ];
@@ -435,7 +330,7 @@ SocketSendDatagramToServer(
 /**
  * Receive socket message from the server, including any file handles that
  * might be sent as ancillary data.
- * @param fd [in] File descriptor for the socket connection.
+ * @param socketFd [in] File descriptor for the socket connection.
  * @param buffer [out] Destination buffer for the message.
  * @param size [in] Maximum length of the message.
  * @param fileHandle [out] File handle received from the server, or \a -1

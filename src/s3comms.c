@@ -565,6 +565,8 @@ SignablePath(
  *
  * @param httpMethod [in] HTTP method, e.g., "GET" or "PUT".
  * @param headers [in/out] Request headers.
+ * @param region [in] Amazon S3 region.
+ * @param bucket [in] Bucket on the Amazon S3 storage.
  * @param path [in] Path of the requested file relative to the bucket.
  * @param keyId [in] User's Amazon Key ID.
  * @param secretKey [in] User's Secret Key.
@@ -720,7 +722,7 @@ DeleteCurlSlistAndContents(
 
 /**
  * Create a generic S3 request header which is used in all requests.
- * @param httpMethod [in] HTTP verb (GET, HEAD, etc.) for the request.
+ * @param hostname [in] Amazon S3 host addressed in the request.
  * @return Header list.
  */
 STATIC struct curl_slist*
@@ -764,7 +766,7 @@ BuildGenericHeader(
  * Helper function for the qsort function in \a BuildS3Request.
  * @param a [in] First string in the qsort comparison.
  * @param b [in] Second string in the qsort comparison.
- * @return 0 if \a a = \a b, 1 if \a a > \a b, or -1 if \a a < \a b.
+ * @return \a 0 if \a a = \a b, 1 if \a a > \a b, or \a -1 if \a a < \a b.
  */
 static int
 qsort_strcmp( const void *a, const void *b )
@@ -776,7 +778,9 @@ qsort_strcmp( const void *a, const void *b )
 
 /**
  * Create an S3 request that is ready to be submitted via CURL.
+ * @param instance [in] S3COMM handle.
  * @param httpMethod [in] The HTTP verb for the request type.
+ * @param hostname [in] Amazon S3 host that is addressed.
  * @param additionalHeaders[ in ] Any additional HTTP headers that should be
  *        included in the request.
  * @param filename [in] The full path of the file that is accessed.
@@ -920,14 +924,13 @@ ConvertHttpStatusToErrno(
  * output in the local write buffer. The headers list is deallocated.
  * The request may include PUT requests, as long as there is no body data
  * to put.
+ * @param instance [in] S3COMM handle.
  * @param httpVerb [in] HTTP method (GET, HEAD, etc.).
- * @param region [in] The region where the bucket is located.
- * @param bucket [in] Name of the bucket.
  * @param headers [in/out] The CURL list of headers with the S3 request.
  * @param filename [in] Full path name of the file that is accessed.
- * @param response [out] Pointer to the response data.
- * @param responseLength [out] Pointer to the response length.
- * @return 0 on success, or CURL error number on failure.
+ * @param data [out] Pointer to the response data.
+ * @param dataLength [out] Pointer to the response length.
+ * @return \a 0 on success, or CURL error number on failure.
  */
 int
 s3_SubmitS3Request(
@@ -1048,9 +1051,7 @@ s3_SubmitS3Request(
  * The request includes a body buffer for upload data; if none should be
  * uploaded, \a SubmitS3Request may be used instead. For large data,
  * use the multi-uploader.
- * @param httpVerb [in] HTTP method (GET, HEAD, etc.).
- * @param region [in] The region where the bucket is located.
- * @param bucket [in] Name of the bucket.
+ * @param instance [in] S3COMM handle.
  * @param headers [in/out] The CURL list of headers with the S3 request.
  * @param filename [in] Full path name of the file that is accessed.
  * @param response [out] Pointer to the response data.

@@ -62,7 +62,9 @@ static struct
  * Initialize the process context for the logging module.
  * @return Nothing.
  */
-void InitializeLoggingModule( )
+void InitializeLoggingModule(
+	void
+	                         )
 {
     pthread_mutex_lock( &logger_mutex );
 
@@ -85,6 +87,7 @@ void InitializeLoggingModule( )
  */
 void
 DisableLogging(
+	void
 	       )
 {
     logger.loggingEnabled = false;
@@ -97,7 +100,8 @@ DisableLogging(
  */
 void
 EnableLogging(
-	      )
+	void
+	          )
 {
     logger.loggingEnabled = true;
 }
@@ -108,7 +112,8 @@ EnableLogging(
  * @return Name of the log file.
  */
 const char *LogFilename(
-			)
+	void
+	                    )
 {
     return logger.logFilename;
 }
@@ -119,7 +124,8 @@ const char *LogFilename(
  * @return Log level.
  */
 enum LogLevels LogLevel(
-			)
+	void
+	                    )
 {
     return logger.logLevel;
 }
@@ -128,13 +134,14 @@ enum LogLevels LogLevel(
 /**
  * Initialize the logging to use syslog, a specified filename, or stdout.
  * @param logfile [in] The name of the logfile: syslog, a filename, or NULL.
+ * @param loglevel [in] Level of detail logged.
  * @return Nothing.
  */
 void
 InitLog(
-    const char               *logfile,
-    enum LogLevels           loglevel
-	)
+    const char     *logfile,
+    enum LogLevels loglevel
+	    )
 {
     char hostnameBuf[ HOST_NAME_MAX + 1 ];
 
@@ -198,7 +205,8 @@ InitLog(
  */
 void
 CloseLog(
-	 )
+	void
+	     )
 {
     pthread_mutex_lock( &logger_mutex );
     if( logger.logFh != NULL )
@@ -217,6 +225,7 @@ CloseLog(
     }
     pthread_mutex_unlock( &logger_mutex );
 }
+
 
 
 /**
@@ -242,7 +251,7 @@ LogMessage(
     int        priority,
     const char *hostname,
     const char *message
-	   )
+	      )
 {
     time_t t                           = time( NULL );
     struct tm tm                       = *localtime( &t );
@@ -294,9 +303,9 @@ LogMessage(
  */
 void
 Syslog(
-    int                            priority,
-    const char                     *format,
-                                   ...
+    int        priority,
+    const char *format,
+               ...
        )
 {
     int ch;

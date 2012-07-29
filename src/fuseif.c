@@ -161,7 +161,7 @@ static int VerifyPathSearchPermissions( const char *path );
  * group identified by this gid. The function parses the /etc/group list
  * to determine group membership.
  * @param gid [in] Group ID that the user's membership is verified against.
- * @param myGid [in] The user's gid. 
+ * @param myUid [in] The user's uid. 
  * @return \a true of the user is a member of the group; \a false otherwise.
  */
 static bool
@@ -983,9 +983,9 @@ s3fs_open(
 
 /**
  * Determine whether the user may open the specified directory.
- * @param path [in] Relative file path.
+ * @param dir [in] Relative file path.
  * @param fi [out] FUSE file info structure.
- * @return 0 on success, or \a -errno on failure.
+ * @return \a 0 on success, or \a -errno on failure.
  */
 /* Disable warning that fi isn't used. */
 #pragma GCC diagnostic push
@@ -994,7 +994,7 @@ static int
 s3fs_opendir(
     const char            *dir,
     struct fuse_file_info *fi
-	     )
+	         )
 {
     struct S3FileInfo *fileInfo;
     int               status = 0;
@@ -1005,7 +1005,7 @@ s3fs_opendir(
     if( status == 0 )
     {
         /* The path must be a directory. The O_DIRECTORY flag (if set) is
-	   ignored, because we'll check the file type either way. */
+		   ignored, because we'll check the file type either way. */
         if( fileInfo->fileType != 'd' )
 		{
 			return( -ENOTDIR );
@@ -1041,7 +1041,7 @@ s3fs_opendir(
  * @param filler [in/out] Call-back function that is used to fill the buffer.
  * @param offset [in] Offset of the directory entries.
  * @param fi [in] FUSE file info structure.
- * @return 0 if the directory was read, \a -errno otherwise.
+ * @return \a 0 if the directory was read, \a -errno otherwise.
  */
 /* Disable warning that offset is not used. */
 #pragma GCC diagnostic push
@@ -1098,7 +1098,7 @@ static int
 s3fs_releasedir(
     const char            *dir,
     struct fuse_file_info *fi
-		)
+	            )
 {
     int status;
 
@@ -1119,13 +1119,13 @@ s3fs_releasedir(
  * called.
  * @param path [in] File path for the file to check permissions on.
  * @param mask [in] Access mask bits.
- * @param 
+ * @return \a 0 if no error occurred, or \a -errno otherwise.
  */ 
 static int
 s3fs_access(
     const char *path,
     int        mask
-	    )
+	        )
 {
     int               status;
     struct S3FileInfo *fileInfo;
@@ -1139,30 +1139,30 @@ s3fs_access(
     {
         /* Examine the file. */
         status = S3FileStat( path, &fileInfo );
-	if( status == 0 )
-	{
-	    /* F_OK means just check that the file exists. */
-	    if( mask != F_OK )
-	    {
-	        if( IsReadable( fileInfo ) )
+		if( status == 0 )
 		{
-		    permissions |= R_OK;
+			/* F_OK means just check that the file exists. */
+			if( mask != F_OK )
+			{
+				if( IsReadable( fileInfo ) )
+				{
+					permissions |= R_OK;
+				}
+				if( IsWriteable( fileInfo ) )
+				{
+					permissions |= W_OK;
+				}
+				if( IsExecutable( fileInfo ) )
+				{
+					permissions |= X_OK;
+				}
+				if( ( permissions & mask ) != mask )
+				{
+					status = -EACCES;
+				}
+			}
+			
 		}
-		if( IsWriteable( fileInfo ) )
-		{
-		    permissions |= W_OK;
-		}
-		if( IsExecutable( fileInfo ) )
-		{
-		    permissions |= X_OK;
-		}
-		if( ( permissions & mask ) != mask )
-		{
-		    status = -EACCES;
-		}
-	    }
-
-	}
     }
 
     return( status );

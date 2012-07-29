@@ -848,8 +848,8 @@ EncodeUrl(
 
 /**
  * Recursive function that parses an XML file and adds the contents of
- * all occurrences of <key> to a linked list. In addition, if the function
- * encounters a <marker> node, it records its contents.
+ * all occurrences of \a \<key\> to a linked list. In addition, if the function
+ * encounters a \a \<marker\> node, it records its contents.
  * @param node [in] Current XML node.
  * @param prefixLength [in] Number of bytes in the prefix which are skipped.
  * @param directory [in/out] Pointer to linked list of directory entries.
@@ -940,7 +940,6 @@ ReadXmlDirectory(
  * Read the contents of a directory and place it in the directory cache, then
  * return the directory contents. If the directory is already in the cache,
  * mark it as least recently used.
- * @param fi [in] File info for the directory.
  * @param dirname [in] Path name of the directory.
  * @param nameArray [out] Pointer to where the directory contents (an array
  *        of strings) is stored.
@@ -1204,14 +1203,14 @@ ConvertOpenFlagsToValue(
 
 
 
+#if 0
 /**
  * Create a file. The function assumes that the FUSE interface has already
  * determined that file access is allowed according to the open flags.
  * @param path [in] Path name of the file.
- * @param permissions [in] File permissions, if the file is to be created.
+ * @param permissions [in] File permissions, used if the file is to be created.
  * @return 0 on success, or \a -errno on failure.
  */
-#if 0
 int
 S3Create(
 	const char *path,
@@ -1256,10 +1255,17 @@ S3Create(
 
 
 
+/**
+ * Place the proper https:// and host name in front of a file path according
+ * the region and bucket.
+ * @param path [in] Path on the S3 storage.
+ * @return The path on the S3 storage with https:// and host name prepended
+ *         to it.
+ */
 char*
 PrependHttpsToPath(
 	const char *path
-	             )
+	               )
 {
 	const char *hostname;
 	char       *url;
@@ -1611,6 +1617,8 @@ CreateHeadersFromFileInfo(
  * Submit an x-amz-copy-source to file-from-samefile, but with new metadata.
  * @param file [in] File whose settings are to be updated.
  * @param fi [in] File Info structure with new information.
+ * @param newName [in] Optional new name for the file; specify \a NULL if
+ *        the file should keep its original name.
  * @return 0 on success, or \a -errno on failure.
  */
 static int
@@ -1658,7 +1666,7 @@ UpdateAmzHeaders(
  * Modify the atime and mtime timestamps for a file.
  * @param file [in] File whose timestamps are to be updated.
  * @param atime [in] New atime value.
- * @param atime [in] New mtime value.
+ * @param mtime [in] New mtime value.
  * @return 0 on success, or \a -errno on failure.
  */
 int
@@ -1666,7 +1674,7 @@ S3ModifyTimeStamps(
     const char *file,
     time_t     atime,
     time_t     mtime
-		   )
+	               )
 {
     struct S3FileInfo *fi;
     int               status;

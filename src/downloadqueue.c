@@ -158,6 +158,7 @@ FindInDownloadQueue(
  * been added to the download queue. The thread waits until the file has been
  * downloaded.
  * @param fileId [in] The ID of the file in the database.
+ * @param owner [in] User who made the cache request.
  * @return Nothing.
  * Test: unit test (test-downloadqueue.c).
  */
@@ -276,7 +277,7 @@ ProcessDownloadQueue(
 	int                         downloader;
 	struct DownloadStarter      *downloadStarter;
 	struct UploadSubscription   *uploadSubscription;
-//	struct UploadStarter        *uploadStarter;
+	struct UploadStarter        *uploadStarter;
 	pthread_t                   threadId;
 	int                         socketHandle;
 
@@ -310,9 +311,6 @@ ProcessDownloadQueue(
 		while( ( downloader = FindAvailableDownloader( ) ) != -1 )
 		{
 			/* Find an entry in the upload queue that isn't processed yet. */
-
-			uploadSubscription = NULL;
-/*
 			uploadSubscription = GetSubscriptionFromUploadQueue( );
 			if( uploadSubscription != NULL )
 			{
@@ -324,7 +322,6 @@ ProcessDownloadQueue(
 				pthread_create( &threadId, NULL, BeginUpload, uploadStarter );
 			}
 			else
-*/
 			{
 				/* Find an entry in the download queue that isn't processed
 				   yet. */
@@ -667,7 +664,7 @@ GetSubscriptionFromDownloadQueue(
  * @param parentGid [in] new gid for the local parent directory.
  * @param filename [in] Local name of the downloaded file.
  * @param uid [in] new uid for the downloaded file.
- * @param uid [in] new gid for the downloaded file.
+ * @param gid [in] new gid for the downloaded file.
  * @return \a true if successful, or \a false otherwise.
  * Test: unit test (test-downloadqueue.c).
  */
@@ -733,7 +730,10 @@ MoveToSharedCache(
 /**
  * Send a message to the privileged process. The function does not return
  * until a reply is received from the privileged process.
+ * @param socketHandle [in] Socket for the permissions grant module.
  * @param privopRequest [in] Request message.
+ * @param reply [out] Buffer for the reply.
+ * @param replyMaxLength [in] Size of the reply buffer.
  * @return Nothing.
  * Test: unit test (test-process.c).
  */
@@ -805,7 +805,7 @@ PutUpload(
 
 	/* Add the entry to the transfers list, indicating that it is currently
 	   active. */
-	fileId = Query_AddUpload( fileId, owner, filesize );
+	Query_AddUpload( fileId, owner, filesize );
 
 	/* Populate the multiparts list as necessary based on the size of the
 	   file. */
@@ -815,6 +815,193 @@ PutUpload(
 	/* Signal to the upload queue processor that a file is ready for upload. */
 	pthread_cond_signal( &mainLoop_cond );
 	pthread_mutex_unlock( &mainLoop_mutex );
+}
+
+
+
+/**
+ * Extract the host name and the remote file path from a URL.
+ * @param remotePath [in] Remote filename as a URL.
+ * @param hostname [out] Pointer to where the hostname is stored.
+ * @param filename [out] Pointer to where the filepath is stored.
+ * @return \a true if the host and file path could be extracted, or \a false
+ *         otherwise.
+ */
+STATIC bool
+ExtractHostAndFilepath(
+	const char *remotePath,
+	const char **hostname,
+	char       **filepath
+	                   )
+{
+	GMatchInfo        *matchInfo;
+
+	/* Grep the hostname. */
+	g_regex_ref( regexes.hostname );
+	g_regex_match( regexes.hostname, remotePath, 0, &matchInfo );
+	*hostname = g_match_info_fetch( matchInfo, 2 );
+	g_match_info_free( matchInfo );
+	g_regex_unref( regexes.hostname );
+	/* Grep the file path. */
+	g_regex_ref( regexes.removeHost );
+	g_regex_match( regexes.removeHost, remotePath, 0, &matchInfo );
+	*filepath = g_match_info_fetch( matchInfo, 1 );
+	g_match_info_free( matchInfo );
+	g_regex_unref( regexes.removeHost );
+
+	return( true );
+}
+
+
+
+/**
+ * Initiate a multipart upload. The function requests an upload ID from the
+ * S3 server and writes the upload ID into the transfers table.
+ * @param s3Comm [in] S3COMM handle.
+ * @param curl [in] CURL handle for the current transfer.
+ * @param fileId [in] ID of the file that should be uploaded.
+ * @param uid [in] uid of the file.
+ * @param gid [in] gid of the file.
+ * @param permissions [in] File permissions.
+ * @param filepath [in] Remote filename.
+ * @return Upload ID for the multipart uploads.
+ */
+#ifdef AUTOTEST
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-variable"
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#endif
+STATIC char*
+InitiateMultipartUpload(
+	S3COMM        *s3Comm,
+	CURL          *curl,
+	sqlite3_int64 fileId,
+	uid_t         uid,
+	gid_t         gid,
+	int           permissions,
+	char          *filepath
+	                    )
+{
+	struct curl_slist *headers;
+	char              amzHeader[ 50 ];
+	char              *url;
+	char              *response;
+	int               responseLength;
+	GMatchInfo        *matchInfo;
+	char              *uploadId;
+	int               status;
+
+	/* Generate the uid, gid, and permissions headers. */
+	headers = NULL;
+	sprintf( amzHeader, "x-amz-meta-uid:%d", (int) uid );
+	headers = curl_slist_append( headers, strdup( amzHeader ) );
+	sprintf( amzHeader, "x-amz-meta-gid:%d", (int) gid );
+	headers = curl_slist_append( headers, strdup( amzHeader ) );
+	sprintf( amzHeader, "x-amz-meta-mode:%d", (int) permissions );
+	headers = curl_slist_append( headers, strdup( amzHeader ) );
+	curl_easy_setopt( curl, CURLOPT_HTTPHEADER, headers );
+	/* Send a multipart upload initiation request. */
+	url = malloc( strlen( filepath ) + sizeof( "?uploads" ) );
+	strcpy( url, filepath );
+	strcat( url, "?uploads" );
+	curl_easy_reset( curl );
+#ifdef AUTOTEST_SKIP_COMMUNICATIONS
+	status = 0;
+#else
+	printf( "Executing HTTP request\n" );
+	status = s3_SubmitS3Request( s3Comm, "POST", headers, url,
+								 (void**) (&response), &responseLength );
+#endif
+	DeleteCurlSlistAndContents( headers );
+	free( url );
+
+#ifndef AUTOTEST_SKIP_COMMUNICATIONS
+	/* Get the upload ID from the response. */
+	g_regex_ref( regexes.getUploadId );
+	if( g_regex_match( regexes.getUploadId, response, 0, &matchInfo ) )
+	{
+		uploadId = g_match_info_fetch( matchInfo, 1 );
+	}
+	g_match_info_free( matchInfo );
+	g_regex_unref( regexes.getUploadId );
+	/* Set the upload ID in the transfers table. */
+	Query_SetUploadId( fileId, uploadId );
+#else
+	uploadId = strdup( "---etag not set---" );
+#endif
+	if( status != 0 )
+	{
+		fprintf( stderr,
+				 "Unable to decode multipart upload initiation response\n" );
+	}
+
+	return( uploadId );
+}
+#ifdef AUTOTEST
+#pragma GCC diagnostic pop
+#endif
+
+
+
+/**
+ * Complete a multipart upload.
+ * @param s3Comm [in] S3COMM handle.
+ * @param curl [in] CURL handle for the current transfer.
+ * @param fileId [in] Upload ID for the multipart uploads.
+ * @param parts [in] Number of parts in the multipart upload.
+ * @param hostname [in] Host name for the S3 request.
+ * @param filepath [in] Remote file path of the file.
+ * @param uploadId [in] Upload ID for the multipart upload.
+ * @return Nothing.
+ */
+STATIC void
+CompleteMultipartUpload(
+	S3COMM        *s3Comm,
+	CURL          *curl,
+	sqlite3_int64 fileId,
+	int           parts,
+	const char    *hostname,
+	const char    *filepath,
+	const char    *uploadId
+	                    )
+{
+	struct curl_slist *headers;
+	int               i;
+	char              *url;
+	FILE              *upFile;
+	const char        *etag;
+	int               status;
+
+	/* Build the parts list. */
+	if( Query_AllPartsUploaded( fileId ) )
+	{
+		upFile = tmpfile( );
+		fputs( "<CompleteMultipartUpload>\n", upFile );
+		for( i = 1; i < parts + 1; i++ )
+		{
+			etag = Query_GetPartETag( fileId, i );
+			fprintf( upFile, "<Part><PartNumber>%d</PartNumber>"
+					 "<ETag>%s</ETag></Part>\n", i, etag );
+		}
+		fputs( "</CompleteMultipartUpload>\n", upFile );
+
+		/* Upload the parts list. */
+		url = malloc( strlen( filepath )
+					  + strlen( "?uploadId=" )
+					  + strlen( uploadId ) + sizeof( char ) );
+		headers = BuildS3Request( s3Comm, "POST", hostname, NULL, url );
+		curl_easy_reset( curl );
+		curl_easy_setopt( curl, CURLOPT_READDATA, upFile );
+		curl_easy_setopt( curl, CURLOPT_HTTPHEADER, headers );
+		curl_easy_setopt( curl, CURLOPT_URL, url );
+		status = curl_easy_perform( curl );
+		if( status != 0 )
+		{
+			fprintf( stderr, "Could not complete multipart upload.\n" );
+		}
+		DeleteCurlSlistAndContents( headers );
+		fclose( upFile );
+	}
 }
 
 
@@ -850,9 +1037,9 @@ BeginUpload(
 	char              *keyId;
 	char              *secretKey;
 	char              *localFile;
+	FILE              *upFile;
 	long long int     filesize;
 	int               parts;
-	FILE              *upFile;
 	char              md5sum[ 24 ];
 	char              amzHeader[ 50 ];
 	const char        *hostname;
@@ -862,15 +1049,8 @@ BeginUpload(
 	uid_t             uid;
 	gid_t             gid;
 	int               permissions;
-#ifndef AUTOTEST_SKIP_COMMUNICATIONS
-	char              *response;
-	int               responseLength;
-#endif
-	GMatchInfo        *matchInfo;
-	const char        *etag;
 	struct timeval    now;
 	struct timespec   oneMinute;
-	int               i;
 	const char        *localFilePartPath;
 
 	uploadStarter = (struct UploadStarter*) ctx;
@@ -892,20 +1072,12 @@ BeginUpload(
 	{
 		/* Extract the hostname and remote file path from the remote
 		   filename. */
-		g_regex_ref( regexes.hostname );
-		g_regex_match( regexes.hostname, remotePath, 0, &matchInfo );
-		hostname = g_match_info_fetch( matchInfo, 2 );
-		g_match_info_free( matchInfo );
-		g_regex_unref( regexes.hostname );
+		ExtractHostAndFilepath( remotePath, &hostname, &filepath );
+		/* Prepare a fake S3COMM handle. */
 		s3Comm->bucket    = (char*) bucket;
 		s3Comm->keyId     = (char*) keyId;
 		s3Comm->secretKey = (char*) secretKey;
 		s3Comm->region    = HostnameToRegion( remotePath );
-		g_regex_ref( regexes.removeHost );
-		g_regex_match( regexes.removeHost, remotePath, 0, &matchInfo );
-		filepath = g_match_info_fetch( matchInfo, 1 );
-		g_match_info_free( matchInfo );
-		g_regex_unref( regexes.removeHost );
 
 		/* If the file consists of multiple parts, perform a multipart
 		   upload. */
@@ -915,46 +1087,13 @@ BeginUpload(
 			/* Initiate the multipart upload first, if necessary. */
 			if( strncmp( uploadId, "NULL", 4 ) == 0 )
 			{
-				headers = NULL;
-				/* Generate the uid, gid, and permissions headers. */
-				sprintf( amzHeader, "x-amz-meta-uid:%d", (int) uid );
-				headers = curl_slist_append( headers, strdup( amzHeader ) );
-				sprintf( amzHeader, "x-amz-meta-gid:%d", (int) gid );
-				headers = curl_slist_append( headers, strdup( amzHeader ) );
-				sprintf( amzHeader, "x-amz-meta-mode:%d", (int) permissions );
-				headers = curl_slist_append( headers, strdup( amzHeader ) );
-				curl_easy_setopt( curl, CURLOPT_HTTPHEADER, headers );
-				/* Send a multipart upload initiation request. */
-				url = malloc( strlen( filepath ) + sizeof( "?uploads" ) );
-				strcpy( url, filepath );
-				strcat( url, "?uploads" );
-				curl_easy_reset( curl );
-#ifdef AUTOTEST_SKIP_COMMUNICATIONS
-				status = 0;
-#else
-				printf( "Executing HTTP request\n" );
-				status = s3_SubmitS3Request( s3Comm, "POST", headers, url,
-											 (void**) (&response),
-											 &responseLength );
-#endif
-				DeleteCurlSlistAndContents( headers );
-				headers = NULL;
-				free( url );
-#ifndef AUTOTEST_SKIP_COMMUNICATIONS
-				/* Get the upload ID. */
-				g_regex_ref( regexes.getUploadId );
-				if( g_regex_match( regexes.getUploadId, response,
-								   0, &matchInfo ) )
-				{
-					uploadId = g_match_info_fetch( matchInfo, 1 );
-				}
-				g_match_info_free( matchInfo );
-				g_regex_unref( regexes.getUploadId );
-				/* Set the upload ID in the transfers table. */
-				Query_SetUploadId( subscription->fileId, uploadId );
-#endif
-			}
 
+				free( uploadId );
+				uploadId = InitiateMultipartUpload( s3Comm, curl,
+													subscription->fileId,
+													uid, gid, permissions,
+													filepath );
+			}
 			/* Prepare the upload part request. */
 			url = malloc( strlen( filepath )
 						  + strlen( "?partNumber=10000&uploadId=" )
@@ -969,8 +1108,8 @@ BeginUpload(
 			url = filepath;
 		}
 
-		/* Extract the upload part from the file and place it in the in-progress
-		   directory. */
+		/* Extract the upload chunk from the file and place it in the
+		   in-progress directory. */
 		partLength = CreateFilePart( socketHandle, filepath, part, filesize,
 									 &localFilePartPath );
 		localFile  = malloc( strlen( CACHE_INPROGRESS )
@@ -984,12 +1123,14 @@ BeginUpload(
 		DigestStream( upFile, md5sum, HASH_MD5, HASHENC_BASE64 );
 		rewind( upFile );
 		Query_SetPartETag( subscription->fileId, part, md5sum );
+		headers = NULL;
 		sprintf( amzHeader, "Content-MD5:%s", md5sum );
 		headers = curl_slist_append( NULL, strdup( amzHeader ) );
 		sprintf( amzHeader, "Content-Length:%d", partLength );
 		headers = curl_slist_append( headers, strdup( amzHeader ) );
-		curl_easy_reset( curl );
 		headers = BuildS3Request( s3Comm, "PUT", hostname, headers, url );
+		/* Make the upload request. */
+		curl_easy_reset( curl );
 		curl_easy_setopt( curl, CURLOPT_READDATA, upFile );
 		curl_easy_setopt( curl, CURLOPT_HTTPHEADER, headers );
 		curl_easy_setopt( curl, CURLOPT_URL, remotePath );
@@ -1008,32 +1149,8 @@ BeginUpload(
 		   once all the parts have been uploaded. */
 		if( 1 < parts )
 		{
-			/* Build the parts list. */
-			if( Query_AllPartsUploaded( subscription->fileId ) )
-			{
-				upFile = tmpfile( );
-				fputs( "<CompleteMultipartUpload>\n", upFile );
-				for( i = 1; i < parts + 1; i++ )
-				{
-					etag = Query_GetPartETag( subscription->fileId, i );
-					fprintf( upFile, "<Part><PartNumber>%d</PartNumber>"
-							 "<ETag>%s</ETag></Part>\n", i, etag );
-				}
-				fputs( "</CompleteMultipartUpload>\n", upFile );
-
-				/* Upload the parts list. */
-				curl_easy_reset( curl );
-				headers = BuildS3Request( s3Comm, "POST", hostname, NULL, url );
-				curl_easy_setopt( curl, CURLOPT_READDATA, upFile );
-				curl_easy_setopt( curl, CURLOPT_HTTPHEADER, headers );
-				url = malloc( strlen( filepath )
-							  + strlen( "?uploadId=" )
-							  + strlen( uploadId ) + sizeof( char ) );
-				curl_easy_setopt( curl, CURLOPT_URL, url );
-				status = curl_easy_perform( curl );
-				DeleteCurlSlistAndContents( headers );
-				fclose( upFile );
-			}
+			CompleteMultipartUpload( s3Comm, curl, subscription->fileId,
+									 parts, hostname, filepath, uploadId );
 		}
 
 
@@ -1085,6 +1202,7 @@ BeginUpload(
  * tables.
  * @return Upload subscription structure with information about the pending
  *         file, or \a NULL if uploads are queued.
+ * Test: unit test (in test-uploadqueue.c).
  */
 STATIC struct UploadSubscription*
 GetSubscriptionFromUploadQueue(
@@ -1096,6 +1214,7 @@ GetSubscriptionFromUploadQueue(
 	pthread_mutexattr_t       mutexAttr;
 	pthread_condattr_t        condAttr;
 
+	/* Find the file ID of an upload waiting in the transfer queue. */
 	subscription = NULL;
 	fileId = Query_FindPendingUpload( );
 	if( fileId != 0 )

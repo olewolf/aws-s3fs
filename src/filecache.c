@@ -318,6 +318,8 @@ ShutdownFileCache(
  * @param connectionHandle [in] Socket connection handle.
  * @param clientMessage [out] Message received from the client.
  * @return Number of bytes read.
+ * Test: none (however, it is used in so frequently that defects would cause
+ *       several unit tests to report errors).
  */
 /* During one of the automated unit tests, this function is replaced by a
    simulation. */
@@ -525,6 +527,7 @@ CommandDispatcher(
  * @param gid [in] Ownership of the S3 file.
  * @param permissions [in] Permissions for the S3 file.
  * @param mtime [in] Last modification time of the S3 file.
+ * @param parentId [in] ID of the parent directory.
  * @param localfile [out] Filename of the local file.
  * @return ID for the database entry, or \a -1 if an error occurred.
  * Test: unit test (test-filecache.c).
@@ -641,7 +644,8 @@ CreateLocalDir(
  * so that the process is able to wait for activity on them without blocking
  * the other threads.
  * @return Thread status (always 0 ).
- * Test: none.
+ * Test: none (however, if the function failed, several unit tests would
+ *       report errors).
  */
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
@@ -723,7 +727,7 @@ ClientDisconnects(
  * @param clientConnection [in] Client Connection structure.
  * @param request [in] Request parameters (unused).
  * @return Nothing.
- * Test: none.
+ * Test: implied blackbox (in test-process.c).
  */
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
@@ -1143,6 +1147,7 @@ FreeRegexes(
  * @param clientConnection [in] Unused.
  * @param request [in] Unused.
  * @return Always 0.
+ * Test: none.
  */
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
@@ -1164,6 +1169,13 @@ ClientRequestsDebugMessage(
 
 
 
+/**
+ * Close a file, marking it ready for synchronization.
+ * @param clientConnection [in/out] CacheClientConnection structure for the
+ *        client.
+ * @param request [in] File close request parameter string with the file ID.
+ * @return Always \0.
+ */
 static int
 ClientRequestsFileClose(
 	struct CacheClientConnection *clientConnection,
@@ -1198,6 +1210,7 @@ ClientRequestsFileClose(
  * at least 5 MBytes.
  * @param filesize [in] The total file size.
  * @return Number of multipart uploads for this file.
+ * Test: unit test (in test-uploadqueue.c).
  */
 int
 NumberOfMultiparts(
@@ -1211,7 +1224,7 @@ NumberOfMultiparts(
 	int                 parts;
 
 	/* Attempt to divide the file into chunks of the preferred size. */
-	if( filesize <= CHUNK_SIZE * MAXIMUM_MULTIPARTS )
+	if( filesize <= ( long long int ) CHUNK_SIZE * MAXIMUM_MULTIPARTS )
 	{
 		parts = ( filesize + CHUNK_SIZE - 1 ) / CHUNK_SIZE;
 	}

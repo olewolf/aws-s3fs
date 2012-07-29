@@ -101,7 +101,7 @@ STATIC sqlite3_int64 FindParent( const char *path, char *localname );
 sqlite3*
 GetCacheDatabase(
 	void
-               )
+                 )
 {
 	return( cacheDatabase.cacheDb );
 }
@@ -276,7 +276,7 @@ CreateDatabase(
 	    "CREATE TABLE IF NOT EXISTS transfers(                     \
             id INTEGER PRIMARY KEY,                                \
             owner INTEGER NOT NULL,                                \
-            file INTEGER NOT NULL,                                 \
+            file INTEGER UNIQUE NOT NULL,                          \
             filesize INTEGER,                                      \
             direction CHARACTER( 1 )                               \
                 CONSTRAINT dir_chk                                 \
@@ -430,17 +430,17 @@ CompileStandardQueries(
         "WHERE transferparts.inprogress = \'0\' "
 		"AND   transferparts.completed  = \'0\' "
 		"AND   transfers.direction      = \'u\' "
-	    "AND   files.id                 = ?;";
+	    "AND   files.id                 = ? "
+		"LIMIT 1;";
 
 	const char *const setUploadIdSql =
 		"UPDATE transfers SET uploadid = ? WHERE file = ?;";
 
 	const char *const allPartsCompleteSql =
-		"SELECT COUNT( part ), files.filesize "
+		"SELECT COUNT( part ) - SUM( completed ) + SUM( inprogress ) "
 		"FROM transferparts "
 		"INNER JOIN transfers ON transferparts.transfer = transfers.id "
-		"INNER JOIN files ON transfers.file = files.id "
-		"WHERE files.id = ?;";
+		"WHERE transfers.file = ?;";
 
 	const char *const getEtagSql =
 		"SELECT etag FROM transferparts "
@@ -456,7 +456,7 @@ CompileStandardQueries(
 	const char *const setEtagSql =
 		"UPDATE transferparts "
 		"SET etag = ? "
-		"WHERE part IN "
+		"WHERE id IN "
 		"( "
 		"    SELECT transferparts.id FROM transferparts "
 		"    INNER JOIN transfers "
@@ -466,12 +466,12 @@ CompileStandardQueries(
 		"); ";
 
 	const char *const findUploadRequestSql =
-		"SELECT file FROM transfers "
-		"INNER JOIN transferparts ON transferparts.transfer = transfers.id "
+		"SELECT file FROM transferparts "
+		"INNER JOIN transfers ON transferparts.transfer = transfers.id "
 		"WHERE transfers.direction = \'u\' "
 		"AND   transferparts.inprogress = \'0\' "
 		"AND   transferparts.completed  = \'0\' "
-		"LIMIT 1;";
+		"GROUP BY file LIMIT 1;";
 
 	/* This query cascade deletes all transferparts. */
 	const char *const deleteUploadTransferSql =
@@ -519,7 +519,8 @@ CompileStandardQueries(
  * @param db [in] Opened SQLite database.
  * @param sql [in] Source SQL query.
  * @param query [out] Destination for the byte code.
- * @return \true if the query was successfully compiled, or \a false otherwise.
+ * @return \a true if the query was successfully compiled, or \a false
+ *         otherwise.
  * Test: implicit blackbox (test-filecache.c).
  */
 static bool
@@ -697,6 +698,7 @@ Query_GetLocalPath(
  * @param gid [in] Ownership of the S3 file.
  * @param permissions [in] Permissions for the S3 file.
  * @param mtime [in] Last modification time of the S3 file.
+ * @param parentId [in] ID of the parent directory.
  * @param localfile [in/out] Filename of the local file.  If the file already
  *        exists in the database, \a localfile is overwritten with a copy of
  *        the filename.
@@ -780,7 +782,7 @@ Query_CreateLocalFile(
  * @param uid [in] Ownership of the S3 directory.
  * @param gid [in] Ownership of the S3 directory.
  * @param permissions [in] Permissions for the S3 directory.
- * @param localfile [out] Filename of the local directory.
+ * @param localdir [out] Filename of the local directory.
  * @param alreadyExists [out] Set to \a true if the parent already exists
  *        in the database.
  * @return ID for the database entry, or \a -1 if an error occurred.
@@ -849,7 +851,7 @@ Query_CreateLocalDir(
 
 /**
  * Determine if the specified directory is cached.
- * @param path [in] Remote directory name.
+ * @param parent [in] Remote directory name.
  * @param localname [in/out] The local directory name.  If the directory
  *        already exists, \a localname is overwritten with the local directory
  *        name.
@@ -995,8 +997,8 @@ Query_GetDownload(
  * @param parentGid [out] Pointer to the parent directory gid.
  * @param filename [out] Pointer to the file name string.
  * @param uid [out] Pointer to the file uid.
- * @param uid [out] Pointer to the file gid.
- * @param uid [out] Pointer to the file permissions.
+ * @param gid [out] Pointer to the file gid.
+ * @param permissions [out] Pointer to the file permissions.
  * @return \a true if the access requirements could be retrieved, or \a false
  *         otherwise.
  * Test: unit test (test-filecache.c).
@@ -1262,7 +1264,7 @@ Query_AddDownload(
 /**
  * Add a user to the database.
  * @param uid [in] The user's uid.
- * @param keyid [in] The user's Amazon Access ID.
+ * @param keyId [in] The user's Amazon Access ID.
  * @param secretKey [in] The user's secret key.
  * @return \a true if the query succeeded, or \a false otherwise.
  */
@@ -1397,6 +1399,7 @@ Query_IsFileCached(
  * @param fileId [in] ID of the file.
  * @param parts [in] Number up parts.
  * @return Nothing.
+ * Test: unit test (in test-filecache.c).
  */
 void
 Query_CreateMultiparts(
@@ -1413,6 +1416,7 @@ Query_CreateMultiparts(
 
 	/* Create "parts" entries in the database, each representing a multipart
 	   upload section. */
+	check = 0;
 	for( i = 0; i < parts; i++ )
 	{
 		BIND_QUERY( rc, int64( setMultipartQuery, 1, fileId ),
@@ -1420,11 +1424,11 @@ Query_CreateMultiparts(
 			) );
 		if( rc == SQLITE_OK )
 		{
-			while( ( rc = sqlite3_step( setMultipartQuery ) ) == SQLITE_ROW )
+			if( ( rc = sqlite3_step( setMultipartQuery ) ) == SQLITE_DONE )
 			{
 				check++;
 			}
-			if( rc != SQLITE_DONE )
+			else
 			{
 				fprintf( stderr,
 						 "Select statement didn't finish with DONE (%i): %s\n",
@@ -1436,13 +1440,14 @@ Query_CreateMultiparts(
 			fprintf( stderr, "Can't prepare select query (%i): %s\n",
 					 rc, sqlite3_errmsg( cacheDatabase.cacheDb ) );
 		}
+
+		RESET_QUERY( createMultipart );
 	}
 	if( check != i )
 	{
 		fprintf( stderr, "Couldn't write all the parts to the database\n" );
 	}
 
-	RESET_QUERY( createMultipart );
     UnlockCache( );
 }
 
@@ -1454,6 +1459,7 @@ Query_CreateMultiparts(
  * @param owner [in] uid of the user that made the upload request.
  * @param filesize [in] Size of the file in bytes.
  * @return \a true if the query succeeded, or \a false otherwise.
+ * Test: unit test (in test-filecache.c).
  */
 bool
 Query_AddUpload(
@@ -1473,11 +1479,12 @@ Query_AddUpload(
 		) ) );
     if( rc == SQLITE_OK )
 	{
-		while( ( rc = sqlite3_step( addQuery ) ) == SQLITE_ROW )
+		rc = sqlite3_step( addQuery );
+		if( rc == SQLITE_DONE )
 		{
 			status = true;
 		}
-		if( rc != SQLITE_DONE )
+		else
 		{
 			fprintf( stderr,
 					 "Select statement didn't finish with DONE (%i): %s\n",
@@ -1516,6 +1523,7 @@ Query_AddUpload(
  * @param secretKey [out] The user's secret key.
  * @return \a true if a file or a file part is ready for upload, or \a false
  *         if no file is currently available.
+ * Test: unit test (in test-filecache.c).
  */
 bool
 Query_GetUpload(
@@ -1537,14 +1545,14 @@ Query_GetUpload(
     sqlite3_stmt  *getQuery = cacheDatabase.getUpload;
 	int           count;
 
-	const char *query_bucket     = NULL;
-	const char *query_remotePath = NULL;
-	const char *query_uploadId   = NULL;
-	const char *query_localpath  = NULL;
-	const char *query_localname  = NULL;
-	const char *query_keyId      = NULL;
-	const char *query_secretKey  = NULL;
-	char       *localfilepath    = NULL;
+	const char *query_bucket;
+	const char *query_remotePath;
+	const char *query_uploadId;
+	const char *query_localpath;
+	const char *query_localname;
+	const char *query_keyId;
+	const char *query_secretKey;
+	char       *localfilepath;
 
 	*bucket     = NULL;
 	*remotePath = NULL;
@@ -1584,13 +1592,19 @@ Query_GetUpload(
 				free( *localPath );
 				free( *keyId );
 				free( *secretKey );
-				free( localfilepath );
 			}
 
 			/* Copy string values to the caller. */
 			*bucket     = strdup( query_bucket );
 			*remotePath = strdup( query_remotePath );
-			*uploadId   = strdup( query_uploadId );
+			if( query_uploadId != NULL )
+			{
+				*uploadId = strdup( query_uploadId );
+			}
+			else
+			{
+				*uploadId = NULL;
+			}
 			*keyId      = strdup( query_keyId );
 			*secretKey  = strdup( query_secretKey );
 			/* Create the local file path. */
@@ -1601,14 +1615,6 @@ Query_GetUpload(
 			strcat( localfilepath, "/" );
 			strcat( localfilepath, query_localpath );
 			*localPath = localfilepath;
-
-			free( (char*) query_bucket );
-			free( (char*) query_remotePath );
-			free( (char*) query_uploadId );
-			free( (char*) query_keyId );
-			free( (char*) query_secretKey );
-			free( (char*) query_localname );
-			free( (char*) query_localpath );
 		}
 		if( rc != SQLITE_DONE )
 		{
@@ -1635,6 +1641,7 @@ Query_GetUpload(
  * @param fileId [in] ID of the file.
  * @param uploadId [in] The upload ID.
  * @return Nothing.
+ * Test: unit test (in test-filecache.c).
  */
 void
 Query_SetUploadId(
@@ -1651,11 +1658,11 @@ Query_SetUploadId(
 		) );
     if( rc == SQLITE_OK )
 	{
-		while( ( rc = sqlite3_step( setQuery ) ) == SQLITE_ROW )
+		if( ( rc = sqlite3_step( setQuery ) ) == SQLITE_DONE )
 		{
 			/* No action. */
 		}
-		if( rc != SQLITE_DONE )
+		else
 		{
 			fprintf( stderr,
 					 "Select statement didn't finish with DONE (%i): %s\n",
@@ -1686,10 +1693,8 @@ Query_AllPartsUploaded(
 	                   )
 {
     int           rc;
-    sqlite3_stmt  *checkQuery = cacheDatabase.checkCacheStatus;
+    sqlite3_stmt  *checkQuery = cacheDatabase.allPartsComplete;
 	int           partCount;
-	int           calculatedParts;
-	long long int filesize;
 
     LockCache( );
     BIND_QUERY( rc, int64( checkQuery, 1, fileId ), );
@@ -1698,7 +1703,6 @@ Query_AllPartsUploaded(
 		while( ( rc = sqlite3_step( checkQuery ) ) == SQLITE_ROW )
 		{
 			partCount = sqlite3_column_int( checkQuery, 0 );
-			filesize  = sqlite3_column_int64( checkQuery, 1 );
 		}
 		if( rc != SQLITE_DONE )
 		{
@@ -1708,15 +1712,15 @@ Query_AllPartsUploaded(
 		}
 	}
 	else
-    {
-        fprintf( stderr, "Can't prepare select query (%i): %s\n",
+	{
+		fprintf( stderr, "Can't prepare select query (%i): %s\n",
 				 rc, sqlite3_errmsg( cacheDatabase.cacheDb ) );
-    }
-	RESET_QUERY( checkCacheStatus );
+	}
+
+    RESET_QUERY( allPartsComplete );
     UnlockCache( );
 
-	calculatedParts = NumberOfMultiparts( filesize );
-	return( partCount == calculatedParts ? true : false );
+	return( partCount == 0 ? true : false );
 }
 
 
@@ -1726,6 +1730,7 @@ Query_AllPartsUploaded(
  * @param fileId [in] File ID for the file with multipart uploads.
  * @param part [in] Part number.
  * @return The multipart's ETag or \a "NULL" if no ETag was assigned.
+ * Test: unit test (in test-filecache.c).
  */
 const char*
 Query_GetPartETag(
@@ -1735,8 +1740,8 @@ Query_GetPartETag(
 {
     int           rc;
     sqlite3_stmt  *etagQuery = cacheDatabase.getEtag;
-	const char    *query_etag = NULL;
-	const char    *etag;
+	const char    *query_etag;
+	const char    *etag = NULL;
 
     LockCache( );
     BIND_QUERY( rc, int64( etagQuery, 1, fileId ),;
@@ -1746,14 +1751,20 @@ Query_GetPartETag(
 	{
 		while( ( rc = sqlite3_step( etagQuery ) ) == SQLITE_ROW )
 		{
-			if( query_etag != NULL )
+			if( etag != NULL )
 			{
 				fprintf( stderr, "Multiple rows returned." );
-				free( (char*) query_etag );
 				free( (char*) etag );
 			}
 			query_etag = (const char*) sqlite3_column_text( etagQuery, 0 );
-			etag = strdup( query_etag );
+			if( query_etag != NULL )
+			{
+				etag = strdup( query_etag );
+			}
+			else
+			{
+				etag = NULL;
+			}
 		}
 		if( rc != SQLITE_DONE )
 		{
@@ -1781,6 +1792,7 @@ Query_GetPartETag(
  * @param part [in] Part number.
  * @param etag [in] ETag for the part number.
  * @return Nothing.
+ * Test: unit test (in test-filecache.c).
  */
 void
 Query_SetPartETag(
@@ -1789,8 +1801,9 @@ Query_SetPartETag(
 	const char    *etag
 	              )
 {
-    int           rc;
-    sqlite3_stmt  *etagQuery = cacheDatabase.getEtag;
+    int          rc;
+    sqlite3_stmt *etagQuery = cacheDatabase.setEtag;
+	int          changes;
 
     LockCache( );
     BIND_QUERY( rc, text( etagQuery, 1, etag, -1, NULL ),
@@ -1799,14 +1812,15 @@ Query_SetPartETag(
 		) ) );
     if( rc == SQLITE_OK )
 	{
-		while( ( rc = sqlite3_step( etagQuery ) ) == SQLITE_ROW )
+		if( ( rc = sqlite3_step( etagQuery ) ) == SQLITE_DONE )
 		{
-			if( sqlite3_changes( cacheDatabase.cacheDb ) != 1 )
+			if( ( changes = sqlite3_changes( cacheDatabase.cacheDb ) ) != 1 )
 			{
-				fprintf( stderr, "Invalid number of records changed\n" );
+				fprintf( stderr, "Invalid number of records changed (%d)\n",
+						 changes );
 			}
 		}
-		if( rc != SQLITE_DONE )
+		else
 		{
 			fprintf( stderr,
 					 "Select statement didn't finish with DONE (%i): %s\n",
@@ -1828,6 +1842,7 @@ Query_SetPartETag(
  * Get the file ID of the next file that is waiting in the upload queue.
  * @return The ID of the next file in the upload queue, or \a 0 if no files
  * are pending.
+ * Test: unit test (in test-filecache.c).
  */
 sqlite3_int64
 Query_FindPendingUpload(
@@ -1839,16 +1854,20 @@ Query_FindPendingUpload(
 	sqlite3_int64 fileId;
 
     LockCache( );
-	while( ( rc = sqlite3_step( findQuery ) ) == SQLITE_ROW )
+	if( ( rc = sqlite3_step( findQuery ) ) == SQLITE_ROW )
 	{
 		fileId = sqlite3_column_int( findQuery, 0 );
 
-		if( rc != SQLITE_DONE )
+		if( ( rc != SQLITE_DONE ) && ( rc != SQLITE_ROW ) )
 		{
 			fprintf( stderr,
 					 "Select statement didn't finish with DONE (%i): %s\n",
 					 rc, sqlite3_errmsg( cacheDatabase.cacheDb ) );
 		}
+	}
+	else
+	{
+		fileId = 0;
 	}
 	RESET_QUERY( findUploadRequest );
     UnlockCache( );
@@ -1864,6 +1883,8 @@ Query_FindPendingUpload(
  * @param fileId [in] ID of the file that should be deleted from the transfer
  *        queue.
  * @return \a true if the file was deleted, or \a false otherwise.
+ * Test: implied blackbox (in GetSubscriptionFromUploadQueue in
+ *       test-uploadqueue.c and in test_FindPendingUpload in test-filecache.c).
  */
 bool
 Query_DeleteUploadTransfer(

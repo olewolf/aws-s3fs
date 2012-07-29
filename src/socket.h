@@ -29,24 +29,17 @@
 #include <sys/socket.h>
 
 
-bool CreateSocketPairProcess( int *socketFd, void (*child)( int socketFd ) );
-
 bool CreateServerStreamSocket( const char *socketPath, int *socketFd,
 			 struct sockaddr_un *socketAddress );
-bool CreateServerDatagramSocket( const char *socketPath, int *socketFd,
-			 struct sockaddr_un *socketAddress );
+
 int SocketReceiveDatagramFromClient( int socketFd, char *buffer, size_t size,
 				    struct ucred *credentials, int *fileHandle );
-int SocketSendDatagramToClient( int socketFd, char *buffer, int bufferLength,
+bool SocketSendDatagramToClient( int socketFd, char *buffer, int bufferLength,
 				int fileHandle );
 
 void CreateClientStreamSocket( const char *socketPath, int *socketFd,
 			 struct sockaddr_un *socketAddress );
-void CreateClientDatagramSocket( const char *socketPathServer, int *socketFd,
-				 struct sockaddr_un *socketAddressServer,
-				 const char *socketPathClient,
-				 struct sockaddr_un *socketAddressClient);
-int SocketSendDatagramToServer( int socketFd, const char *buffer,
+bool SocketSendDatagramToServer( int socketFd, const char *buffer,
 				int bufferLength );
 int SocketReceiveDatagramFromServer( int socketFd, char *buffer, size_t size,
 									 int *fileHandle );

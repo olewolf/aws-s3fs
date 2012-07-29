@@ -33,10 +33,9 @@
  * Read a boolean value from a libopt configuration file, and set a
  * \a configBoolean value to that value. (A \a configBoolean in this software
  * is a value that is true, false, or not set.)
- * @param [out] configBoolean Output for the .value and .isset values of the
+ * @param configBoolean [out] Output for the .value and .isset values of the
  *              boolean configuration value.
- * @param [in] config libopt config structure.
- * @param [in] key Key of the configuration file value.
+ * @param configValue [in] Value to set in the configuration file.
  * @return Nothing.
  */
 #ifndef AUTOTEST
@@ -56,8 +55,6 @@ ConfigSetBoolean(
 
 /**
  * Read settings from the specified config file.
- * @param lockFp [in] File handle for an opened file. This handle is released
- *                    when the function returns.
  * @param configFilename [in] Path to the configuration file.
  * @param configuration [out] Configuration structure, which is filled with
  *                            the configuration file contents.

@@ -1,5 +1,13 @@
+2012-07-29:
+	Doxygen comments brought up to date.
+	BeginUpload function split into several independent functions.
+
+2012-07-28:
+	Unit tests for filecachedb.c completed.
+
 2012-07-27:
 	Upload functionality largely complete, but not yet tested.
+	Unit tests for the upload queries begun.
 
 2012-07-19:
 	Work begun on upload functionality.

@@ -88,7 +88,7 @@ GetIntParameter(
  * Extract the next six-character file name from a string whose parameters are
  * separated by ':'.
  * @param parameterlist [in] Parameter string.
- * @param result [out] Null-terminated file name.
+ * @param filename [out] Null-terminated file name.
  * @return Number of bytes processed in the parameter string.
  */
 static int
@@ -289,8 +289,8 @@ GrantChown( const char *parameters )
  * Copy a chunk from a file into the in-progress directory, preparing it for
  * an S3 multipart upload.  The chunk offset and size is determined by the
  * part number and the file size.
- * @parameters [in] Part number and file path relative to the shared cache
- *             directory, separated by ':'.
+ * @param parameters [in] Part number and file path relative to the shared
+ *        cache directory, separated by ':'.
  * @return Nothing.
  */
 static void

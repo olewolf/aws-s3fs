@@ -39,38 +39,11 @@
 
 
 bool
-CreateSocketPairProcess( 
-    int        *socketFd,
-    void       (*child)( int socketFd )
-			)
-{
-	bool success = false;
-
-    return( success );
-}
-
-
-
-bool
 CreateServerStreamSocket(
     const char         *socketPath,
     int                *socketFd,
     struct sockaddr_un *socketAddress
 	                     )
-{
-    bool success       = false;
-
-    return( success );
-}
-
-
-
-bool
-CreateServerDatagramSocket(
-    const char         *socketPath,
-    int                *socketFd,
-    struct sockaddr_un *socketAddress
-			   )
 {
     bool success       = false;
 
@@ -88,14 +61,14 @@ SocketReceiveDatagramFromClient(
     int          *fileHandle
 			   )
 {
-    int            result = 0;
+    int result = 0;
 
     return( result );
 }
 
 
 
-int
+bool
 SocketSendDatagramToClient(
     int  socketFd,
     char *buffer,
@@ -103,7 +76,7 @@ SocketSendDatagramToClient(
     int  fileHandle
 			  )
 {
-    int            status = true;
+    bool status = true;
 
     return( status );
 }
@@ -121,27 +94,14 @@ CreateClientStreamSocket(
 
 
 
-void
-CreateClientDatagramSocket(
-    const char         *socketPathServer,
-    int                *socketFd,
-    struct sockaddr_un *socketAddressServer,
-    const char         *socketPathClient,
-    struct sockaddr_un *socketAddressClient
-	                      )
-{
-}
-
-
-
-int
+bool
 SocketSendDatagramToServer(
     int        socketFd,
     const char *buffer,
     int        bufferLength
 			               )
 {
-    bool           success = true;
+    bool success = true;
 
     return( success );
 }

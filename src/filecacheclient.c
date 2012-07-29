@@ -45,6 +45,7 @@ static struct sockaddr_un cacheSocketAddress;
  * cache receive the user's AWS keys. This is necessary for the upload/
  * download handler to sign postponed requests, because AWS signatures
  * appear to be valid for 15 minutes only.
+ * @param bucket [in] Bucket name in the Amazon S3 storage.
  * @param keyId [in] Amazon Access Key ID.
  * @param secretKey [in] Secret key ID.
  * @return \a true if successfully connected; \a false otherwise.
@@ -148,8 +149,6 @@ GetCachedFilename(
  * @param gid [in] The file's gid.
  * @param permissions [in] The file's permissions.
  * @param mtime [in] The file's last modification time.
- * @param localname [out] Pointer to the local file, relative to the cache dir.
- * @param fileId [out] File ID of the file in the file cache database.
  * return 0 on success, or \a -errno on failure.
  */
 int
@@ -194,7 +193,7 @@ CreateCachedFile(
  * Ask the file cache to retrieve a file from external storage. If the
  * file is already in the cache, the function returns immediately without
  * downloading the file.
- * @param fileId [in] ID of the file in the file cache database.
+ * @param path [in] Path of the file on the S3 drive.
  * @return 0 on success, or \a -errno on failure.
  */
 int
