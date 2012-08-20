@@ -65,7 +65,7 @@ int CloseCacheFile( const char *path );
 const char *SendCacheRequest( const char *message );
 const char *ReceiveCacheReply( void );
 void InitializePermissionsGrant( pid_t childPid, int socketHandle );
-void *ProcessDownloadQueue( void *socket );
+void *ProcessTransferQueues( void *socket );
 void ReceiveDownload( sqlite3_int64 fileId, uid_t owner );
 int NumberOfMultiparts( long long int filesize );
 int CreateFilePart( int socket, const char *filename, int part,

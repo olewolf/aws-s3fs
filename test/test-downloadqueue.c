@@ -38,7 +38,7 @@ extern struct
 	bool   isReady;
 	CURL   *curl;
 	S3COMM *s3Comm;
-} downloaders[ MAX_SIMULTANEOUS_TRANSFERS ];
+} transferers[ MAX_SIMULTANEOUS_TRANSFERS ];
 
 
 struct DownloadStarter
@@ -72,7 +72,7 @@ extern sqlite3_int64 FindFile( const char *path, char *localname );
 extern void LockDownloadQueue( void );
 extern void UnlockDownloadQueue( void );
 extern struct DownloadSubscription *GetSubscriptionFromDownloadQueue( void );
-extern int FindAvailableDownloader( void );
+extern int FindAvailableTransferer( void );
 extern enum bucketRegions HostnameToRegion( const char *hostname );
 extern void CompileRegexes( void );
 extern void UnsubscribeFromDownload( struct DownloadSubscription *sub );
@@ -85,7 +85,7 @@ extern void *ProcessDownloadQueue( void *socket );
 extern sqlite3 *GetCacheDatabase( void );
 
 static void test_ReceiveDownload( const char *param );
-static void test_FindAvailableDownloader( const char *param );
+static void test_FindAvailableTransferer( const char *param );
 static void test_HostnameToRegion( const char *param );
 static void test_UnsubscribeFromDownload( const char *param );
 static void test_MoveToSharedCache( const char *param );
@@ -124,7 +124,7 @@ const struct dispatchTable dispatchTable[ ] =
 {
     DISPATCHENTRY( ProcessDownloadQueue ),
     DISPATCHENTRY( ReceiveDownload ),
-    DISPATCHENTRY( FindAvailableDownloader ),
+    DISPATCHENTRY( FindAvailableTransferer ),
     DISPATCHENTRY( HostnameToRegion ),
     DISPATCHENTRY( UnsubscribeFromDownload ),
     DISPATCHENTRY( BeginDownload ),
@@ -293,24 +293,24 @@ static void test_ReceiveDownload( const char *param )
 
 
 
-static void test_FindAvailableDownloader( const char *param )
+static void test_FindAvailableTransferer( const char *param )
 {
 	int i;
 
 	for( i = 0; i < MAX_SIMULTANEOUS_TRANSFERS; i++ )
 	{
-		downloaders[ i ].isReady = true;
+		transferers[ i ].isReady = true;
 	}
-	printf( "1: %d\n", FindAvailableDownloader( ) );
-	downloaders[ 0 ].isReady = false;
-	printf( "2: %d\n", FindAvailableDownloader( ) );
-	downloaders[ MAX_SIMULTANEOUS_TRANSFERS - 1 ].isReady = false;
-	printf( "3: %d\n", FindAvailableDownloader( ) );
+	printf( "1: %d\n", FindAvailableTransferer( ) );
+	transferers[ 0 ].isReady = false;
+	printf( "2: %d\n", FindAvailableTransferer( ) );
+	transferers[ MAX_SIMULTANEOUS_TRANSFERS - 1 ].isReady = false;
+	printf( "3: %d\n", FindAvailableTransferer( ) );
 	for( i = 0; i < MAX_SIMULTANEOUS_TRANSFERS; i++ )
 	{
-		downloaders[ i ].isReady = false;
+		transferers[ i ].isReady = false;
 	}
-	printf( "4: %d\n", FindAvailableDownloader( ) );
+	printf( "4: %d\n", FindAvailableTransferer( ) );
 }
 
 
@@ -403,9 +403,9 @@ static void test_BeginDownload( const char *param )
 	FillDatabase( );
 	CompileRegexes( );
 
-	downloaders[ 0 ].isReady = true;
-	downloaders[ 0 ].curl    = curl_easy_init( );
-	downloaders[ 0 ].s3Comm  = &s3Comm;
+	transferers[ 0 ].isReady = true;
+	transferers[ 0 ].curl    = curl_easy_init( );
+	transferers[ 0 ].s3Comm  = &s3Comm;
 
 	subscription = malloc( sizeof( struct DownloadSubscription ) );
 
@@ -558,7 +558,7 @@ static void test_ProcessDownloadQueue( const char *param )
 		if( i == 8 )
 		{
 			pthread_create( &test_ReceiveDownload_monitor, NULL,
-							ProcessDownloadQueue, &socket );
+							ProcessTransferQueues, &socket );
 		}
 		if( ( i % 10 ) == 0 ) sleep( 1 );
 		pthread_create( &request, NULL, test_ProcessDownloadQueue_Downloads,

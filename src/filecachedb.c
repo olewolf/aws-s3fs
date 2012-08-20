@@ -413,7 +413,11 @@ CompileStandardQueries(
 		"SELECT iscached FROM files WHERE id = ?;";
 
 	const char *const createMultipartSql =
-		"INSERT INTO transferparts( transfer, part ) VALUES( ?, ? );";
+		"INSERT INTO transferparts( transfer, part ) "
+		"VALUES( "
+		"    (SELECT id FROM transfers WHERE direction = 'u' AND file = ?), "
+        "    ? "
+		"); ";
 
 	const char *const getUploadSql =
 		"SELECT files.bucket, files.remotename, "

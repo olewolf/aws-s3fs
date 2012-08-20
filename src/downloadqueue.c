@@ -50,9 +50,16 @@ STATIC struct
 	bool   isReady;
 	CURL   *curl;
 	S3COMM *s3Comm;
-} downloaders[ MAX_SIMULTANEOUS_TRANSFERS ];
+} transferers[ MAX_SIMULTANEOUS_TRANSFERS ];
 
 
+/**
+ * Each file that is downloaded is subscribed to by one of more clients.  The
+ * clients request the (not yet) cached file in separate threads, which are
+ * told to wait via a mutex lock.  The downloader broadcasts a wake-up message
+ * to them all, and then asks for an acknowledgment from each client that it
+ * has unsubscribed from the download request.
+ */
 struct DownloadSubscription
 {
 	sqlite3_int64   fileId;
@@ -68,18 +75,9 @@ struct DownloadSubscription
 };
 
 
-struct UploadSubscription
-{
-	sqlite3_int64   fileId;
-	/* Used by clients to wait for the download to complete. */
-	pthread_cond_t  waitCond;
-	pthread_mutex_t waitMutex;
-	/* Used by the downloader to wait for the last client to unsubscribe. */
-	pthread_cond_t  acknowledgeCond;
-	pthread_mutex_t acknowledgeMutex;
-};
-
-
+/**
+ * Thread state information for a file download request.
+ */
 struct DownloadStarter
 {
 	int                         socket;
@@ -88,22 +86,25 @@ struct DownloadStarter
 };
 
 
+/**
+ * Thread state information for a file upload request.
+ */
 struct UploadStarter
 {
-	int                       socket;
-	int                       uploader;
-	struct UploadSubscription *subscription;
+	int           socket;
+	int           uploader;
+	sqlite3_int64 fileId;
 };
 
 
 
-STATIC int FindAvailableDownloader( void );
+STATIC int FindAvailableTransferer( void );
 STATIC void *BeginDownload( void *threadCtx );
 STATIC void *BeginUpload( void *threadCtx );
 STATIC void UnsubscribeFromDownload(
 	struct DownloadSubscription *subscription );
 STATIC struct DownloadSubscription *GetSubscriptionFromDownloadQueue( void );
-STATIC struct UploadSubscription *GetSubscriptionFromUploadQueue( void );
+STATIC sqlite3_int64 GetSubscriptionFromUploadQueue( void );
 STATIC bool MoveToSharedCache( int socketHandle,
 							   const char *parentname, uid_t parentUid,
 							   gid_t parentGid, const char *filename,
@@ -185,6 +186,7 @@ ReceiveDownload(
 		subscription->fileId         = fileId;
 		subscription->downloadActive = false;
 		subscription->subscribers    = 1;
+		/* Prepare wait condition and acknowledgment mutexes. */
 		pthread_mutexattr_init( &mutexAttr );
 		pthread_mutex_init( &subscription->waitMutex, &mutexAttr );
 		pthread_mutex_init( &subscription->acknowledgeMutex, &mutexAttr );
@@ -259,8 +261,8 @@ UnsubscribeFromDownload(
 
 
 /**
- * Pull requests from the download queue and start downloads. This function
- * is started as a thread.
+ * Pull requests from the upload queue and the download queue, and start
+ * uploads and downloads.  This function is started as a thread.
  * @param socket [in] The socket handle for communicating with the permissions
  *        grant module.
  * @return Nothing.
@@ -268,22 +270,22 @@ UnsubscribeFromDownload(
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 void*
-ProcessDownloadQueue(
+ProcessTransferQueues(
 	void *socket
 	                 )
 {
 	int                         i;
 	struct DownloadSubscription *downloadSubscription;
-	int                         downloader;
+	int                         transferer;
 	struct DownloadStarter      *downloadStarter;
-	struct UploadSubscription   *uploadSubscription;
+	sqlite3_int64               fileId;
 	struct UploadStarter        *uploadStarter;
 	pthread_t                   threadId;
 	int                         socketHandle;
 
 	socketHandle = * (int*) socket;
 
-	/* Initialize downloaders.  The S3COMM handle is not acquired via
+	/* Initialize transferers.  The S3COMM handle is not acquired via
 	   s3_open( ), because for uploads and downloads, its contents are
 	   file specific and would require us to open and close the s3comms
 	   module for each file.  We can "fake" an S3COMM handle, however,
@@ -294,9 +296,9 @@ ProcessDownloadQueue(
 	curl_global_init( CURL_GLOBAL_ALL );
 	for( i = 0; i < MAX_SIMULTANEOUS_TRANSFERS; i++ )
 	{
-		downloaders[ i ].curl    = curl_easy_init( );
-		downloaders[ i ].s3Comm  = malloc( sizeof( S3COMM ) );
-		downloaders[ i ].isReady = true;
+		transferers[ i ].curl    = curl_easy_init( );
+		transferers[ i ].s3Comm  = malloc( sizeof( S3COMM ) );
+		transferers[ i ].isReady = true;
 	}
 
 	/* Main loop. */
@@ -308,16 +310,16 @@ ProcessDownloadQueue(
 
 		/* Fill the transfer slots with uploads or downloads until either
 		   all transfer slots are occupied or the queues are empty. */
-		while( ( downloader = FindAvailableDownloader( ) ) != -1 )
+		while( ( transferer = FindAvailableTransferer( ) ) != -1 )
 		{
 			/* Find an entry in the upload queue that isn't processed yet. */
-			uploadSubscription = GetSubscriptionFromUploadQueue( );
-			if( uploadSubscription != NULL )
+			fileId = GetSubscriptionFromUploadQueue( );
+			if( fileId != 0ll )
 			{
-				downloaders[ downloader ].isReady = false;
+				transferers[ transferer ].isReady = false;
 				uploadStarter = malloc( sizeof( struct UploadStarter ) );
-				uploadStarter->uploader     = downloader;
-				uploadStarter->subscription = uploadSubscription;
+				uploadStarter->uploader     = transferer;
+				uploadStarter->fileId       = fileId;
 				uploadStarter->socket       = socketHandle;
 				pthread_create( &threadId, NULL, BeginUpload, uploadStarter );
 			}
@@ -329,10 +331,10 @@ ProcessDownloadQueue(
 				if( downloadSubscription != NULL )
 				{
 					downloadSubscription->downloadActive = true;
-					downloaders[ downloader ].isReady = false;
+					transferers[ transferer ].isReady = false;
 					downloadStarter = malloc(
 						sizeof( struct DownloadStarter ) );
-					downloadStarter->downloader   = downloader;
+					downloadStarter->downloader   = transferer;
 					downloadStarter->subscription = downloadSubscription;
 					downloadStarter->socket       = socketHandle;
 					pthread_create( &threadId, NULL, BeginDownload,
@@ -348,13 +350,12 @@ ProcessDownloadQueue(
 
 		/* If the queues are emptied or all transfer slots are occupied, then
 		   wait until there are new entries in the queues or a transfer
-		   finishes, whichever comes first.
-		   We still have the mutex lock, so we won't receive any signals yet.
-		   Any new entries or finished transfers will be waiting for us to
-		   release the lock. */
-		if( ( downloader == -1 ) ||
+		   finishes, whichever comes first.  (We still have the mutex lock,
+		   so we won't receive any signals yet.  Any new entries will be
+		   waiting for us to release the lock.) */
+		if( ( transferer == -1 ) ||
 			( ( downloadSubscription == NULL ) &&
-			  ( uploadSubscription   == NULL ) ) )
+			  ( fileId               == 0    ) ) )
 		{
 			pthread_cond_wait( &mainLoop_cond, &mainLoop_mutex );
 		}
@@ -364,10 +365,10 @@ ProcessDownloadQueue(
 	}
 
 
-	/* Take down downloaders. */
+	/* Take down transferers. */
 	for( i = 0; i < MAX_SIMULTANEOUS_TRANSFERS; i++ )
 	{
-		curl_easy_cleanup( downloaders[ i ].curl );
+		curl_easy_cleanup( transferers[ i ].curl );
 	}
 	curl_global_cleanup( );
 }
@@ -376,13 +377,13 @@ ProcessDownloadQueue(
 
 
 /**
- * Find any downloader that is not currently busy.
- * @return Handle of an available downloader, or -1 if all downloaders are
- *         occupied.
+ * Find any transferer that is not currently busy.
+ * @return Handle of an available transferer, or \a -1 if all transferers are
+ *         currently busy.
  * Test: unit test (test-downloadqueue.c).
  */
 STATIC int
-FindAvailableDownloader(
+FindAvailableTransferer(
 	void
 	                    )
 {
@@ -391,12 +392,12 @@ FindAvailableDownloader(
 	/* Find an available downloader. */
 	for( i = 0; i < MAX_SIMULTANEOUS_TRANSFERS; i++ )
 	{
-		if( downloaders[ i ].isReady )
+		if( transferers[ i ].isReady )
 		{
 			return( i );
 		}
 	}
-	/* Return -1 if no downloader was available. */
+	/* Return -1 if no transferer was available. */
 	return( -1 );
 }
 
@@ -503,8 +504,8 @@ BeginDownload(
 	socketHandle    = downloadStarter->socket;
 	free( ctx );
 
-	curl   = downloaders[ downloader ].curl;
-	s3Comm = downloaders[ downloader ].s3Comm;
+	curl   = transferers[ downloader ].curl;
+	s3Comm = transferers[ downloader ].s3Comm;
 
 	/* Fetch local filename, remote filename, bucket, keyId, and
 	   secretKey. */
@@ -591,7 +592,7 @@ BeginDownload(
 		status = Query_DeleteTransfer( subscription->fileId );
 		Query_MarkFileAsCached( subscription->fileId );
 		/* Mark the downloader as ready for another download. */
-		downloaders[ downloader ].isReady = true;
+		transferers[ downloader ].isReady = true;
 		/* Before signaling to the subscribers that the file is available,
 		   make sure none of them can acknowledge before we're ready to
 		   receive the acknowledgment. */
@@ -770,13 +771,12 @@ SendGrantMessage(
 
 
 
-
-
 /**
  * Add a file to the upload queue.
  * @param remotepath [in] The remote filename.
  * @param owner [in] uid of the user who owns the connection.
  * @return Nothing.
+ * Test: unit test (test-uploadqueue.c).
  */
 void
 PutUpload(
@@ -826,15 +826,16 @@ PutUpload(
  * @param filename [out] Pointer to where the filepath is stored.
  * @return \a true if the host and file path could be extracted, or \a false
  *         otherwise.
+ * Test: unit test (test-uploadqueue.c).
  */
 STATIC bool
 ExtractHostAndFilepath(
 	const char *remotePath,
-	const char **hostname,
+	char       **hostname,
 	char       **filepath
 	                   )
 {
-	GMatchInfo        *matchInfo;
+	GMatchInfo *matchInfo;
 
 	/* Grep the hostname. */
 	g_regex_ref( regexes.hostname );
@@ -1018,10 +1019,10 @@ BeginUpload(
 	void *ctx
 	        )
 {
-	int                       socketHandle;
-	struct UploadStarter      *uploadStarter;
-	int                       uploader;
-	struct UploadSubscription *subscription;
+	int                  socketHandle;
+	struct UploadStarter *uploadStarter;
+	int                  uploader;
+	sqlite3_int64        fileId;
 
 	CURL              *curl;
 	S3COMM            *s3Comm;
@@ -1049,22 +1050,20 @@ BeginUpload(
 	uid_t             uid;
 	gid_t             gid;
 	int               permissions;
-	struct timeval    now;
-	struct timespec   oneMinute;
 	const char        *localFilePartPath;
 
 	uploadStarter = (struct UploadStarter*) ctx;
 	uploader      = uploadStarter->uploader;
-	subscription  = uploadStarter->subscription;
+	fileId        = uploadStarter->fileId;
 	socketHandle  = uploadStarter->socket;
 	free( ctx );
 
-	curl   = downloaders[ uploader ].curl;
-	s3Comm = downloaders[ uploader ].s3Comm;
+	curl   = transferers[ uploader ].curl;
+	s3Comm = transferers[ uploader ].s3Comm;
 
 	/* Fetch local filename, remote filename, uid, gid, permissions, bucket,
 	   keyId, and secretKey. */
-	uploadPending = Query_GetUpload( subscription->fileId, &part, &bucket,
+	uploadPending = Query_GetUpload( fileId, &part, &bucket,
 									 &remotePath, &uploadId, &uid, &gid,
 									 &permissions, &filesize, &localPath,
 									 &keyId, &secretKey );
@@ -1072,7 +1071,7 @@ BeginUpload(
 	{
 		/* Extract the hostname and remote file path from the remote
 		   filename. */
-		ExtractHostAndFilepath( remotePath, &hostname, &filepath );
+		ExtractHostAndFilepath( remotePath, (char**) &hostname, &filepath );
 		/* Prepare a fake S3COMM handle. */
 		s3Comm->bucket    = (char*) bucket;
 		s3Comm->keyId     = (char*) keyId;
@@ -1089,8 +1088,7 @@ BeginUpload(
 			{
 
 				free( uploadId );
-				uploadId = InitiateMultipartUpload( s3Comm, curl,
-													subscription->fileId,
+				uploadId = InitiateMultipartUpload( s3Comm, curl, fileId,
 													uid, gid, permissions,
 													filepath );
 			}
@@ -1122,7 +1120,7 @@ BeginUpload(
 		upFile = fopen( localFile, "r" );
 		DigestStream( upFile, md5sum, HASH_MD5, HASHENC_BASE64 );
 		rewind( upFile );
-		Query_SetPartETag( subscription->fileId, part, md5sum );
+		Query_SetPartETag( fileId, part, md5sum );
 		headers = NULL;
 		sprintf( amzHeader, "Content-MD5:%s", md5sum );
 		headers = curl_slist_append( NULL, strdup( amzHeader ) );
@@ -1149,10 +1147,9 @@ BeginUpload(
 		   once all the parts have been uploaded. */
 		if( 1 < parts )
 		{
-			CompleteMultipartUpload( s3Comm, curl, subscription->fileId,
+			CompleteMultipartUpload( s3Comm, curl, fileId,
 									 parts, hostname, filepath, uploadId );
 		}
-
 
 		free( bucket );
 		free( keyId );
@@ -1163,32 +1160,12 @@ BeginUpload(
 		if( status == 0 )
 		{
 			pthread_mutex_lock( &mainLoop_mutex );
-			status = Query_DeleteUploadTransfer( subscription->fileId );
+			status = Query_DeleteUploadTransfer( fileId );
 			/* Mark the transfer slot as ready for another file transfer. */
-			downloaders[ uploader ].isReady = true;
-			/* Before signaling to that the file is available, make sure the
-			   thread cannot acknowledge before we're ready to receive the
-			   acknowledgment. */
-			pthread_mutex_lock( &subscription->acknowledgeMutex );
-			pthread_mutex_lock( &subscription->waitMutex );
-			/* Inform the subscriber that the file is available. */
-			pthread_cond_signal( &subscription->waitCond );
+			transferers[ uploader ].isReady = true;
 			/* Inform the queue processor that an upload slot is available. */
 			pthread_cond_signal( &mainLoop_cond );
 			pthread_mutex_unlock( &mainLoop_mutex );
-			pthread_mutex_unlock( &subscription->waitMutex );
-			/* Wait for the subscriber to acknowledge that the subscription
-			   count is zero. If no response is received within a minute,
-			   probably it has died. */
-			gettimeofday( &now, NULL );
-			oneMinute.tv_sec  = now.tv_sec + 60;
-			oneMinute.tv_nsec = 0;
-			pthread_cond_timedwait( &subscription->acknowledgeCond,
-									&subscription->acknowledgeMutex,
-									&oneMinute );
-			pthread_mutex_unlock( &subscription->acknowledgeMutex );
-			/* Delete the subscription whether acknowledged or not. */
-			free( subscription );
 		}
 	}
 
@@ -1204,35 +1181,17 @@ BeginUpload(
  *         file, or \a NULL if uploads are queued.
  * Test: unit test (in test-uploadqueue.c).
  */
-STATIC struct UploadSubscription*
+STATIC sqlite3_int64
 GetSubscriptionFromUploadQueue(
 	void
 	                           )
 {
-	struct UploadSubscription *subscription;
 	sqlite3_int64             fileId;
-	pthread_mutexattr_t       mutexAttr;
-	pthread_condattr_t        condAttr;
 
 	/* Find the file ID of an upload waiting in the transfer queue. */
-	subscription = NULL;
 	fileId = Query_FindPendingUpload( );
-	if( fileId != 0 )
-	{
-		/* Create a subscription for the upload. */
-		subscription = malloc( sizeof( struct UploadSubscription ) );
-		subscription->fileId = fileId;
-		pthread_mutexattr_init( &mutexAttr );
-		pthread_mutex_init( &subscription->waitMutex, &mutexAttr );
-		pthread_mutex_init( &subscription->acknowledgeMutex, &mutexAttr );
-		pthread_mutexattr_destroy( &mutexAttr );
-		pthread_condattr_init( &condAttr );
-		pthread_cond_init( &subscription->waitCond, &condAttr );
-		pthread_cond_init( &subscription->acknowledgeCond, &condAttr );
-		pthread_condattr_destroy( &condAttr );
-	}
 
-	return( subscription );
+	return( fileId );
 }
 
 
@@ -1250,6 +1209,11 @@ GetSubscriptionFromUploadQueue(
  *        in-progress cache directory.
  * @return Number of bytes in the file chunk.
  */
+#ifdef AUTOTEST
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-variable"
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#endif
 int
 CreateFilePart(
 	int           socketHandle,
@@ -1259,25 +1223,24 @@ CreateFilePart(
 	const char    **fileChunkPath
 	           )
 {
-	int           partsize;
-	long long int parts;
-	char          *chunkfile;
-	int           filehandle;
-	char          *request;
-	char          reply[ 10 ];
+	int  partsize;
+	int  parts;
+	char *chunkfile;
+	int  filehandle;
+	char *request;
+	char reply[ 10 ];
 
 	/* Calculate the part size to extract. */
-	parts    = NumberOfMultiparts( filesize );
-	partsize = ( filesize + filesize - 1 ) / parts;
+	partsize = PREFERRED_CHUNK_SIZE * 1024l * 1024l;
 	/* The last part is the remainder of the division. */
+	parts = NumberOfMultiparts( filesize );
 	if( part == parts )
 	{
-		partsize = filesize % parts;
+		partsize = filesize % partsize;
 	}
 
 	/* Create a destination file that receives a copy of the file chunk. */
-	chunkfile = malloc( strlen( CACHE_INPROGRESS )
-						+ 7 * sizeof( char ) );
+	chunkfile = malloc( strlen( CACHE_INPROGRESS ) + 7 * sizeof( char ) );
 	strcpy( chunkfile, CACHE_INPROGRESS );
 	strcat( chunkfile, "XXXXXX" );
 	filehandle = mkstemp( chunkfile );
@@ -1287,9 +1250,14 @@ CreateFilePart(
 	request = malloc( strlen( filepath ) + strlen( *fileChunkPath )
 					  + sizeof( char ) + strlen( "CHUNK 10000::" ) );
 	sprintf( request, "CHUNK %d:%s:%s", part, filepath, *fileChunkPath );
+#ifndef AUTOTEST
 	SendGrantMessage( socketHandle, request, reply, sizeof( reply ) );
+#endif
 
 	/* Return the size of the file chunk. */
 	return( partsize );
 }
+#ifdef AUTOTEST
+#pragma GCC diagnostic pop
+#endif
 

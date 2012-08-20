@@ -35,8 +35,6 @@
 #include "socket.h"
 
 
-static pthread_t downloadQueue;
-
 /* If the parent process is terminated, terminate also this pid, if > 0. */
 static pid_t killPid = -1;
 
@@ -110,6 +108,7 @@ StartProcesses(
 	int              stdIO;
 	struct sigaction sigAction;
 	int              enabled = 1;
+	static pthread_t transferQueue;
 
 
 	/* Setup a socket pair for communication between the two processes. */
@@ -205,8 +204,8 @@ StartProcesses(
 #endif
 			testSocket = socketPair[ 0 ];
 			/* Start the download queue as a thread. */
-			if( pthread_create( &downloadQueue, NULL,
-								ProcessDownloadQueue, &socketPair[ 0 ] ) != 0 )
+			if( pthread_create( &transferQueue, NULL,
+								ProcessTransferQueues, &socketPair[ 0 ] ) != 0 )
 			{
 				fprintf( stderr, "Couldn't start download queue thread" );
 				exit( 1 );

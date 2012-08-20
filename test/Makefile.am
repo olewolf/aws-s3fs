@@ -16,9 +16,9 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 
-TESTSCRIPTS = commandline.at config.at common.at logging.at cache.at hash.at \
-	s3if.at filecache.at downloadqueue.at
-#TESTSCRIPTS = uploadqueue.at
+#TESTSCRIPTS = commandline.at config.at common.at logging.at cache.at hash.at \
+	s3if.at filecache.at downloadqueue.at uploadqueue.at
+TESTSCRIPTS = uploadqueue.at
 
 
 noinst_PROGRAMS = test-decodecmdline test-config test-common \
