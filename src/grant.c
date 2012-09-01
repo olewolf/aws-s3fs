@@ -48,7 +48,7 @@
  * @param result [out] Value of the integer parameter.
  * @return Number of bytes processed in the parameter string.
  */
-static int
+STATIC int
 GetIntParameter(
 	const char *parameterlist,
 	int        *result
@@ -91,7 +91,7 @@ GetIntParameter(
  * @param filename [out] Null-terminated file name.
  * @return Number of bytes processed in the parameter string.
  */
-static int
+STATIC int
 GetFileParameter(
 	const char *parameterlist,
 	char       filename[ 7 ]
@@ -128,7 +128,7 @@ GetFileParameter(
  * @param filename [in] Filename to verify.
  * @return \a true if the file name is valid, or \a false otherwise.
  */
-static bool
+STATIC bool
 VerifyFilename( char filename[ 7 ] )
 {
 	int  pos;
@@ -293,16 +293,17 @@ GrantChown( const char *parameters )
  *        cache directory, separated by ':'.
  * @return Nothing.
  */
-static void
+STATIC void
 CreateFileChunk( const char *parameters )
 {
-	int  part;
-	char filename[ 14 ];
-	char *srcfilepath;
-	char *destfilepath;
-	bool valid;
-	bool hasDirectory = false;
-	int  pos;
+	int       part;
+	char      filename[ 14 ];
+	char      *srcfilepath;
+	char      *destfilepath;
+	bool      valid;
+	bool      hasDirectory = false;
+	int       pos;
+	const int copyChunkSize = 262144;
 
 	struct stat   fileStat;
 	int           status;
@@ -315,6 +316,7 @@ CreateFileChunk( const char *parameters )
 	int           relativeOffset;
 	int           index;
 	int           bytesCopied;
+	int           chunkSize;
 	unsigned char *chunk;
 	int           nBytes;
 
@@ -348,7 +350,7 @@ CreateFileChunk( const char *parameters )
 		}
 		if( valid )
 		{
-			/* Create the full source file path. */
+			/* Build the full source file path. */
 			srcfilepath = malloc( strlen( CACHE_FILES ) + strlen( filename )
 							   + sizeof( char ) );
 			strcpy( srcfilepath, CACHE_FILES );
@@ -366,39 +368,54 @@ CreateFileChunk( const char *parameters )
 				strcat( destfilepath, filename );
 
 				/* Copy the file chunk in, well, chunks. */
-				chunk = malloc( 65536 );
+				chunk = malloc( copyChunkSize );
 				if( chunk != NULL )
 				{
-					/* Calculate the number of bytes to copy, and the offset
+					/* Calculate the number of bytes to copy and the offset
 					   into the source file. */
 					status = stat( srcfilepath, &fileStat );
-					if( 0 < status )
+					if( 0 <= status )
 					{
+						partSize = PREFERRED_CHUNK_SIZE * 1024 * 1024;
+						/* The last part size is the remainder of the
+						   division. */
 						filesize = fileStat.st_size;
-						parts    = NumberOfMultiparts( filesize );
-						partSize = ( filesize + filesize - 1 ) / parts;
-					}
-					offset = (long long int) (part - 1 )
-						* (long long int) partSize;
-					/* Copy small chunks. */
-					src  = open( srcfilepath, O_RDONLY );
-					dest = open( destfilepath, O_WRONLY );
-					if( ( 0 <= src ) && ( 0 <= dest ) && ( 0 < status ) )
-					{
-						index       = 0;
-						bytesCopied = 0;
-						do
+						parts = NumberOfMultiparts( filesize );
+						if( part == parts )
 						{
-							relativeOffset = index * 65536;
-							nBytes = pread( src, chunk,
-											65536, offset + relativeOffset );
-							if( 0 < nBytes )
+							partSize = filesize % partSize;
+						}
+						offset = (long long int) (part - 1 )
+							* PREFERRED_CHUNK_SIZE * 1024 * 1024;
+						/* Copy small chunks. */
+						src  = open( srcfilepath, O_RDONLY | O_LARGEFILE );
+						dest = open( destfilepath, O_TRUNC | O_WRONLY );
+						if( ( 0 <= src ) && ( 0 <= dest ) )
+						{
+							index       = 0;
+							bytesCopied = 0;
+							do
 							{
-								write( dest, chunk, nBytes );
-								bytesCopied = bytesCopied + nBytes;
-							}
-							index++;
-						} while( ( 0 < nBytes ) && ( bytesCopied < partSize ) );
+								/* Determine size of the chunk to read. */
+								chunkSize = copyChunkSize;
+								/* Determine offset into the file. */
+								relativeOffset = index * chunkSize;
+								if( chunkSize + relativeOffset > partSize )
+								{
+									chunkSize = partSize - relativeOffset;
+								}
+								/* Copy the chunk. */
+								nBytes = pread( src, chunk, chunkSize,
+												offset + relativeOffset );
+								if( 0 < nBytes )
+								{
+									write( dest, chunk, nBytes );
+									bytesCopied = bytesCopied + nBytes;
+								}
+								index++;
+							} while( ( 0 < nBytes ) &&
+									 ( bytesCopied < partSize ) );
+						}
 					}
 				}
 			}

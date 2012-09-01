@@ -1,0 +1,64 @@
+# Copyright (C) 2012 Ole Wolf <wolf@blazingangles.com>
+#
+# This file is part of aws-s3fs.
+# 
+# aws-s3fs is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+AT_BANNER([Upload Queue])
+
+AT_SETUP([ExtractHostAndFilepath])
+AT_CHECK([test-uploadqueue ExtractHostAndFilepath], [], [stdout])
+AT_CHECK([grep '^1: s3.amazonaws.com, /bucketname/DIR01/FILE05$' stdout], [], [ignore])
+AT_CHECK([grep '^2: bucketname.s3-ap-northeast-1.amazonaws.com, /DIR01/FILE05$' stdout], [], [ignore])
+AT_CHECK([grep '^3: bucketname.s3-ap-northeast-1.amazonaws.com, /$' stdout], [], [ignore])
+AT_CHECK([grep '^4: bucketname.s3.amazonaws.com, /DIR01/$' stdout], [], [ignore])
+AT_CHECK([grep '^5: bucketname.amazonaws.com, /DIR01/$' stdout], [], [ignore])
+AT_CHECK([grep '^6: bucketname.amazonaws.com, (null)$' stdout], [], [ignore])
+AT_CLEANUP
+
+AT_SETUP([NumberOfMultiparts])
+AT_CHECK([test-uploadqueue NumberOfMultiparts], [], [stdout])
+AT_CHECK([grep '^1: 1$' stdout], [], [ignore])
+AT_CHECK([grep '^2: 1$' stdout], [], [ignore])
+AT_CHECK([grep '^3: 2$' stdout], [], [ignore])
+AT_CHECK([grep '^4: 6144$' stdout], [], [ignore])
+AT_CHECK([grep '^5: 10000$' stdout], [], [ignore])
+AT_CHECK([grep '^6: 10000$' stdout], [], [ignore])
+AT_CLEANUP
+
+AT_SETUP([GetSubscriptionFromUploadQueue])
+AT_CHECK([test-uploadqueue GetSubscriptionFromUploadQueue], [], [stdout])
+AT_CHECK([grep '^1: File ID found: 3$' stdout], [], [ignore])
+AT_CHECK([grep '^2: No subscription found$' stdout], [], [ignore])
+AT_CLEANUP
+
+AT_SETUP([PutUpload])
+AT_CHECK([test-uploadqueue PutUpload], [], [stdout])
+AT_CHECK([grep '^1\|4$' stdout], [], [ignore])
+AT_CLEANUP
+
+AT_SETUP([CreateFilePart])
+AT_CHECK([test-uploadqueue CreateFilePart], [], [stdout])
+AT_CHECK([grep '^1: @<:@a-zA-Z0-9@:>@\{6\}, 26214400 bytes$' stdout], [], [ignore])
+AT_CHECK([grep '^2: @<:@a-zA-Z0-9@:>@\{6\}, 1048576 bytes$' stdout], [], [ignore])
+AT_CHECK([grep '^Files created: 2$' stdout], [], [ignore])
+AT_CLEANUP
+
+AT_SETUP([CreateFileChunk])
+AT_CHECK([test-uploadqueue CreateFileChunk], [], [stdout])
+AT_CHECK([grep '^-rw-@<:@-rw@:>@\{6\} 1 26214400 @<:@a-zA-Z@:>@\{3\} @<:@0-3 @:>@@<:@0-9@:>@ @<:@0-2@:>@@<:@0-9@:>@:@<:@0-5@:>@@<:@0-9@:>@ dChnk1$' stdout], [], [ignore])
+AT_CHECK([grep '^-rw-@<:@-rw@:>@\{6\} 1  1048589 @<:@a-zA-Z@:>@\{3\} @<:@0-3 @:>@@<:@0-9@:>@ @<:@0-2@:>@@<:@0-9@:>@:@<:@0-5@:>@@<:@0-9@:>@ dChnk2$' stdout], [], [ignore])
+AT_CLEANUP
+
